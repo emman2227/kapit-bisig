@@ -3,6 +3,12 @@
     "name": "kapit-bisig",
     "slug": "kapit-bisig",
     "scheme": "kapitbisig",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/0f27a006-752a-408c-a8c7-95c83e3157d4"
+    },
     "ios": {
       "supportsTablet": true
     },
@@ -21,6 +27,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "expo-updates",
       [
         "expo-notifications",
         {

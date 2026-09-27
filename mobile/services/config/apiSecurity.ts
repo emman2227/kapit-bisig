@@ -56,6 +56,25 @@ export function resolveApiBaseUrl(
   return value.replace(/\/+$/, '');
 }
 
+export function resolveOptionalApiBaseUrl(
+  envValue: string | undefined,
+  fallbackValue: string | null,
+  serviceLabel: string,
+): string | null {
+  const trimmed = envValue?.trim();
+  if (trimmed) {
+    ensureSecureApiUrl(trimmed, serviceLabel);
+    return trimmed.replace(/\/+$/, '');
+  }
+
+  if (__DEV__ && fallbackValue) {
+    ensureSecureApiUrl(fallbackValue, serviceLabel);
+    return fallbackValue.replace(/\/+$/, '');
+  }
+
+  return null;
+}
+
 function getExpoRuntimeHost(): string | null {
   const hostUri =
     Constants.expoConfig?.hostUri ||

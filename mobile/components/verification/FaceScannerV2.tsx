@@ -32,7 +32,7 @@ import {
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Ionicons } from '@expo/vector-icons';
-import { resolveApiBaseUrl } from '../../services/config/apiSecurity';
+import { resolveOptionalApiBaseUrl } from '../../services/config/apiSecurity';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const FACE_FRAME_SIZE = SCREEN_WIDTH * 0.75;
@@ -97,11 +97,11 @@ export default function FaceScannerV2({
   mode,
   onComplete,
   onCancel,
-  apiBaseUrl = resolveApiBaseUrl(
+  apiBaseUrl = resolveOptionalApiBaseUrl(
     process.env.EXPO_PUBLIC_FACE_API_URL,
     'http://192.168.1.4:8000',
     'FaceScannerV2',
-  ),
+  ) ?? undefined,
   userId,
   userName,
 }: FaceScannerV2Props) {
@@ -188,6 +188,13 @@ export default function FaceScannerV2({
 
   const analyzeWithBackend = async (base64Image: string, imageUri: string) => {
     try {
+      if (!apiBaseUrl) {
+        setPhase('invalid');
+        setErrorMessage('Face recognition service is not configured or currently unavailable.');
+        setIsAnalyzing(false);
+        return;
+      }
+
       // STEP 6a: Send to backend for face detection & quality check
       const detectResponse = await fetch(`${apiBaseUrl}/api/face/detect`, {
         method: 'POST',

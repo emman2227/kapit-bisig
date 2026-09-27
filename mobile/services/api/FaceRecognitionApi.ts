@@ -12,17 +12,17 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
-import { resolveApiBaseUrl } from '../config/apiSecurity';
+import { resolveOptionalApiBaseUrl } from '../config/apiSecurity';
 
 // ============================================
 // CONFIGURATION
 // ============================================
 
-// Default API URL - Update this with your server IP
+// Default API URL - Update this with your server IP in development
 const DEFAULT_API_URL = 'http://192.168.1.4:8000';
 
-// Get API URL from environment or use default
-const API_BASE_URL = resolveApiBaseUrl(
+// Get API URL from environment or use default (null in production if unset)
+const API_BASE_URL = resolveOptionalApiBaseUrl(
   process.env.EXPO_PUBLIC_FACE_API_URL,
   DEFAULT_API_URL,
   'FaceRecognitionApi',
@@ -106,6 +106,10 @@ async function apiRequest<T>(
   method: 'GET' | 'POST' | 'DELETE' = 'GET',
   body?: object
 ): Promise<T> {
+  if (!API_BASE_URL) {
+    throw new Error('Face recognition service is not configured or currently unavailable.');
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
 
@@ -263,13 +267,13 @@ export async function clearAllUsers(): Promise<{ success: boolean; message: stri
 // ============================================
 
 class FaceRecognitionApiService {
-  private baseUrl: string;
+  private baseUrl: string | null;
 
-  constructor(baseUrl: string = API_BASE_URL) {
+  constructor(baseUrl: string | null = API_BASE_URL) {
     this.baseUrl = baseUrl;
   }
 
-  setBaseUrl(url: string) {
+  setBaseUrl(url: string | null) {
     this.baseUrl = url;
   }
 
