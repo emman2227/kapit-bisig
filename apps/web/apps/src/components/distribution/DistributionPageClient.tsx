@@ -22,7 +22,7 @@ export default function DistributionPageClient() {
   const [createOpen, setCreateOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [lifecycleView, setLifecycleView] = useState<'upcoming' | 'active' | 'completed' | 'archived'>('upcoming')
+  const [lifecycleView, setLifecycleView] = useState<'upcoming' | 'active' | 'completed' | 'archived'>('active')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   const fetchDistributions = useCallback(async (silent = false) => {
@@ -104,6 +104,14 @@ export default function DistributionPageClient() {
   )
   const upcomingCount = useMemo(
     () => rows.filter((r) => r.lifecycleStatus === 'Upcoming').length,
+    [rows]
+  )
+  const completedCount = useMemo(
+    () => rows.filter((r) => r.lifecycleStatus === 'Completed').length,
+    [rows]
+  )
+  const archivedCount = useMemo(
+    () => rows.filter((r) => r.lifecycleStatus === 'Archived').length,
     [rows]
   )
   const visibleRows = useMemo(
@@ -238,23 +246,43 @@ export default function DistributionPageClient() {
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Distribution lifecycle">
-          {(['upcoming', 'active', 'completed', 'archived'] as const).map((view) => (
-            <button
-              key={view}
-              type="button"
-              role="tab"
-              aria-selected={lifecycleView === view}
-              onClick={() => setLifecycleView(view)}
-              className={[
-                'rounded-full border px-4 py-2 text-sm font-semibold capitalize transition-colors',
-                lifecycleView === view
-                  ? 'border-slate-950 bg-slate-950 text-white'
-                  : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-950',
-              ].join(' ')}
-            >
-              {view}
-            </button>
-          ))}
+          {(['active', 'upcoming', 'completed', 'archived'] as const).map((view) => {
+            const count =
+              view === 'active'
+                ? activeCount
+                : view === 'upcoming'
+                  ? upcomingCount
+                  : view === 'completed'
+                    ? completedCount
+                    : archivedCount
+            return (
+              <button
+                key={view}
+                type="button"
+                role="tab"
+                aria-selected={lifecycleView === view}
+                onClick={() => setLifecycleView(view)}
+                className={[
+                  'inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold capitalize transition-colors',
+                  lifecycleView === view
+                    ? 'border-slate-950 bg-slate-950 text-white'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-slate-400 hover:text-slate-950',
+                ].join(' ')}
+              >
+                <span>{view}</span>
+                <span
+                  className={[
+                    'inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-bold',
+                    lifecycleView === view
+                      ? 'bg-slate-800 text-white'
+                      : 'bg-slate-100 text-slate-600',
+                  ].join(' ')}
+                >
+                  {count}
+                </span>
+              </button>
+            )
+          })}
         </div>
 
         {lastUpdated && (

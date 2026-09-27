@@ -562,11 +562,42 @@ router.get('/scanner/active', async (req: AuthRequest, res: Response) => {
       return targets.some((barangay) => scoped.has(barangay));
     });
 
-    const toScannerDistribution = (distribution: typeof inScope[number]) => ({
-      ...distribution,
-      id: distribution._id.toString(),
-      lifecycleStatus: deriveDistributionLifecycle(distribution),
-    });
+    const distLookupIds = inScope.flatMap((d) => [
+      new mongoose.Types.ObjectId(d._id),
+      d._id.toString(),
+    ]);
+
+    const claimedCounts = await DistributionClaim.aggregate([
+      { $match: { distributionId: mongoose.trusted({ $in: distLookupIds }) } },
+      { $group: { _id: { $toString: '$distributionId' }, count: { $sum: 1 } } },
+    ]);
+    const claimedCountMap: Record<string, number> = {};
+    for (const c of claimedCounts) {
+      if (c._id) claimedCountMap[c._id] = c.count;
+    }
+
+    const residentCounts = await Resident.aggregate([
+      { $match: { status: 'Approved' } },
+      { $group: { _id: '$barangay', count: { $sum: 1 } } },
+    ]);
+    const residentCountMap: Record<string, number> = {};
+    for (const r of residentCounts) {
+      if (r._id) residentCountMap[r._id] = r.count;
+    }
+
+    const toScannerDistribution = (distribution: typeof inScope[number]) => {
+      const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
+      const registered = targets.reduce((sum, b) => sum + (residentCountMap[b] ?? 0), 0);
+      const claimed = claimedCountMap[distribution._id.toString()] ?? 0;
+      return {
+        ...distribution,
+        id: distribution._id.toString(),
+        households: registered,
+        registeredHouseholds: registered,
+        claimedHouseholds: claimed,
+        lifecycleStatus: deriveDistributionLifecycle(distribution),
+      };
+    };
 
     const active = inScope
       .filter((distribution) => deriveDistributionLifecycle(distribution) === 'Active')

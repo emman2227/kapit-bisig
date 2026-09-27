@@ -23,6 +23,7 @@ interface ResolvedResident {
   fullName?: string;
   maskedName?: string;
   alreadyClaimed?: boolean;
+  justClaimed?: boolean;
   fromCache?: boolean;
 }
 
@@ -228,11 +229,13 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
     setClaimStatusText(null);
     const startedAt = Date.now();
 
+    const targetDistributionId = activeDistribution?.id || nearestUpcoming?.id;
+
     const response = await mobileAuthService.authenticatedRequest<ResolveQrPayload>('/household/qr/resolve', {
       method: 'POST',
       body: JSON.stringify({
         qrData: data,
-        distributionId: activeDistribution?.id,
+        distributionId: targetDistributionId,
       }),
     });
 
@@ -269,19 +272,31 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
       });
 
       if (claimResponse.success && claimResponse.data?.success) {
-        setClaimStatusText(
-          claimResponse.data.alreadyClaimed
-            ? 'Resident already claimed for this distribution.'
-            : 'Claim recorded. Relief can now be released.',
-        );
-        setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: true } : prev));
+        if (claimResponse.data.alreadyClaimed) {
+          setClaimStatusText('Resident already claimed for this distribution.');
+          setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: true, justClaimed: false } : prev));
+        } else {
+          setClaimStatusText('Claim recorded. Relief can now be released.');
+          setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: false, justClaimed: true } : prev));
+          setActiveDistribution((prev) => (prev ? { ...prev, claimedHouseholds: (prev.claimedHouseholds || 0) + 1 } : prev));
+          setActiveDistributions((prev) =>
+            prev.map((d) => (d.id === activeDistribution.id ? { ...d, claimedHouseholds: (d.claimedHouseholds || 0) + 1 } : d))
+          );
+        }
       } else {
         setClaimStatusText(claimResponse.error || claimResponse.data?.message || 'Claim record failed.');
       }
     } else if (resident.alreadyClaimed) {
       setClaimStatusText('Resident already claimed for this distribution.');
+      setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: true, justClaimed: false } : prev));
     } else if (!activeDistribution?.id) {
-      setClaimStatusText('Validation-only mode. No active distribution is selected for claim recording.');
+      if (nearestUpcoming) {
+        setClaimStatusText(
+          `Pre-check verified for Barangay ${nearestUpcoming.barangay}. Distribution starts at ${formatScheduleLabel(nearestUpcoming.scheduled)}. Supplies cannot be claimed yet.`,
+        );
+      } else {
+        setClaimStatusText('Resident is verified, but you are not assigned to an active distribution. No claim was recorded.');
+      }
     }
 
     setIsResolving(false);
@@ -332,10 +347,18 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
           iconColor: '#64748B',
         };
 
-  let scannerTone: ScannerTone = 'ready';  if (isResolving) scannerTone = 'working';
+  let scannerTone: ScannerTone = 'ready';
+  if (isResolving) scannerTone = 'working';
   else if (error) scannerTone = 'error';
   else if (resolvedResident?.alreadyClaimed) scannerTone = 'warning';
-  else if (resolvedResident) scannerTone = 'success';
+  else if (resolvedResident?.justClaimed) scannerTone = 'success';
+  else if (resolvedResident) {
+    if (!activeDistribution?.id) {
+      scannerTone = 'warning';
+    } else {
+      scannerTone = 'success';
+    }
+  }
 
   const tone = getToneStyles(scannerTone);
 
@@ -401,9 +424,13 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
                 {scannerTone === 'working'
                   ? 'Checking'
                   : scannerTone === 'success'
-                    ? 'Approved'
+                    ? 'Claim Recorded'
                     : scannerTone === 'warning'
-                      ? 'Already Claimed'
+                      ? resolvedResident?.alreadyClaimed
+                        ? 'Already Claimed'
+                        : !activeDistribution?.id && nearestUpcoming
+                          ? 'Pre-Check Only'
+                          : 'No Active Drive'
                       : scannerTone === 'error'
                         ? 'Needs Retry'
                         : 'Ready'}
@@ -583,9 +610,15 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
                     ? 'Scanner needs another try'
                     : resolvedResident?.alreadyClaimed
                       ? 'Resident already claimed'
-                      : resolvedResident
-                        ? 'Resident verified'
-                        : 'Ready for the next scan'}
+                      : resolvedResident?.justClaimed
+                        ? 'Resident Verified & Claim Recorded'
+                        : resolvedResident
+                          ? !activeDistribution?.id
+                            ? nearestUpcoming
+                              ? 'Pre-Check Verified (Upcoming)'
+                              : 'Resident Found (No Active Distribution)'
+                            : 'Resident Verified & Claim Recorded'
+                          : 'Ready for the next scan'}
               </Text>
               <Text style={styles.feedbackSubtitle}>
                 {isResolving
