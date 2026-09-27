@@ -4,6 +4,9 @@ export interface DistributionLifecycleRecord {
   scheduled?: string | Date | null;
   endsAt?: string | Date | null;
   archivedAt?: string | Date | null;
+  status?: string | null;
+  claimedHouseholds?: number | null;
+  registeredHouseholds?: number | null;
 }
 
 const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
@@ -19,6 +22,17 @@ export function deriveDistributionLifecycle(
   now = new Date(),
 ): DistributionLifecycleStatus {
   if (validDate(distribution.archivedAt)) return 'Archived';
+
+  if (distribution.status === 'Claimed') return 'Completed';
+
+  if (
+    typeof distribution.claimedHouseholds === 'number' &&
+    typeof distribution.registeredHouseholds === 'number' &&
+    distribution.registeredHouseholds > 0 &&
+    distribution.claimedHouseholds >= distribution.registeredHouseholds
+  ) {
+    return 'Completed';
+  }
 
   const startsAt = validDate(distribution.scheduled);
   const endsAt = validDate(distribution.endsAt);

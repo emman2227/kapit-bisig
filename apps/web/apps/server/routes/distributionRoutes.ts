@@ -506,6 +506,13 @@ router.get(
           derivedStatus = 'Partially Claimed';  // some households claimed
         }
 
+        const lifecycleStatus = deriveDistributionLifecycle({
+          ...d,
+          status: derivedStatus,
+          claimedHouseholds: claimed,
+          registeredHouseholds: registered,
+        });
+
         return {
           ...d,
           id: d._id.toString(),
@@ -513,7 +520,7 @@ router.get(
           registeredHouseholds: registered,
           claimedHouseholds: claimed,
           status: derivedStatus,
-          lifecycleStatus: deriveDistributionLifecycle(d),
+          lifecycleStatus,
           claimedAt: claimed > 0 ? (d.claimedAt || new Date().toISOString()) : d.claimedAt,
           requiresBeneficiaryApproval: requiresBeneficiaryApproval(d),
         };
@@ -585,25 +592,40 @@ router.get('/scanner/active', async (req: AuthRequest, res: Response) => {
       if (r._id) residentCountMap[r._id] = r.count;
     }
 
+    const getLifecycle = (distribution: typeof inScope[number]) => {
+      const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
+      const registered = targets.reduce((sum, b) => sum + (residentCountMap[b] ?? 0), 0);
+      const claimed = claimedCountMap[distribution._id.toString()] ?? 0;
+      const derivedStatus = claimed > 0 && registered > 0 && claimed >= registered ? 'Claimed' : distribution.status;
+      return deriveDistributionLifecycle({
+        ...distribution,
+        status: derivedStatus,
+        claimedHouseholds: claimed,
+        registeredHouseholds: registered,
+      });
+    };
+
     const toScannerDistribution = (distribution: typeof inScope[number]) => {
       const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
       const registered = targets.reduce((sum, b) => sum + (residentCountMap[b] ?? 0), 0);
       const claimed = claimedCountMap[distribution._id.toString()] ?? 0;
+      const derivedStatus = claimed > 0 && registered > 0 && claimed >= registered ? 'Claimed' : distribution.status;
       return {
         ...distribution,
         id: distribution._id.toString(),
         households: registered,
         registeredHouseholds: registered,
         claimedHouseholds: claimed,
-        lifecycleStatus: deriveDistributionLifecycle(distribution),
+        status: derivedStatus,
+        lifecycleStatus: getLifecycle(distribution),
       };
     };
 
     const active = inScope
-      .filter((distribution) => deriveDistributionLifecycle(distribution) === 'Active')
+      .filter((distribution) => getLifecycle(distribution) === 'Active')
       .map(toScannerDistribution);
     const upcoming = inScope
-      .filter((distribution) => deriveDistributionLifecycle(distribution) === 'Upcoming')
+      .filter((distribution) => getLifecycle(distribution) === 'Upcoming')
       .sort((a, b) => new Date(a.scheduled).getTime() - new Date(b.scheduled).getTime())[0];
 
     return res.json({
@@ -914,6 +936,14 @@ router.patch(
         });
       }
 
+      if (typeof distribution.households !== 'number' || Number.isNaN(distribution.households)) {
+        const approvedCount = await Resident.countDocuments({
+          barangay: distribution.barangay,
+          status: 'Approved',
+        });
+        distribution.households = approvedCount;
+      }
+
       distribution.status = 'Claimed';
       distribution.claimedAt = new Date();
       await distribution.save();
@@ -961,6 +991,14 @@ router.patch(
           success: false,
           message: 'Distribution is already archived',
         });
+      }
+
+      if (typeof distribution.households !== 'number' || Number.isNaN(distribution.households)) {
+        const approvedCount = await Resident.countDocuments({
+          barangay: distribution.barangay,
+          status: 'Approved',
+        });
+        distribution.households = approvedCount;
       }
 
       distribution.archivedAt = new Date();
@@ -1016,6 +1054,14 @@ router.patch(
           success: false,
           message: 'Distribution is not archived',
         });
+      }
+
+      if (typeof distribution.households !== 'number' || Number.isNaN(distribution.households)) {
+        const approvedCount = await Resident.countDocuments({
+          barangay: distribution.barangay,
+          status: 'Approved',
+        });
+        distribution.households = approvedCount;
       }
 
       distribution.archivedAt = null;

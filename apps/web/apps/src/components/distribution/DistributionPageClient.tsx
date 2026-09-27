@@ -8,6 +8,7 @@ import { api, getScopedBarangays } from '../../lib/api'
 import { showToast } from '@/lib/toast'
 import { TableSkeleton } from '@/components/ui/Skeleton'
 import { useAuth } from '@/lib/AuthContext'
+import ConfirmModal from '@/components/ui/ConfirmModal'
 
 // Barangay options are now computed dynamically per-user
 
@@ -24,6 +25,8 @@ export default function DistributionPageClient() {
   const [error, setError] = useState<string | null>(null)
   const [lifecycleView, setLifecycleView] = useState<'upcoming' | 'active' | 'completed' | 'archived'>('active')
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null)
+  const [isArchiving, setIsArchiving] = useState(false)
 
   const fetchDistributions = useCallback(async (silent = false) => {
     try {
@@ -173,15 +176,28 @@ export default function DistributionPageClient() {
     }
   }
 
-  const archiveDistribution = async (id: string) => {
-    if (!window.confirm('Archive this completed distribution? Residents and scanners will not see it, but claims and reports will be preserved.')) return
+  const pendingArchiveDistribution = useMemo(
+    () => (pendingArchiveId ? rows.find((r) => r.id === pendingArchiveId) : null),
+    [pendingArchiveId, rows],
+  )
+
+  const archiveDistribution = (id: string) => {
+    setPendingArchiveId(id)
+  }
+
+  const handleConfirmArchive = async () => {
+    if (!pendingArchiveId) return
     try {
-      await api.archiveDistribution(id)
+      setIsArchiving(true)
+      await api.archiveDistribution(pendingArchiveId)
       showToast.success('Distribution archived. Historical records were preserved.')
+      setPendingArchiveId(null)
       await fetchDistributions()
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to archive distribution'
       showToast.error(message)
+    } finally {
+      setIsArchiving(false)
     }
   }
 
@@ -316,6 +332,23 @@ export default function DistributionPageClient() {
           barangayOptions={scopedBarangays}
         />
       )}
+
+      <ConfirmModal
+        isOpen={Boolean(pendingArchiveId)}
+        title="Archive Distribution"
+        body={
+          pendingArchiveDistribution
+            ? `Archive the distribution for ${pendingArchiveDistribution.barangay}? Residents and scanners will not see it, but claims and reports will be preserved.`
+            : 'Archive this completed distribution? Residents and scanners will not see it, but claims and reports will be preserved.'
+        }
+        confirmLabel="Archive"
+        cancelLabel="Cancel"
+        loading={isArchiving}
+        onCancel={() => {
+          if (!isArchiving) setPendingArchiveId(null)
+        }}
+        onConfirm={handleConfirmArchive}
+      />
     </div>
   )
 }

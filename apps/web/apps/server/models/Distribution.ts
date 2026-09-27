@@ -87,6 +87,7 @@ const distributionSchema = new Schema<IDistribution>(
       type: Number,
       required: [true, 'Households count is required'],
       min: [0, 'Households must be at least 0'],
+      default: 0,
     },
     notes: {
       type: String,

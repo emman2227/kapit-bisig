@@ -591,7 +591,7 @@ export default function DistributionsTable({
                           }}
                         />
                       ) : null}
-                      {canManageLifecycle && row.lifecycleStatus === 'Completed' && onArchive ? (
+                      {canManageLifecycle && (row.lifecycleStatus === 'Completed' || row.status === 'Claimed') && row.lifecycleStatus !== 'Archived' && onArchive ? (
                         <MenuItem
                           icon={<ArchiveIcon className="h-4 w-4" />}
                           label="Archive distribution"

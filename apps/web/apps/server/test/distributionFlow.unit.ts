@@ -48,6 +48,9 @@ export function runDistributionFlowUnitTests(): void {
   assert.strictEqual(deriveDistributionLifecycle(lifecycleWindow, new Date('2026-08-25T17:00:00+08:00')), 'Active');
   assert.strictEqual(deriveDistributionLifecycle(lifecycleWindow, new Date('2026-08-25T17:00:01+08:00')), 'Completed');
   assert.strictEqual(deriveDistributionLifecycle({ ...lifecycleWindow, archivedAt: '2026-08-25T12:00:00+08:00' }, new Date('2026-08-25T13:00:00+08:00')), 'Archived');
+  assert.strictEqual(deriveDistributionLifecycle({ ...lifecycleWindow, status: 'Claimed' }, new Date('2026-08-25T10:00:00+08:00')), 'Completed');
+  assert.strictEqual(deriveDistributionLifecycle({ ...lifecycleWindow, registeredHouseholds: 10, claimedHouseholds: 10 }, new Date('2026-08-25T10:00:00+08:00')), 'Completed');
+  assert.strictEqual(deriveDistributionLifecycle({ ...lifecycleWindow, registeredHouseholds: 10, claimedHouseholds: 5 }, new Date('2026-08-25T10:00:00+08:00')), 'Active');
 
   // Valid create without assignedBarangays (new 3-step per-barangay flow)
   const validCreateSingle = createDistributionBody.safeParse({
