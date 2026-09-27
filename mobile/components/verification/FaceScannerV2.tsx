@@ -246,10 +246,26 @@ export default function FaceScannerV2({
         return;
       }
 
-      // Check liveness (anti-spoofing)
-      if (!detectResult.is_real_image) {
+      // Check face centering inside oval indicator
+      if (!detectResult.is_centered) {
         setPhase('invalid');
-        setErrorMessage('Please use your real face, not a photo or screen.');
+        setErrorMessage(detectResult.message || 'Please align and center your face inside the oval indicator.');
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Check face size inside oval indicator
+      if (!detectResult.face_size_ok) {
+        setPhase('invalid');
+        setErrorMessage(detectResult.message || 'Please adjust your distance so your face fits inside the oval.');
+        setIsAnalyzing(false);
+        return;
+      }
+
+      // Check liveness (anti-spoofing)
+      if (!detectResult.is_real_image || !detectResult.is_valid) {
+        setPhase('invalid');
+        setErrorMessage(detectResult.message || 'Spoofing detected: please use your real face, not a photo or screen.');
         setIsAnalyzing(false);
         return;
       }

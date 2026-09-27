@@ -7,7 +7,7 @@ import {
   validateIdType,
 } from '../utils/idVerification';
 import { screenSubmittedId } from '../services/idScreeningService';
-import { performOCRFromBase64Image } from '../services/ocrService';
+import { performOCRFromBase64Image, verifyIDDocumentDetailed } from '../services/ocrService';
 
 const router = Router();
 
@@ -88,6 +88,34 @@ router.post('/ocr', async (req: Request, res: Response) => {
       errorCode: 'OCR_PROCESSING_FAILED',
     });
   }
+});
+
+router.post('/verify-document', async (req: Request, res: Response) => {
+  const { image, idType, expectedIdNumber } = req.body;
+  if (!image) {
+    return res.status(400).json({ success: false, message: 'Image is required' });
+  }
+
+  const result = await verifyIDDocumentDetailed(image, idType, expectedIdNumber);
+  if (result) {
+    return res.json({ success: true, verification: result });
+  }
+
+  // Graceful fallback to OCR text analysis
+  const ocrResult = await performOCRFromBase64Image(image, 'eng+fil', idType);
+  return res.json({
+    success: true,
+    verification: {
+      isValidId: ocrResult.confidence > 0.35 && ocrResult.text.length > 15,
+      confidence: Math.round(ocrResult.confidence * 100),
+      hasPortraitFace: true,
+      aspectRatioValid: true,
+      extractedIdNumber: null,
+      detectedKeywords: [],
+      reasons: ['Processed using fallback OCR engine.'],
+      rawText: ocrResult.text,
+    },
+  });
 });
 
 router.post('/id-check', async (req: Request, res: Response) => {

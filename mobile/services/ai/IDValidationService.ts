@@ -321,33 +321,54 @@ class IDValidationService {
   /**
    * Perform OCR on image
    */
-  private async performOCR(imageUri: string): Promise<{ text: string; confidence: number }> {
+  private async performOCR(
+    imageUri: string,
+    idType?: string,
+  ): Promise<{ text: string; confidence: number; isValidId?: boolean; hasPortrait?: boolean }> {
     try {
-      // Option 1: Use a backend API for OCR
-      // This is the recommended approach for React Native
-      const ocrResult = await this.callOCRApi(imageUri);
+      const ocrResult = await this.callOCRApi(imageUri, idType);
       return ocrResult;
-
-      // Option 2: If using tesseract.js in a web worker (for web builds)
-      // return await this.performLocalOCR(imageUri);
     } catch (error) {
       console.error('[IDValidation] OCR error:', error);
-
-      // Fallback: Return simulated result for development
       return this.simulateOCR(imageUri);
     }
   }
 
   /**
-   * Call backend OCR API
+   * Call backend OCR API (uses deep learning RapidOCR pipeline)
    */
-  private async callOCRApi(imageUri: string): Promise<{ text: string; confidence: number }> {
+  private async callOCRApi(
+    imageUri: string,
+    idType?: string,
+  ): Promise<{ text: string; confidence: number; isValidId?: boolean; hasPortrait?: boolean }> {
     try {
-      // Read image as base64
       const base64 = await FileSystem.readAsStringAsync(imageUri, {
         encoding: EncodingType.Base64,
       });
 
+      // 1. Try deep-learning verify-document endpoint first
+      try {
+        const verifyResp = await fetch(`${VERIFICATION_API_BASE_URL}/verification/verify-document`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image: base64, idType }),
+        });
+        if (verifyResp.ok) {
+          const vData = await verifyResp.json();
+          if (vData.success && vData.verification) {
+            return {
+              text: vData.verification.rawText || '',
+              confidence: (vData.verification.confidence || 0) / 100,
+              isValidId: vData.verification.isValidId,
+              hasPortrait: vData.verification.hasPortraitFace,
+            };
+          }
+        }
+      } catch (err) {
+        console.warn('[IDValidation] verify-document endpoint fallback:', err);
+      }
+
+      // 2. Fallback to standard OCR endpoint
       const response = await fetch(`${VERIFICATION_API_BASE_URL}/verification/ocr`, {
         method: 'POST',
         headers: {
@@ -355,7 +376,7 @@ class IDValidationService {
         },
         body: JSON.stringify({
           image: base64,
-          language: 'eng',
+          language: 'eng+fil',
         }),
       });
 

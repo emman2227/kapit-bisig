@@ -30,6 +30,9 @@ export interface IdScreeningResult {
   reviewFlags: string[];
   limitations: string[];
   rawTextPreview: string;
+  ocrEngine?: string;
+  isLegitimateGovernmentId?: boolean;
+  detectedKeywords?: string[];
 }
 
 export interface AnalyzeIdScreeningInput {
@@ -43,6 +46,10 @@ export interface AnalyzeIdScreeningInput {
   frontHeight?: number;
   backWidth?: number;
   backHeight?: number;
+  ocrEngine?: string;
+  isLegitimateGovernmentId?: boolean;
+  detectedKeywords?: string[];
+  verificationReasons?: string[];
 }
 
 interface TypeRule {
@@ -233,11 +240,31 @@ function cacheScreening(key: string, result: IdScreeningResult): void {
 
 const TYPE_RULES: Record<SupportedIdType, TypeRule> = {
   'PhilSys ID': {
-    keywords: ['PHILIPPINE', 'NATIONAL', 'IDENTIFICATION', 'PHILSYS', 'PCN'],
+    keywords: [
+      'PHILIPPINE',
+      'NATIONAL',
+      'IDENTIFICATION',
+      'PHILSYS',
+      'PCN',
+      'PAMBANSANG',
+      'PAGKAKAKILANLAN',
+      'REPUBLIKA',
+      'PILIPINAS',
+    ],
     numberPattern: /\d{4}[-\s]?\d{4}[-\s]?\d{4}(?:[-\s]?\d{4})?/g,
   },
   'Philippine National ID': {
-    keywords: ['PHILIPPINE', 'NATIONAL', 'IDENTIFICATION', 'PHILSYS', 'PCN'],
+    keywords: [
+      'PHILIPPINE',
+      'NATIONAL',
+      'IDENTIFICATION',
+      'PHILSYS',
+      'PCN',
+      'PAMBANSANG',
+      'PAGKAKAKILANLAN',
+      'REPUBLIKA',
+      'PILIPINAS',
+    ],
     numberPattern: /\d{4}[-\s]?\d{4}[-\s]?\d{4}(?:[-\s]?\d{4})?/g,
   },
   "Driver's License": {
@@ -437,6 +464,9 @@ function buildReasonsAndWarnings(params: {
   idNumberMatch: boolean | null;
   ocrConfidence: number;
   qualityScore: number;
+  ocrEngine?: string;
+  isLegitimateGovernmentId?: boolean;
+  verificationReasons?: string[];
 }): Pick<IdScreeningResult, 'decision' | 'reasons' | 'warnings' | 'reviewFlags'> {
   const {
     enteredIdType,
@@ -446,11 +476,26 @@ function buildReasonsAndWarnings(params: {
     idNumberMatch,
     ocrConfidence,
     qualityScore,
+    ocrEngine,
+    isLegitimateGovernmentId,
+    verificationReasons,
   } = params;
 
   const reasons: string[] = [];
   const warnings: string[] = [];
   const reviewFlags: string[] = [];
+
+  if (isLegitimateGovernmentId === false) {
+    reviewFlags.push('AI_LEGITIMACY_FAILED');
+    const note =
+      verificationReasons?.find((r) => {
+        const lower = r.toLowerCase();
+        return !lower.includes('ratio') && !lower.includes('aspect') && !lower.includes('dimension');
+      }) ||
+      'The document type could not be confirmed with high confidence.';
+    reasons.push(note);
+    warnings.push(note);
+  }
 
   const strongTypeMismatch =
     !!detectedIdType &&
@@ -535,7 +580,9 @@ function buildReasonsAndWarnings(params: {
     };
   }
 
-  reasons.push('The upload needs manual review before the ID details can be trusted.');
+  reasons.push(
+    'Some ID details could not be verified automatically. Don’t worry—our barangay staff will review your ID card during validation.',
+  );
   return {
     decision: 'REVIEW',
     reasons,
@@ -635,10 +682,16 @@ export function analyzeIdScreeningFromOcr(
     idNumberMatch,
     ocrConfidence,
     qualityScore,
+    ocrEngine: input.ocrEngine,
+    isLegitimateGovernmentId: input.isLegitimateGovernmentId,
+    verificationReasons: input.verificationReasons,
   });
 
   return {
     decision,
+    ocrEngine: input.ocrEngine || 'RapidOCR PP-OCRv4 (AI)',
+    isLegitimateGovernmentId: input.isLegitimateGovernmentId,
+    detectedKeywords: input.detectedKeywords || [],
     screeningConfidence: computeScreeningConfidence({
       typeMatch,
       typeConfidence,
@@ -674,6 +727,7 @@ function buildScreeningInputFromOcr(params: {
   frontOcr: OCRServiceResult;
   backOcr: OCRServiceResult;
 }): AnalyzeIdScreeningInput {
+  const ocrEngine = params.frontOcr.languageUsed === 'rapidocr-onnx' ? 'RapidOCR PP-OCRv4 (AI)' : 'Tesseract (Fallback)';
   return {
     enteredIdType: params.idType,
     enteredIdNumber: params.idNumber,
@@ -685,6 +739,10 @@ function buildScreeningInputFromOcr(params: {
     frontHeight: params.frontValidation.height,
     backWidth: params.backValidation.width,
     backHeight: params.backValidation.height,
+    ocrEngine,
+    isLegitimateGovernmentId: params.frontOcr.isLegitimateId,
+    detectedKeywords: params.frontOcr.detectedKeywords,
+    verificationReasons: params.frontOcr.verificationReasons,
   };
 }
 
@@ -741,9 +799,17 @@ export async function screenSubmittedId(input: {
   }
 
   const [frontOcr, backOcr] = await Promise.all([
-    performOCRFromBase64Image(input.frontIdImage, 'eng+fil'),
-    performOCRFromBase64Image(input.backIdImage, 'eng+fil'),
+    performOCRFromBase64Image(input.frontIdImage, 'eng+fil', input.idType),
+    performOCRFromBase64Image(input.backIdImage, 'eng+fil', input.idType),
   ]);
+
+  const activeEngine = frontOcr.languageUsed === 'rapidocr-onnx' ? 'RapidOCR PP-OCRv4 (AI)' : 'Tesseract (Fallback)';
+  console.log(`\n========================================`);
+  console.log(`[ID-Screening] Active Engine: ${activeEngine}`);
+  console.log(`[ID-Screening] Valid Govt ID: ${frontOcr.isLegitimateId}`);
+  console.log(`[ID-Screening] Keywords: ${JSON.stringify(frontOcr.detectedKeywords || [])}`);
+  console.log(`[ID-Screening] AI Reasons: ${JSON.stringify(frontOcr.verificationReasons || [])}`);
+  console.log(`========================================\n`);
 
   const screening = analyzeIdScreeningFromOcr(
     buildScreeningInputFromOcr({

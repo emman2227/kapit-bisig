@@ -10,3 +10,5 @@ python-dotenv>=1.0.0
 onnxruntime>=1.17.0  # CPU optimization for faster inference
 pymongo>=4.6.0       # MongoDB driver for resident storage
 scikit-learn>=1.5.0  # Public dataset loader + standard evaluation metrics
+rapidocr-onnxruntime>=1.4.0 # Deep-learning scene OCR (PP-OCRv4 ONNX)
+mediapipe>=0.10.0          # Google Face Mesh & 3D Head Pose tracking

@@ -17,6 +17,9 @@ export interface OCRServiceResult {
   confidence: number;
   blocks: OCRWordBlock[];
   languageUsed: string;
+  isLegitimateId?: boolean;
+  detectedKeywords?: string[];
+  verificationReasons?: string[];
 }
 
 type OcrWorker = Awaited<ReturnType<typeof createWorker>>;
@@ -129,12 +132,123 @@ async function getWorker(language: string): Promise<OcrWorker> {
   return workerPromise;
 }
 
+const PYTHON_AI_URL = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+
+async function tryPythonDeepLearningOCR(
+  base64Payload: string,
+  idType?: string,
+): Promise<OCRServiceResult | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(`${PYTHON_AI_URL}/api/id/verify-document`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: base64Payload,
+        id_type: idType,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const data: any = await response.json();
+    if (!data.success) {
+      return null;
+    }
+
+    return {
+      text: String(data.raw_text || '').trim(),
+      confidence: Math.max(0.1, Number(data.confidence || 0) / 100),
+      blocks: (data.blocks || []).map((b: any) => ({
+        text: String(b.text || ''),
+        confidence: Number(b.confidence || 0),
+        boundingBox: b.boundingBox || { x: 0, y: 0, width: 0, height: 0 },
+      })),
+      languageUsed: 'rapidocr-onnx',
+      isLegitimateId: Boolean(data.is_valid_id),
+      detectedKeywords: Array.isArray(data.detected_keywords) ? data.detected_keywords : [],
+      verificationReasons: Array.isArray(data.reasons) ? data.reasons : [],
+    };
+  } catch {
+    // Graceful fallback to local Tesseract
+    return null;
+  }
+}
+
+export interface DeepLearningIDVerificationResult {
+  isValidId: boolean;
+  confidence: number;
+  hasPortraitFace: boolean;
+  aspectRatioValid: boolean;
+  extractedIdNumber: string | null;
+  detectedKeywords: string[];
+  reasons: string[];
+  rawText: string;
+}
+
+export async function verifyIDDocumentDetailed(
+  image: string,
+  idType?: string,
+  expectedIdNumber?: string,
+): Promise<DeepLearningIDVerificationResult | null> {
+  try {
+    const payload = stripDataUrlPrefix(String(image || '').trim());
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const response = await fetch(`${PYTHON_AI_URL}/api/id/verify-document`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        image: payload,
+        id_type: idType,
+        expected_id_number: expectedIdNumber,
+      }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+    const data: any = await response.json();
+    if (!data.success) return null;
+
+    return {
+      isValidId: Boolean(data.is_valid_id),
+      confidence: Number(data.confidence || 0),
+      hasPortraitFace: Boolean(data.has_portrait_face),
+      aspectRatioValid: Boolean(data.aspect_ratio_valid),
+      extractedIdNumber: data.extracted_id_number || null,
+      detectedKeywords: data.detected_keywords || [],
+      reasons: data.reasons || [],
+      rawText: data.raw_text || '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function performOCRFromBase64Image(
   image: string,
   language = 'eng',
+  idType?: string,
 ): Promise<OCRServiceResult> {
-  const normalizedLanguage = normalizeLanguage(language);
   const payload = stripDataUrlPrefix(String(image || '').trim());
+
+  // 1. Try RapidOCR (PP-OCRv4) deep-learning service from Python backend
+  const pythonResult = await tryPythonDeepLearningOCR(payload, idType);
+  if (pythonResult && pythonResult.text.length > 0) {
+    return pythonResult;
+  }
+
+  // 2. Fallback to local Tesseract worker
+  const normalizedLanguage = normalizeLanguage(language);
   const rawBuffer = Buffer.from(payload, 'base64');
 
   // Pre-process the image for significantly better OCR accuracy

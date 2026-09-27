@@ -1,4 +1,4 @@
-﻿# Documentation Index
+# Documentation Index
 
 This index is the primary entry point for project documentation.
 
@@ -17,9 +17,10 @@ This index is the primary entry point for project documentation.
 - Mobile implementation guide: `docs/MOBILE_FACE_RECOGNITION_IMPLEMENTATION_GUIDE.md`
 - Wi-Fi/IP change checklist: `docs/WIFI_IP_CHANGE_CHECKLIST.md`
 
-## Face Recognition Documentation
+## Identity and Face Verification Documentation
 
 - System documentation (thesis/capstone): `docs/FACE_RECOGNITION_SYSTEM_DOCUMENTATION.md`
+- ID & Face Scan Improvements (Active Liveness, Deep-Learning OCR, Anti-Spoofing): `docs/ID_AND_FACE_VERIFICATION_CHANGES.md`
 
 ## Testing Assets
 
