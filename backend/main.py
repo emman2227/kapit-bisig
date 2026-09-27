@@ -123,10 +123,8 @@ LOW_LIGHT_MEAN_THRESHOLD = float(os.getenv("LOW_LIGHT_MEAN_THRESHOLD", "75"))  #
 LOW_LIGHT_GAMMA = float(os.getenv("LOW_LIGHT_GAMMA", "1.4"))
 
 # Face capture abuse protection
-# TEMPORARY TESTING BYPASS: Disabled during verification testing to prevent 300s lockouts.
-# Set ENABLE_FACE_ATTEMPT_LIMIT="true" or restore default "10" limit when testing is finished.
-ENABLE_FACE_ATTEMPT_LIMIT = os.getenv("ENABLE_FACE_ATTEMPT_LIMIT", "false").lower() == "true"
-FACE_ATTEMPT_LIMIT = int(os.getenv("FACE_ATTEMPT_LIMIT", "1000"))
+ENABLE_FACE_ATTEMPT_LIMIT = os.getenv("ENABLE_FACE_ATTEMPT_LIMIT", "true").lower() == "true"
+FACE_ATTEMPT_LIMIT = int(os.getenv("FACE_ATTEMPT_LIMIT", "10"))
 FACE_ATTEMPT_WINDOW_SECONDS = int(os.getenv("FACE_ATTEMPT_WINDOW_SECONDS", "900"))  # 15 minutes
 FACE_ATTEMPT_LOCK_SECONDS = int(os.getenv("FACE_ATTEMPT_LOCK_SECONDS", "300"))      # 5 minutes
 _face_attempt_tracker = {}

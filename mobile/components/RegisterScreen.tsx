@@ -48,10 +48,8 @@ const FACE_API_URL = resolveOptionalApiBaseUrl(
   'http://192.168.1.4:8000',
   'RegisterScreen Face API',
 );
-// TEMPORARY TESTING BYPASS: Increased from 10 to 100 for testing to avoid blocking tests.
-// Restore to: FACE_CAPTURE_ATTEMPT_LIMIT = 10, FACE_CAPTURE_COOLDOWN_MS = 3000 when finished.
-const FACE_CAPTURE_ATTEMPT_LIMIT = 100;
-const FACE_CAPTURE_COOLDOWN_MS = 1000;
+const FACE_CAPTURE_ATTEMPT_LIMIT = 10;
+const FACE_CAPTURE_COOLDOWN_MS = 3000;
 const FILE_ENCODING = {
   Base64: 'base64' as const,
 };
@@ -2002,34 +2000,54 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
   };
 
   const handleNextStep = async () => {
-    // TEMPORARY TESTING BYPASS: Allows freely stepping through to test ID Scan & Face Scan
+    setShowErrors(true);
+
     if (currentStep === 1) {
-      if (!firstName) setFirstName('Emmanuel');
-      if (!lastName) setLastName('De Vera');
-      if (!mobileNumber) setMobileNumber('09911460993');
-      if (!dateOfBirth) setDateOfBirth('09/22/2000');
-      if (!gender) setGender('Male');
-      if (!password) setPassword('Password123!');
-      if (!confirmPassword) setConfirmPassword('Password123!');
-      setTermsAccepted(true);
-      setShowErrors(false);
-      setCurrentStep(2);
+      setIsStep1Validating(true);
+      let isValid = false;
+      try {
+        isValid = await validateStep1();
+        if (!isValid) {
+          return;
+        }
+      } finally {
+        setIsStep1Validating(false);
+      }
+
+      // Check if current mobile number is already verified
+      const normalizedMobile = normalizeMobileForLookup(mobileNumber);
+      if (verifiedToken && verifiedMobileNumber === normalizedMobile) {
+        setShowErrors(false);
+        setCurrentStep(2);
+        return;
+      }
+
+      // Send OTP and open verification modal
+      setIsSendingOtp(true);
+      try {
+        const sendResult = await smsVerificationService.sendOtp(normalizedMobile);
+        if (sendResult.success && sendResult.otpToken) {
+          setOtpToken(sendResult.otpToken);
+          setShowOtpModal(true);
+        } else {
+          Alert.alert(
+            'Verification Error',
+            sendResult.message || 'Unable to send verification code. Please check your number and try again.'
+          );
+        }
+      } catch (otpErr) {
+        Alert.alert('Error', 'Unable to send verification code. Please check your internet connection.');
+      } finally {
+        setIsSendingOtp(false);
+      }
       return;
     }
 
-    if (currentStep === 2) {
-      if (!barangay) setBarangay('Poblacion');
-      if (!streetAddress) setStreetAddress('123 Sample St');
-      setTokenValidated(true);
-      setShowErrors(false);
-      setCurrentStep(3);
+    if (currentStep === 2 && !validateStep2()) {
       return;
     }
 
-    if (currentStep === 3) {
-      // TEMPORARY TESTING BYPASS: freely proceed to Step 4 to test Face Scan with ease
-      setShowErrors(false);
-      setCurrentStep(4);
+    if (currentStep === 3 && !(await validateStep3())) {
       return;
     }
 
