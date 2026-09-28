@@ -1,4 +1,4 @@
-import { loadImage } from 'canvas';
+import sharp from 'sharp';
 
 type AllowedMime = 'image/jpeg' | 'image/png' | 'image/webp';
 
@@ -89,15 +89,16 @@ export async function validateBase64Image(
     return { ok: false, message: `${fieldName} must be JPEG, PNG, or WebP.` };
   }
 
-  let image;
+  let width = 0;
+  let height = 0;
   try {
-    image = await loadImage(buffer);
+    const metadata = await sharp(buffer).metadata();
+    width = metadata.width || 0;
+    height = metadata.height || 0;
   } catch {
     return { ok: false, message: `${fieldName} has invalid image data.` };
   }
 
-  const width = image.width;
-  const height = image.height;
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return { ok: false, message: `${fieldName} has invalid dimensions.` };
   }
