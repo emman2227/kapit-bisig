@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   ImageBackground,
@@ -18,12 +19,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { mobileAuthService } from '../services/auth/MobileAuthService';
 import {
+  deleteAllResidentNotifications,
   fetchResidentDistributions,
   fetchResidentNotifications,
   fetchActiveBeneficiaryEvent,
   fetchResidentProofSubmissionStatus,
   getResidentSession,
   getResidentToken,
+  markAllResidentNotificationsRead,
   markResidentNotificationRead,
   type ResidentDisasterEvent,
   type ResidentNotificationItem,
@@ -354,26 +357,80 @@ export default function HomeScreen({
   };
 
   const handleNotificationPress = async (notification: HomeNotificationItem) => {
-    const match = distributions.find((item) => item.id === notification.distributionId);
+    // 1. Immediately dismiss modal so notification vanishes from view
+    setShowNotificationsModal(false);
 
+    // 2. Mark as read
     if (!isVolunteer) {
       const residentToken = await getResidentToken();
       if (residentToken && notification.id && residentNotifications.some((item) => item.id === notification.id && !item.isRead)) {
-        await markResidentNotificationRead(residentToken, notification.id);
         setResidentNotifications((prev) =>
           prev.map((item) => (item.id === notification.id ? { ...item, isRead: true } : item)),
         );
+        markResidentNotificationRead(residentToken, notification.id).catch(() => undefined);
       }
     }
 
-    setShowNotificationsModal(false);
+    // 3. Navigate to specific screen stated in notif
     if (notification.screen === 'registration-revision') {
       onNavigate?.('registration-revision');
       return;
     }
+    if (notification.screen === 'proof-request') {
+      onNavigate?.('proof-request');
+      return;
+    }
+    if (notification.screen === 'qr') {
+      onNavigate?.('qr');
+      return;
+    }
+    if (notification.screen === 'profile') {
+      onNavigate?.('profile');
+      return;
+    }
+    if (notification.screen === 'home') {
+      onNavigate?.('home');
+      return;
+    }
+    if (notification.screen === 'distributions') {
+      onNavigate?.('distributions');
+      return;
+    }
+
+    const match = distributions.find((item) => item.id === notification.distributionId);
     if (match) {
       setSelectedDistribution(match);
+      return;
     }
+
+    onNavigate?.('distributions');
+  };
+
+  const handleMarkAllAsRead = async () => {
+    setResidentNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+    const token = await getResidentToken();
+    if (!token) return;
+    await markAllResidentNotificationsRead(token);
+  };
+
+  const handleDeleteAll = () => {
+    Alert.alert(
+      'Delete All Notifications',
+      'Are you sure you want to delete all notifications? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            setResidentNotifications([]);
+            const token = await getResidentToken();
+            if (!token) return;
+            await deleteAllResidentNotifications(token);
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -728,6 +785,30 @@ export default function HomeScreen({
                 <Ionicons name="close" size={20} color="#374151" />
               </TouchableOpacity>
             </View>
+
+            {notifications.length > 0 && (
+              <View style={styles.sheetActionBar}>
+                <TouchableOpacity
+                  style={[styles.sheetActionBtn, unreadUpdates === 0 && styles.sheetActionBtnDisabled]}
+                  onPress={handleMarkAllAsRead}
+                  disabled={unreadUpdates === 0}
+                >
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={16}
+                    color={unreadUpdates === 0 ? '#9CA3AF' : '#16A34A'}
+                  />
+                  <Text style={[styles.sheetActionText, unreadUpdates === 0 && styles.sheetActionTextDisabled]}>
+                    Mark all as read
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.sheetActionBtn} onPress={handleDeleteAll}>
+                  <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                  <Text style={[styles.sheetActionText, { color: '#EF4444' }]}>Delete all</Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
             {notifications.length === 0 ? (
               <Text style={styles.notificationEmptyText}>No notifications yet.</Text>
@@ -1275,5 +1356,32 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingVertical: 24,
   },
-
+  sheetActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  sheetActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  sheetActionBtnDisabled: {
+    opacity: 0.45,
+  },
+  sheetActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
+  sheetActionTextDisabled: {
+    color: '#9CA3AF',
+  },
 });

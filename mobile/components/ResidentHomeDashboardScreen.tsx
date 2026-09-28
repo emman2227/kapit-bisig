@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -14,11 +15,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
+  deleteAllResidentNotifications,
   fetchActiveBeneficiaryEvent,
   fetchResidentNotifications,
   fetchResidentProofSubmissionStatus,
   getResidentSession,
   getResidentToken,
+  markAllResidentNotificationsRead,
   markResidentNotificationRead,
   type ResidentDisasterEvent,
   type ResidentDistributionItem,
@@ -189,20 +192,65 @@ export default function ResidentHomeDashboardScreen({
   }, [loadAssistanceStatus, loadNotifications, onRefreshDistributions, onRefreshVirtualId]);
 
   const openNotification = useCallback(async (item: NotificationView) => {
+    // 1. Immediately close modal so notification vanishes from view
+    setShowNotifications(false);
+
+    // 2. Mark as read immediately
     if (!item.isRead) {
+      setNotifications((current) => current.map((entry) => (
+        entry.id === item.id ? { ...entry, isRead: true } : entry
+      )));
       const token = await getResidentToken();
       if (token) {
-        await markResidentNotificationRead(token, item.id);
-        setNotifications((current) => current.map((entry) => (
-          entry.id === item.id ? { ...entry, isRead: true } : entry
-        )));
+        markResidentNotificationRead(token, item.id).catch(() => undefined);
       }
     }
-    setShowNotifications(false);
-    if (item.screen === 'registration-revision') onNavigate?.('registration-revision');
-    else if (item.screen === 'proof-request') onNavigate?.('proof-request');
-    else onNavigate?.('distributions');
+
+    // 3. Navigate to specific screen stated in notif
+    if (item.screen === 'registration-revision') {
+      onNavigate?.('registration-revision');
+    } else if (item.screen === 'proof-request') {
+      onNavigate?.('proof-request');
+    } else if (item.screen === 'qr') {
+      onNavigate?.('qr');
+    } else if (item.screen === 'profile') {
+      onNavigate?.('profile');
+    } else if (item.screen === 'home') {
+      onNavigate?.('home');
+    } else if (item.screen === 'distributions') {
+      onNavigate?.('distributions');
+    } else {
+      // Default fallback
+      onNavigate?.('distributions');
+    }
   }, [onNavigate]);
+
+  const handleMarkAllAsRead = useCallback(async () => {
+    setNotifications((current) => current.map((entry) => ({ ...entry, isRead: true })));
+    const token = await getResidentToken();
+    if (!token) return;
+    await markAllResidentNotificationsRead(token);
+  }, []);
+
+  const handleDeleteAll = useCallback(() => {
+    Alert.alert(
+      'Delete All Notifications',
+      'Are you sure you want to delete all notifications? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            setNotifications([]);
+            const token = await getResidentToken();
+            if (!token) return;
+            await deleteAllResidentNotifications(token);
+          },
+        },
+      ]
+    );
+  }, []);
 
   const unreadCount = notifications.filter((item) => !item.isRead).length;
   const proofTitle = proofStatus?.status === 'Approved'
@@ -497,6 +545,30 @@ export default function ResidentHomeDashboardScreen({
                 <Ionicons name="close" size={20} color={residentColors.icon} />
               </TouchableOpacity>
             </View>
+
+            {notifications.length > 0 && (
+              <View style={styles.sheetActionBar}>
+                <TouchableOpacity
+                  style={[styles.sheetActionBtn, unreadCount === 0 && styles.sheetActionBtnDisabled]}
+                  onPress={handleMarkAllAsRead}
+                  disabled={unreadCount === 0}
+                >
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={16}
+                    color={unreadCount === 0 ? residentColors.secondary : residentColors.brandDark}
+                  />
+                  <Text style={[styles.sheetActionText, unreadCount === 0 && styles.sheetActionTextDisabled]}>
+                    Mark all as read
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.sheetActionBtn} onPress={handleDeleteAll}>
+                  <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                  <Text style={[styles.sheetActionText, { color: '#EF4444' }]}>Delete all</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {notifications.length === 0 ? (
               <View style={styles.notificationEmpty}>
                 <Ionicons name="notifications-outline" size={25} color={residentColors.icon} />
@@ -611,4 +683,32 @@ const styles = StyleSheet.create({
   notificationDate: { marginTop: 5, fontSize: 9.5, fontWeight: '700', color: residentColors.secondary },
   notificationEmpty: { minHeight: 180, alignItems: 'center', justifyContent: 'center' },
   notificationEmptyText: { marginTop: 10, fontSize: 13, color: residentColors.secondary },
+  sheetActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: residentColors.divider,
+  },
+  sheetActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  sheetActionBtnDisabled: {
+    opacity: 0.45,
+  },
+  sheetActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: residentColors.brandDark,
+  },
+  sheetActionTextDisabled: {
+    color: residentColors.secondary,
+  },
 });

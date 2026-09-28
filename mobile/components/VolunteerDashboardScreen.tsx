@@ -62,6 +62,11 @@ interface VolunteerNotificationItem {
   message: string;
   isRead: boolean;
   createdAt?: string;
+  meta?: {
+    screen?: string;
+    distributionId?: string;
+    [key: string]: unknown;
+  };
 }
 
 function notificationDate(value?: string): string {
@@ -220,18 +225,72 @@ export default function VolunteerDashboardScreen({
   };
 
   const handleNotificationPress = async (notification: VolunteerNotificationItem) => {
-    if (notification.isRead) return;
+    // 1. Immediately close notifications modal sheet
+    setShowNotifications(false);
 
-    try {
-      await mobileAuthService.authenticatedRequest(`/notifications/${notification._id}/read`, {
-        method: 'PATCH',
-      });
+    // 2. Mark as read
+    if (!notification.isRead) {
       setNotifications((prev) =>
         prev.map((item) => (item._id === notification._id ? { ...item, isRead: true } : item)),
       );
-    } catch (error) {
-      console.error('Failed to mark notification as read:', error);
+      try {
+        await mobileAuthService.authenticatedRequest(`/notifications/${notification._id}/read`, {
+          method: 'PATCH',
+        });
+      } catch (error) {
+        console.error('Failed to mark notification as read:', error);
+      }
     }
+
+    // 3. Navigate to specific screen stated in notif
+    const screen = notification.meta?.screen;
+    if (screen === 'qr') {
+      onNavigate?.('qr');
+    } else if (screen === 'profile') {
+      onNavigate?.('profile');
+    } else if (screen === 'home') {
+      onNavigate?.('home');
+    } else {
+      const text = `${notification.title} ${notification.message}`.toLowerCase();
+      if (text.includes('distribution') || text.includes('claim') || text.includes('scan') || text.includes('roster') || text.includes('relief')) {
+        onNavigate?.('qr');
+      }
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    setNotifications((prev) => prev.map((item) => ({ ...item, isRead: true })));
+    try {
+      await mobileAuthService.authenticatedRequest('/notifications/mark-all-read', {
+        method: 'PATCH',
+      });
+    } catch (error) {
+      console.error('Failed to mark all notifications as read:', error);
+    }
+  };
+
+  const handleDeleteAll = () => {
+    Alert.alert(
+      'Delete All Notifications',
+      'Are you sure you want to delete all notifications? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            setNotifications([]);
+            try {
+              await mobileAuthService.authenticatedRequest('/notifications', {
+                method: 'DELETE',
+              });
+            } catch (error) {
+              console.error('Failed to delete notifications:', error);
+            }
+          },
+        },
+      ]
+    );
   };
 
   useEffect(() => {
@@ -550,6 +609,30 @@ export default function VolunteerDashboardScreen({
                 <Ionicons name="close" size={20} color={sc.icon} />
               </TouchableOpacity>
             </View>
+
+            {notifications.length > 0 && (
+              <View style={styles.sheetActionBar}>
+                <TouchableOpacity
+                  style={[styles.sheetActionBtn, unreadCount === 0 && styles.sheetActionBtnDisabled]}
+                  onPress={handleMarkAllAsRead}
+                  disabled={unreadCount === 0}
+                >
+                  <Ionicons
+                    name="checkmark-done-outline"
+                    size={16}
+                    color={unreadCount === 0 ? sc.secondary : sc.accent}
+                  />
+                  <Text style={[styles.sheetActionText, unreadCount === 0 && styles.sheetActionTextDisabled]}>
+                    Mark all as read
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.sheetActionBtn} onPress={handleDeleteAll}>
+                  <Ionicons name="trash-outline" size={15} color="#EF4444" />
+                  <Text style={[styles.sheetActionText, { color: '#EF4444' }]}>Delete all</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             {notificationsLoading ? (
               <View style={styles.notificationEmpty}>
                 <ActivityIndicator color={sc.icon} />
@@ -701,4 +784,32 @@ const styles = StyleSheet.create({
   notificationDateText: { marginTop: 5, fontSize: 9.5, fontWeight: '700', color: sc.secondary },
   notificationEmpty: { minHeight: 180, alignItems: 'center', justifyContent: 'center' },
   notificationEmptyText: { marginTop: 10, fontSize: 13, color: sc.secondary },
+  sheetActionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    marginBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: sc.divider,
+  },
+  sheetActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+  },
+  sheetActionBtnDisabled: {
+    opacity: 0.45,
+  },
+  sheetActionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: sc.accent,
+  },
+  sheetActionTextDisabled: {
+    color: sc.secondary,
+  },
 });

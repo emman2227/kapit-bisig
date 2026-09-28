@@ -749,6 +749,64 @@ export async function markResidentNotificationRead(
   }
 }
 
+export async function markAllResidentNotificationsRead(
+  token: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/household/notifications/mark-all-read`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = await parseApiResponse<unknown>(response);
+    if (!response.ok || !payload.success) {
+      return {
+        success: false,
+        message: payload.message || 'Failed to mark all notifications as read.',
+      };
+    }
+
+    return { success: true };
+  } catch {
+    return {
+      success: false,
+      message: 'Network error while marking notifications as read.',
+    };
+  }
+}
+
+export async function deleteAllResidentNotifications(
+  token: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/household/notifications`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const payload = await parseApiResponse<unknown>(response);
+    if (!response.ok || !payload.success) {
+      return {
+        success: false,
+        message: payload.message || 'Failed to delete notifications.',
+      };
+    }
+
+    return { success: true };
+  } catch {
+    return {
+      success: false,
+      message: 'Network error while deleting notifications.',
+    };
+  }
+}
+
 export async function registerResidentPushDevice(
   token: string,
   expoPushToken: string,

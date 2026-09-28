@@ -945,6 +945,85 @@ router.delete('/notifications/devices', authMiddleware, authenticatedResidentRea
 });
 
 /**
+ * Resident Notification Mark All As Read Endpoint
+ *
+ * PATCH /api/household/notifications/mark-all-read
+ */
+router.patch('/notifications/mark-all-read', authMiddleware, authenticatedResidentReadRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'Resident') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only resident accounts can update notifications.',
+      });
+    }
+
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const result = await Notification.updateMany(
+      { userId, isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    return res.json({
+      success: true,
+      message: 'All notifications marked as read',
+      data: { modifiedCount: result.modifiedCount },
+    });
+  } catch (error) {
+    console.error('[HouseholdRoutes] Resident notifications mark-all-read error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to mark all notifications as read.',
+    });
+  }
+});
+
+/**
+ * Resident Notifications Delete All Endpoint
+ *
+ * DELETE /api/household/notifications
+ */
+router.delete('/notifications', authMiddleware, authenticatedResidentReadRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (req.user?.role !== 'Resident') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only resident accounts can delete notifications.',
+      });
+    }
+
+    const userId = req.user?.userId;
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required',
+      });
+    }
+
+    const result = await Notification.deleteMany({ userId });
+
+    return res.json({
+      success: true,
+      message: 'All notifications deleted',
+      data: { deletedCount: result.deletedCount },
+    });
+  } catch (error) {
+    console.error('[HouseholdRoutes] Resident notifications delete-all error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Unable to delete notifications.',
+    });
+  }
+});
+
+/**
  * Resident Notification Read Endpoint
  *
  * PATCH /api/household/notifications/:id/read

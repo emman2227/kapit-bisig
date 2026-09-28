@@ -342,7 +342,7 @@ export default function DistributionsTable({
                 ) : null}
               </div>
 
-              <div className="relative min-w-[150px]">
+              <div className="relative min-w-[190px]">
                 <button
                   ref={statusBtnRef}
                   type="button"
@@ -686,7 +686,7 @@ function DropdownMenu({
   return (
     <div
       ref={menuRef}
-      className="absolute left-0 top-full z-50 mt-2 w-full rounded-2xl border border-[#DCDCDC] bg-[#ECECEC] p-2 shadow-[0_10px_30px_rgba(0,0,0,0.14)] dark:border-slate-700 dark:bg-slate-800 dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+      className="absolute left-0 top-full z-50 mt-2 min-w-full w-max rounded-2xl border border-[#DCDCDC] bg-[#ECECEC] p-2 shadow-[0_10px_30px_rgba(0,0,0,0.14)] dark:border-slate-700 dark:bg-slate-800 dark:shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
     >
       {items.map((option) => {
         const isSelected = option.value === selected
@@ -696,13 +696,13 @@ function DropdownMenu({
             type="button"
             onClick={() => onSelect(option.value)}
             className={[
-              'w-full flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-colors',
+              'w-full flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-colors whitespace-nowrap',
               isSelected ? 'bg-[#EAB308] text-gray-900 font-medium' : 'text-slate-700 hover:bg-white/70 dark:text-slate-200 dark:hover:bg-slate-700 font-medium',
             ].join(' ')}
           >
             <span className="flex items-center gap-2">
-              <span className="flex w-5 items-center justify-center">{isSelected ? <CheckIcon /> : null}</span>
-              <span className="truncate">{option.label}</span>
+              <span className="flex w-5 items-center justify-center shrink-0">{isSelected ? <CheckIcon /> : null}</span>
+              <span className="whitespace-nowrap">{option.label}</span>
             </span>
           </button>
         )

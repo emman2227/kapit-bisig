@@ -677,11 +677,8 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
         )}
 
         <View style={styles.heroCard}>
-          <View style={styles.heroRow}>
-            <View>
-              <Text style={styles.eyebrow}>Distribution Scanning</Text>
-              <Text style={styles.heroTitle}>Scan resident QR and confirm release</Text>
-            </View>
+          <View style={styles.heroTopRow}>
+            <Text style={styles.eyebrow}>Distribution Scanning</Text>
             <View style={[styles.stateChip, { backgroundColor: tone.chipBg }]}>
               <Text style={[styles.stateChipText, { color: tone.chipText }]}>
                 {scannerTone === 'working'
@@ -700,6 +697,7 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
               </Text>
             </View>
           </View>
+          <Text style={styles.heroTitle}>Scan resident QR and confirm release</Text>
 
           <Text style={styles.heroSubtext}>
             Keep the QR inside the frame. Claims are recorded automatically when the resident is eligible for the active distribution.
@@ -1043,11 +1041,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
-  heroRow: {
+  heroTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 10,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
   },
   eyebrow: {
     fontSize: 11,
@@ -1055,15 +1054,14 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     color: '#0F766E',
     letterSpacing: 1.1,
+    flexShrink: 1,
   },
   heroTitle: {
-    marginTop: 6,
     fontSize: 24,
     lineHeight: 28,
     fontWeight: '800',
     color: '#0F172A',
     letterSpacing: -0.6,
-    maxWidth: '82%',
   },
   heroSubtext: {
     marginTop: 10,
