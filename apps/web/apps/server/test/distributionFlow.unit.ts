@@ -85,6 +85,34 @@ export function runDistributionFlowUnitTests(): void {
   });
   assert.strictEqual(validCreateWithoutEvent.success, true);
 
+  // Valid create with requiresBeneficiaryApproval: true (Targeted Aid)
+  const validCreateTargeted = createDistributionBody.safeParse({
+    disasterEventId: validDisasterEventId,
+    barangay: 'Bolo',
+    scheduled: validSchedule,
+    endsAt: validEndsAt,
+    assignedStaffIds: [validStaffId],
+    requiresBeneficiaryApproval: true,
+  });
+  assert.strictEqual(validCreateTargeted.success, true);
+  if (validCreateTargeted.success) {
+    assert.strictEqual(validCreateTargeted.data.requiresBeneficiaryApproval, true);
+  }
+
+  // Valid create with requiresBeneficiaryApproval: false (General Calamity Relief)
+  const validCreateGeneral = createDistributionBody.safeParse({
+    disasterEventId: validDisasterEventId,
+    barangay: 'Bolo',
+    scheduled: validSchedule,
+    endsAt: validEndsAt,
+    assignedStaffIds: [validStaffId],
+    requiresBeneficiaryApproval: false,
+  });
+  assert.strictEqual(validCreateGeneral.success, true);
+  if (validCreateGeneral.success) {
+    assert.strictEqual(validCreateGeneral.data.requiresBeneficiaryApproval, false);
+  }
+
   // Invalid: missing assigned staff
   const missingStaff = createDistributionBody.safeParse({
     barangay: 'Bolo',

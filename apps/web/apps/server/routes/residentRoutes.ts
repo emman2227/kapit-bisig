@@ -32,6 +32,7 @@ import {
 } from '../utils/imageStorage';
 import { createNotification } from '../utils/createNotification';
 import { sendAccountStatusUpdateSms } from '../utils/smsService';
+import { logAudit } from '../utils/audit';
 
 const router = Router();
 const REGISTER_PAYLOAD_MAX_BYTES = 8 * 1024 * 1024; // 8MB
@@ -402,7 +403,7 @@ router.get('/', requireAuth, requireStaffOrSuperadmin, validateRequest({ query: 
 router.patch(
   '/:id/status',
   requireAuth,
-  requireSuperadmin,
+  requireStaffOrSuperadmin,
   validateRequest({ params: residentIdParams, body: residentStatusUpdateBody }),
   async (req: AuthRequest, res: Response) => {
     try {
@@ -498,6 +499,12 @@ router.patch(
         });
       }
 
+      await logAudit(req, 'RESIDENT_STATUS_UPDATED', 'Resident', resident._id.toString(), {
+        status,
+        rejectionReason: resident.rejectionReason,
+        barangay: resident.barangay,
+        verifiedBy: resident.verifiedBy,
+      });
 
       return res.json({
         success: true,

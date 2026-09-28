@@ -634,6 +634,7 @@ export const api = {
     scheduled: string;
     endsAt: string;
     notes?: string;
+    requiresBeneficiaryApproval?: boolean;
   }, options?: { idempotencyKey?: string }): Promise<CreateDistributionResponse> {
     const headers = createHeaders('POST') as Record<string, string>;
     if (options?.idempotencyKey) {

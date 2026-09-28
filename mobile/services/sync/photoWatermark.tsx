@@ -27,6 +27,24 @@ function formatWatermarkDate(date: Date): string {
 }
 
 /**
+ * Calculate scaled dimensions that fit within maxDimension while preserving original aspect ratio.
+ */
+export function getScaledWatermarkDimensions(
+  origWidth: number,
+  origHeight: number,
+  maxDimension = 1080,
+): { width: number; height: number } {
+  if (!origWidth || !origHeight) {
+    return { width: 720, height: 960 };
+  }
+  const scale = Math.min(1, maxDimension / Math.max(origWidth, origHeight));
+  return {
+    width: Math.max(320, Math.round(origWidth * scale)),
+    height: Math.max(320, Math.round(origHeight * scale)),
+  };
+}
+
+/**
  * The watermark overlay component. This is rendered off-screen and captured
  * via react-native-view-shot.
  */
@@ -35,15 +53,19 @@ export function WatermarkOverlay({
   barangay,
   dateLabel,
   viewRef,
+  width = 720,
+  height = 960,
 }: {
   uri: string;
   barangay: string;
   dateLabel: string;
   viewRef: React.RefObject<View | null>;
+  width?: number;
+  height?: number;
 }) {
   return (
-    <View ref={viewRef} style={watermarkStyles.container} collapsable={false}>
-      <Image source={{ uri }} style={watermarkStyles.image} resizeMode="cover" />
+    <View ref={viewRef} style={[watermarkStyles.container, { width, height }]} collapsable={false}>
+      <Image source={{ uri }} style={{ width, height }} resizeMode="contain" />
       <View style={watermarkStyles.overlay}>
         <Text style={watermarkStyles.text} numberOfLines={1}>
           {dateLabel} • Brgy. {barangay} • Kapit-Bisig
@@ -53,20 +75,12 @@ export function WatermarkOverlay({
   );
 }
 
-const WATERMARK_SIZE = 640;
-
 const watermarkStyles = StyleSheet.create({
   container: {
-    width: WATERMARK_SIZE,
-    height: WATERMARK_SIZE,
     position: 'absolute',
     left: -9999,
     top: -9999,
     backgroundColor: '#000',
-  },
-  image: {
-    width: WATERMARK_SIZE,
-    height: WATERMARK_SIZE,
   },
   overlay: {
     position: 'absolute',
@@ -95,12 +109,13 @@ const watermarkStyles = StyleSheet.create({
  */
 export async function captureWatermarkedPhoto(
   viewRef: React.RefObject<View | null>,
+  width?: number,
+  height?: number,
 ): Promise<string> {
   const uri = await captureRef(viewRef, {
     format: 'jpg',
-    quality: 0.8,
-    width: WATERMARK_SIZE,
-    height: WATERMARK_SIZE,
+    quality: 0.85,
+    ...(width && height ? { width, height } : {}),
   });
   return uri;
 }

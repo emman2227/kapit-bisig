@@ -43,6 +43,7 @@ import Claim from '../models/Claim';
 import Notification from '../models/Notification';
 import ResidentQrScanLog from '../models/ResidentQrScanLog';
 import ResidentPushDevice from '../models/ResidentPushDevice';
+import BeneficiaryEligibility from '../models/BeneficiaryEligibility';
 import { computeEventHash, computeHouseholdHash } from '../utils/hashHelpers';
 import {
   upsertDistributionClaimFromClaim,
@@ -750,25 +751,41 @@ router.get('/distributions', authMiddleware, authenticatedResidentReadRateLimite
       ],
     })
       .setOptions({ sanitizeFilter: false })
-      .select('barangay assignedBarangays scheduled endsAt notes status archivedAt createdAt')
+      .select('barangay assignedBarangays scheduled endsAt notes status archivedAt createdAt requiresBeneficiaryApproval')
       .sort({ scheduled: 1, createdAt: -1 })
       .limit(50)
       .lean();
 
     const visibleDistributionIds = coveredDistributions.map((distribution) => distribution._id);
-    const residentClaims = visibleDistributionIds.length > 0
-      ? await Claim.find({
-          claimCategory: 'DISTRIBUTION',
-          residentId: userId,
-          distributionId: mongoose.trusted({ $in: visibleDistributionIds }),
-          status: mongoose.trusted({ $in: [...CLAIMED_STATUSES] }),
-        })
-          .setOptions({ sanitizeFilter: false })
-          .select('distributionId status createdAt')
-          .sort({ createdAt: -1 })
-          .limit(50)
-          .lean()
-      : [];
+    const visibleEventIds = coveredDistributions.map((d) => d.disasterEventId).filter(Boolean);
+
+    const [residentClaims, residentEligibilities] = await Promise.all([
+      visibleDistributionIds.length > 0
+        ? Claim.find({
+            claimCategory: 'DISTRIBUTION',
+            residentId: userId,
+            distributionId: mongoose.trusted({ $in: visibleDistributionIds }),
+            status: mongoose.trusted({ $in: [...CLAIMED_STATUSES] }),
+          })
+            .setOptions({ sanitizeFilter: false })
+            .select('distributionId status createdAt')
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .lean()
+        : Promise.resolve([]),
+      visibleDistributionIds.length > 0
+        ? BeneficiaryEligibility.find({
+            residentId: userId,
+            $or: [
+              { distributionId: mongoose.trusted({ $in: visibleDistributionIds }) },
+              ...(visibleEventIds.length > 0 ? [{ disasterEventId: mongoose.trusted({ $in: visibleEventIds }) }] : []),
+            ],
+          })
+            .setOptions({ sanitizeFilter: false })
+            .select('distributionId disasterEventId status proofStatus')
+            .lean()
+        : Promise.resolve([]),
+    ]);
 
     const claimByDistribution = new Map<string, string>();
     for (const claim of residentClaims) {
@@ -777,9 +794,30 @@ router.get('/distributions', authMiddleware, authenticatedResidentReadRateLimite
       }
     }
 
+    const eligibilityByDistribution = new Map<string, { status: string; proofStatus: string }>();
+    const eligibilityByEvent = new Map<string, { status: string; proofStatus: string }>();
+    for (const el of residentEligibilities) {
+      if (el.distributionId) {
+        eligibilityByDistribution.set(String(el.distributionId), {
+          status: el.status,
+          proofStatus: el.proofStatus,
+        });
+      }
+      if (el.disasterEventId) {
+        eligibilityByEvent.set(String(el.disasterEventId), {
+          status: el.status,
+          proofStatus: el.proofStatus,
+        });
+      }
+    }
+
     const data = coveredDistributions.map((distribution) => {
       const id = distribution._id.toString();
       const claimStatus = claimByDistribution.get(id) || null;
+      const el = eligibilityByDistribution.get(id) || (distribution.disasterEventId ? eligibilityByEvent.get(String(distribution.disasterEventId)) : null);
+      const isApprovedBeneficiary = el?.status === 'Eligible' && el?.proofStatus === 'Approved';
+      const proofStatus = el?.proofStatus || null;
+
       return {
         id,
         barangay: distribution.barangay,
@@ -788,6 +826,9 @@ router.get('/distributions', authMiddleware, authenticatedResidentReadRateLimite
         endsAt: distribution.endsAt,
         notes: distribution.notes || '',
         status: distribution.status,
+        requiresBeneficiaryApproval: distribution.requiresBeneficiaryApproval === true,
+        isBeneficiaryApproved: isApprovedBeneficiary,
+        beneficiaryProofStatus: proofStatus,
         createdAt: distribution.createdAt,
         lifecycleStatus: deriveDistributionLifecycle(distribution, now),
         residentClaimed: Boolean(claimStatus),

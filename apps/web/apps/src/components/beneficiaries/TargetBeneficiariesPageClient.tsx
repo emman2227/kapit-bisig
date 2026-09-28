@@ -1,7 +1,6 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { createPortal } from 'react-dom'
 import {
   api,
   BeneficiaryProofQueueSummary,
@@ -11,18 +10,31 @@ import {
 } from '@/lib/api'
 import { useAuth } from '@/lib/AuthContext'
 import { showToast } from '@/lib/toast'
-import ConfirmModal from '@/components/ui/ConfirmModal'
 import SummaryMetricCard from '@/components/ui/SummaryMetricCard'
 import SectionHeader from '@/components/ui/SectionHeader'
 import FilterDropdown from '@/components/ui/FilterDropdown'
 import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
+import BeneficiaryProofReviewModal from './BeneficiaryProofReviewModal'
+import {
+  Search,
+  RotateCcw,
+  RefreshCw,
+  FileText,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  MapPin,
+  ImageIcon,
+  Sparkles,
+} from 'lucide-react'
 
 const ALL_STATUSES = '__ALL_STATUSES__'
 const ALL_BARANGAYS = 'All Barangays'
-const PAGE_SIZE = 12
+const PAGE_SIZE = 10
 const PENDING_STATUS = 'Pending Verification'
-
-type ReviewDecision = 'Approved' | 'Rejected'
 
 const INITIAL_PROOF_SUMMARY: BeneficiaryProofQueueSummary = {
   total: 0,
@@ -38,65 +50,14 @@ function getProofId(submission: BeneficiaryProofSubmissionRecord): string {
 }
 
 function formatDateTime(value?: string | null): string {
-  if (!value) return 'Not set'
+  if (!value) return '-'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Invalid date'
-  return date.toLocaleString(undefined, {
+  if (Number.isNaN(date.getTime())) return value || '-'
+  return date.toLocaleDateString(undefined, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
   })
-}
-
-function statusBadgeClass(status: string): string {
-  switch (status) {
-    case 'Pending Verification':
-      return 'bg-amber-100 text-amber-800 border-amber-200'
-    case 'Approved':
-    case 'Eligible':
-    case 'Active':
-      return 'bg-emerald-100 text-emerald-800 border-emerald-200'
-    case 'Rejected':
-    case 'Not Eligible':
-    case 'Closed':
-      return 'bg-rose-100 text-rose-800 border-rose-200'
-    case 'Draft':
-      return 'bg-slate-100 text-slate-700 border-slate-200'
-    default:
-      return 'bg-slate-100 text-slate-700 border-slate-200'
-  }
-}
-
-function getProofStatusLabel(status: BeneficiaryProofSubmissionRecord['status']): string {
-  return status === 'Rejected' ? 'Needs Revision' : status
-}
-
-function getReviewDeliveryMessage(delivery?: BeneficiaryReviewNotificationDelivery): string {
-  const pushDelivered = delivery?.push.status === 'sent_successfully'
-    || delivery?.push.status === 'partially_delivered'
-  const smsDelivered = delivery?.sms.status === 'sent_successfully'
-
-  if (pushDelivered && smsDelivered) {
-    return ' The resident was notified by Firebase push, in the app, and by SMS.'
-  }
-  if (pushDelivered) {
-    return ' The resident was notified by Firebase push and in the app.'
-  }
-  if (smsDelivered) {
-    return ' The resident was notified in the app and by SMS; no Firebase push was delivered.'
-  }
-  if (delivery?.push.status === 'no_eligible_recipients') {
-    return ' The in-app notification was saved, but this resident has no active push device.'
-  }
-  if (delivery?.push.status === 'provider_not_configured') {
-    return ' The in-app notification was saved. Firebase push delivery is not enabled.'
-  }
-  if (delivery?.push.status === 'provider_request_failed') {
-    return ' The in-app notification was saved, but Firebase push delivery failed.'
-  }
-  return ' The resident was notified in the app.'
 }
 
 function resolveProofAssetUrl(value: string): string {
@@ -110,86 +71,43 @@ function resolveProofAssetUrl(value: string): string {
 }
 
 function getProofUrls(submission: BeneficiaryProofSubmissionRecord): string[] {
-  const sources = Array.isArray(submission.photoProofUrls) && submission.photoProofUrls.length > 0
-    ? submission.photoProofUrls
-    : [submission.photoProofUrl]
+  const list = [
+    ...(Array.isArray(submission.photoProofUrls) ? submission.photoProofUrls : []),
+    submission.photoProofUrl,
+  ]
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean)
+    .map(resolveProofAssetUrl)
 
-  return sources
-    .map((value) => resolveProofAssetUrl(value))
-    .filter((value, index, array) => value !== '#' && array.indexOf(value) === index)
-    .slice(0, 5)
+  return Array.from(new Set(list))
 }
 
-function truncateText(value: string | null | undefined, maxLength: number): string {
-  const text = String(value || '').trim()
-  if (!text) return ''
-  if (text.length <= maxLength) return text
-  return `${text.slice(0, maxLength).trimEnd()}...`
+function statusBadgeClass(status: string): string {
+  switch (status) {
+    case 'Pending Verification':
+      return 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-900/50'
+    case 'Approved':
+    case 'Eligible':
+    case 'Active':
+      return 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-900/50'
+    case 'Rejected':
+    case 'Not Eligible':
+      return 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-900/50'
+    default:
+      return 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800'
+  }
 }
 
-function RevisionRequestModal({
-  open,
-  loading,
-  residentName,
-  eventName,
-  reason,
-  onReasonChange,
-  onClose,
-  onSubmit,
-}: {
-  open: boolean
-  loading: boolean
-  residentName: string
-  eventName: string
-  reason: string
-  onReasonChange: (value: string) => void
-  onClose: () => void
-  onSubmit: () => void
-}) {
-  if (!open || typeof document === 'undefined') return null
+function getProofStatusLabel(status: BeneficiaryProofSubmissionRecord['status']): string {
+  return status === 'Rejected' ? 'Needs Revision' : status
+}
 
-  return createPortal(
-    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={loading ? undefined : onClose} />
-      <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900 dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-600">Return Submission</p>
-        <h3 className="mt-2 text-xl font-black text-gray-900 dark:text-slate-100">Request more proof or missing requirements</h3>
-        <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
-          This note will be sent back to <span className="font-semibold text-gray-900 dark:text-slate-100">{residentName}</span> for{' '}
-          <span className="font-semibold text-gray-900 dark:text-slate-100">{eventName}</span>.
-        </p>
-
-        <textarea
-          value={reason}
-          onChange={(event) => onReasonChange(event.target.value)}
-          rows={5}
-          placeholder="Explain what the resident still needs to upload or clarify, such as a barangay indigency certificate or clearer damage photos."
-          className="mt-5 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition-colors focus:border-gray-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-slate-500"
-        />
-
-        <div className="mt-5 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={loading}
-            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
-          >
-            {loading ? <SpinnerIcon className="h-4 w-4" /> : null}
-            Return for revision
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
+function getReviewDeliveryMessage(delivery?: BeneficiaryReviewNotificationDelivery): string {
+  const smsDelivered = delivery?.sms.status === 'sent_successfully'
+  if (smsDelivered) {
+    return ' Resident was notified via SMS and in-app.'
+  }
+  return ' Resident was notified in-app.'
 }
 
 export default function TargetBeneficiariesPageClient() {
@@ -211,110 +129,8 @@ export default function TargetBeneficiariesPageClient() {
   const [appliedSearch, setAppliedSearch] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  const [reviewTarget, setReviewTarget] = useState<BeneficiaryProofSubmissionRecord | null>(null)
-  const [reviewDecision, setReviewDecision] = useState<ReviewDecision>('Approved')
-  const [reviewReason, setReviewReason] = useState('')
-  const [reviewLoading, setReviewLoading] = useState(false)
-  const [confirmApproveOpen, setConfirmApproveOpen] = useState(false)
-
-const DEMO_PROOF_SUBMISSIONS: BeneficiaryProofSubmissionRecord[] = [
-  {
-    id: 'demo-proof-001',
-    _id: 'demo-proof-001',
-    damageType: 'Flood',
-    description: 'Ground floor submerged up to waist level after river overflow. Appliances and basic food storage damaged.',
-    supportingInfo: 'Barangay Certificate of Calamity Indigency submitted. Purok 4 riverside area.',
-    dateSubmitted: new Date(Date.now() - 3600000 * 2).toISOString(),
-    photoProofUrl: 'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=600&q=80',
-    photoProofUrls: [
-      'https://images.unsplash.com/photo-1547683905-f686c993aae5?auto=format&fit=crop&w=600&q=80',
-      'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=600&q=80',
-    ],
-    status: 'Pending Verification',
-    submissionVersion: 1,
-    syncSource: 'ONLINE',
-    resident: {
-      _id: 'demo-res-001',
-      residentCode: 'RES-2026-0841',
-      fullName: 'Maria Santos Cruz (Demo)',
-      barangay: 'Bolo',
-      status: 'Approved',
-    },
-    event: {
-      _id: 'demo-evt-001',
-      name: 'Typhoon Aghon Relief Operation',
-      disasterType: 'Typhoon',
-      status: 'Active',
-    },
-    createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-  },
-  {
-    id: 'demo-proof-002',
-    _id: 'demo-proof-002',
-    damageType: 'House Damage',
-    description: 'GI Sheet roofing blown away by severe wind gusts. Living area flooded by torrential rain.',
-    supportingInfo: 'Requires replacement roofing and immediate family relief food pack.',
-    dateSubmitted: new Date(Date.now() - 86400000).toISOString(),
-    photoProofUrl: 'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=600&q=80',
-    photoProofUrls: [
-      'https://images.unsplash.com/photo-1515694346937-94d85e41e6f0?auto=format&fit=crop&w=600&q=80',
-    ],
-    status: 'Approved',
-    submissionVersion: 1,
-    syncSource: 'OFFLINE_SYNC',
-    reviewedBy: 'Super Admin (Demo)',
-    reviewedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-    resident: {
-      _id: 'demo-res-002',
-      residentCode: 'RES-2026-0512',
-      fullName: 'Juan Delgado Ramos (Demo)',
-      barangay: 'Poblacion',
-      status: 'Approved',
-    },
-    event: {
-      _id: 'demo-evt-001',
-      name: 'Typhoon Aghon Relief Operation',
-      disasterType: 'Typhoon',
-      status: 'Active',
-    },
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-    updatedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
-  },
-  {
-    id: 'demo-proof-003',
-    _id: 'demo-proof-003',
-    damageType: 'Livelihood Loss',
-    description: 'Fishing gear and motorized boat hull cracked along coastal surge zone.',
-    supportingInfo: 'Coastal zone shoreline sector 2.',
-    dateSubmitted: new Date(Date.now() - 86400000 * 2).toISOString(),
-    photoProofUrl: 'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
-    photoProofUrls: [
-      'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?auto=format&fit=crop&w=600&q=80',
-    ],
-    status: 'Rejected',
-    rejectionReason: 'Please attach a clearer photo of the damaged boat registration or certificate from the fisherfolk association.',
-    submissionVersion: 1,
-    syncSource: 'ONLINE',
-    reviewedBy: 'LGU Officer (Demo)',
-    reviewedAt: new Date(Date.now() - 86400000).toISOString(),
-    resident: {
-      _id: 'demo-res-003',
-      residentCode: 'RES-2026-0923',
-      fullName: 'Arnel Bautista Morales (Demo)',
-      barangay: 'Tobuan',
-      status: 'Approved',
-    },
-    event: {
-      _id: 'demo-evt-001',
-      name: 'Typhoon Aghon Relief Operation',
-      disasterType: 'Typhoon',
-      status: 'Active',
-    },
-    createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
-    updatedAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-]
+  // Review Modal state
+  const [activeReviewRecord, setActiveReviewRecord] = useState<BeneficiaryProofSubmissionRecord | null>(null)
 
   const fetchProofQueue = useCallback(async () => {
     if (!user) return
@@ -323,9 +139,10 @@ const DEMO_PROOF_SUBMISSIONS: BeneficiaryProofSubmissionRecord[] = [
       setProofLoading(true)
       setError(null)
       const response = await api.getBeneficiaryProofSubmissions({
-        status: selectedStatus !== ALL_STATUSES
-          ? (selectedStatus as 'Pending Verification' | 'Approved' | 'Rejected')
-          : undefined,
+        status:
+          selectedStatus !== ALL_STATUSES
+            ? (selectedStatus as 'Pending Verification' | 'Approved' | 'Rejected')
+            : undefined,
         barangay: selectedBarangay !== ALL_BARANGAYS ? selectedBarangay : undefined,
         search: appliedSearch || undefined,
         page,
@@ -333,54 +150,14 @@ const DEMO_PROOF_SUBMISSIONS: BeneficiaryProofSubmissionRecord[] = [
       })
 
       const rawRows = Array.isArray(response.data) ? response.data : []
-      // Use live API rows if available, else fall back to realistic demo proofs so the UI can be fully explored
-      const rows = rawRows.length > 0 ? rawRows : DEMO_PROOF_SUBMISSIONS.filter((item) => {
-        if (selectedStatus !== ALL_STATUSES && item.status !== selectedStatus) return false
-        if (selectedBarangay !== ALL_BARANGAYS && item.resident.barangay !== selectedBarangay) return false
-        if (appliedSearch) {
-          const q = appliedSearch.toLowerCase()
-          return (
-            item.resident.fullName.toLowerCase().includes(q) ||
-            item.resident.residentCode.toLowerCase().includes(q) ||
-            item.damageType.toLowerCase().includes(q)
-          )
-        }
-        return true
-      })
-
-      const nextTotalPages = response.pagination?.totalPages || 1
-      const nextSummary = (rawRows.length > 0 && response.summary) ? response.summary : {
-        total: DEMO_PROOF_SUBMISSIONS.length,
-        pendingVerification: DEMO_PROOF_SUBMISSIONS.filter((row) => row.status === 'Pending Verification').length,
-        approved: DEMO_PROOF_SUBMISSIONS.filter((row) => row.status === 'Approved').length,
-        rejected: DEMO_PROOF_SUBMISSIONS.filter((row) => row.status === 'Rejected').length,
-      }
-      setProofRows(rows)
-      setProofSummary(nextSummary)
-      setTotalPages(nextTotalPages)
-    } catch (err) {
-      console.warn('Backend unavailable, falling back to interactive demo records:', err)
-      // Populate demo rows so user can inspect and test the full UI without database downtime
-      const filtered = DEMO_PROOF_SUBMISSIONS.filter((item) => {
-        if (selectedStatus !== ALL_STATUSES && item.status !== selectedStatus) return false
-        if (selectedBarangay !== ALL_BARANGAYS && item.resident.barangay !== selectedBarangay) return false
-        if (appliedSearch) {
-          const q = appliedSearch.toLowerCase()
-          return (
-            item.resident.fullName.toLowerCase().includes(q) ||
-            item.resident.residentCode.toLowerCase().includes(q) ||
-            item.damageType.toLowerCase().includes(q)
-          )
-        }
-        return true
-      })
-      setProofRows(filtered)
-      setProofSummary({
-        total: DEMO_PROOF_SUBMISSIONS.length,
-        pendingVerification: DEMO_PROOF_SUBMISSIONS.filter((r) => r.status === 'Pending Verification').length,
-        approved: DEMO_PROOF_SUBMISSIONS.filter((r) => r.status === 'Approved').length,
-        rejected: DEMO_PROOF_SUBMISSIONS.filter((r) => r.status === 'Rejected').length,
-      })
+      setProofRows(rawRows)
+      setProofSummary(response.summary || INITIAL_PROOF_SUMMARY)
+      setTotalPages(response.pagination?.totalPages || 1)
+    } catch (err: any) {
+      console.error('Failed to load beneficiary proofs:', err)
+      setError(err?.message || 'Failed to load proof submissions.')
+      setProofRows([])
+      setProofSummary(INITIAL_PROOF_SUMMARY)
       setTotalPages(1)
     } finally {
       setProofLoading(false)
@@ -405,134 +182,91 @@ const DEMO_PROOF_SUBMISSIONS: BeneficiaryProofSubmissionRecord[] = [
     setPage(1)
   }, [])
 
-  const openApproveModal = useCallback((submission: BeneficiaryProofSubmissionRecord) => {
-    setReviewTarget(submission)
-    setReviewDecision('Approved')
-    setReviewReason('')
-    setConfirmApproveOpen(true)
-  }, [])
-
-  const openRejectModal = useCallback((submission: BeneficiaryProofSubmissionRecord) => {
-    setReviewTarget(submission)
-    setReviewDecision('Rejected')
-    setReviewReason(submission.rejectionReason || '')
-  }, [])
-
-  const closeReviewModals = useCallback(() => {
-    setConfirmApproveOpen(false)
-    setReviewTarget(null)
-    setReviewReason('')
-    setReviewLoading(false)
-  }, [])
-
-  const submitReview = useCallback(async () => {
-    if (!reviewTarget) return
-    if (reviewDecision === 'Rejected' && !reviewReason.trim()) {
-      showToast.error('A revision note is required.')
-      return
-    }
-
-    setReviewLoading(true)
-    try {
-      const reviewedId = getProofId(reviewTarget)
-      if (reviewedId.startsWith('demo-proof-')) {
-        // Instant simulated demo review so the user can test the approval / return flow in the UI
-        await new Promise((resolve) => setTimeout(resolve, 600))
-        showToast.success(
-          `Demo submission ${reviewDecision === 'Approved' ? 'approved' : 'returned for revision'}. The resident was notified in the app and by SMS.`
-        )
-        closeReviewModals()
-        setProofRows((prev) => prev.filter((row) => getProofId(row) !== reviewedId))
-        setProofSummary((prev) => ({
-          total: Math.max(0, prev.total - 1),
-          pendingVerification: Math.max(0, prev.pendingVerification - 1),
-          approved: reviewDecision === 'Approved' ? prev.approved + 1 : prev.approved,
-          rejected: reviewDecision === 'Rejected' ? prev.rejected + 1 : prev.rejected,
-        }))
-        return
-      }
-
-      const response = await api.reviewBeneficiaryProofSubmission(getProofId(reviewTarget), {
-        decision: reviewDecision,
-        rejectionReason: reviewDecision === 'Rejected' ? reviewReason.trim() : undefined,
+  const handleApprove = useCallback(
+    async (submissionId: string) => {
+      const response = await api.reviewBeneficiaryProofSubmission(submissionId, {
+        decision: 'Approved',
       })
-      const baseMessage = response.message
-        || `Submission ${reviewDecision === 'Approved' ? 'approved' : 'returned for revision'}.`
-      showToast.success(
-        `${baseMessage}${getReviewDeliveryMessage(response.data?.notificationDelivery)}`,
-      )
-      closeReviewModals()
+      const baseMessage = response.message || 'Proof submission approved.'
+      showToast.success(`${baseMessage}${getReviewDeliveryMessage(response.data?.notificationDelivery)}`)
+      await fetchProofQueue()
+    },
+    [fetchProofQueue],
+  )
 
-      // Keep the review queue focused on items that still need action.
-      setProofRows((prev) => prev.filter((row) => getProofId(row) !== reviewedId))
-      setProofSummary((prev) => ({
-        total: Math.max(0, prev.total - 1),
-        pendingVerification: Math.max(0, prev.pendingVerification - 1),
-        approved: reviewDecision === 'Approved' ? prev.approved + 1 : prev.approved,
-        rejected: reviewDecision === 'Rejected' ? prev.rejected + 1 : prev.rejected,
-      }))
-
-      if (page > 1 && proofRows.length === 1) {
-        setPage((prev) => Math.max(1, prev - 1))
-        return
-      }
-
-      if (selectedStatus !== PENDING_STATUS) {
-        setSelectedStatus(PENDING_STATUS)
-        setPage(1)
-        return
-      }
-    } catch (err) {
-      console.error('Failed to update proof submission:', err)
-      const message = err instanceof Error && err.message
-        ? err.message
-        : 'Failed to update proof submission. Please try again.'
-      showToast.error(message)
-      setReviewLoading(false)
-    }
-  }, [closeReviewModals, page, proofRows.length, reviewDecision, reviewReason, reviewTarget, selectedStatus])
-
-  if (loading) return null
+  const handleReject = useCallback(
+    async (submissionId: string, reason: string) => {
+      const response = await api.reviewBeneficiaryProofSubmission(submissionId, {
+        decision: 'Rejected',
+        rejectionReason: reason,
+      })
+      const baseMessage = response.message || 'Proof submission returned for revision.'
+      showToast.info(`${baseMessage}${getReviewDeliveryMessage(response.data?.notificationDelivery)}`)
+      await fetchProofQueue()
+    },
+    [fetchProofQueue],
+  )
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-[0_2px_14px_rgba(0,0,0,0.05)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
-        <div className="border-b border-slate-200/80 bg-slate-50/90 px-5 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-6">
+      {/* 1. Top Metrics Section */}
+      <section className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white shadow-[0_2px_14px_rgba(0,0,0,0.05)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+        <div className="border-b border-slate-200/80 bg-slate-50/90 px-6 py-5 dark:border-slate-800 dark:bg-slate-950/60">
           <SectionHeader
-            eyebrow="Target Beneficiary Control"
-            title="Event-scoped eligibility review"
-            subtitle="Review resident proof submissions, approve eligible claims, or return for revision."
+            eyebrow="Target Beneficiary Review"
+            title="Event-scoped damage proof verification"
+            subtitle="Review resident damage proof uploads, verify calamity eligibility, or return incomplete submissions for revision"
             rightAccessory={
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-                Pending reviews: {proofSummary.pendingVerification}
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-800 shadow-sm">
+                <Clock className="h-3.5 w-3.5 text-amber-500" />
+                Pending Review: {proofSummary.pendingVerification}
               </div>
             }
           />
         </div>
 
-        <div className="p-5 sm:p-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <SummaryMetricCard label="Matched Submissions" value={String(proofSummary.total)} helper="Across the current proof queue filter" variant="blue" icon={<ClipboardIcon className="h-5 w-5" />} />
-          <SummaryMetricCard label="Pending Reviews" value={String(proofSummary.pendingVerification)} helper="Across the current queue filter" variant="amber" icon={<ClockIcon className="h-5 w-5" />} />
-          <SummaryMetricCard label="Approved Proofs" value={String(proofSummary.approved)} helper="Across the current queue filter" variant="emerald" icon={<ShieldCheckIcon className="h-5 w-5" />} />
-          <SummaryMetricCard label="Returned Proofs" value={String(proofSummary.rejected)} helper="Sent back for additional proof" variant="rose" icon={<AlertIcon className="h-5 w-5" />} />
+        <div className="p-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <SummaryMetricCard
+            label="Total Submissions"
+            value={String(proofSummary.total)}
+            helper="Across current scope"
+            variant="blue"
+            icon={<FileText className="h-5 w-5" />}
+          />
+          <SummaryMetricCard
+            label="Pending Verification"
+            value={String(proofSummary.pendingVerification)}
+            helper="Awaiting staff decision"
+            variant="amber"
+            icon={<Clock className="h-5 w-5" />}
+          />
+          <SummaryMetricCard
+            label="Approved Beneficiaries"
+            value={String(proofSummary.approved)}
+            helper="Eligible for aid pack"
+            variant="emerald"
+            icon={<CheckCircle2 className="h-5 w-5" />}
+          />
+          <SummaryMetricCard
+            label="Needs Revision"
+            value={String(proofSummary.rejected)}
+            helper="Returned for missing proof"
+            variant="rose"
+            icon={<RotateCcw className="h-5 w-5" />}
+          />
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_14px_rgba(0,0,0,0.05)] dark:border-slate-700 dark:bg-slate-900 dark:shadow-[0_12px_40px_rgba(0,0,0,0.22)]">
-        <div className="border-b border-gray-100 bg-gray-50/70 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/80">
+      {/* 2. Main Verification Table Container */}
+      <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_2px_14px_rgba(0,0,0,0.05)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+        {/* Controls Toolbar */}
+        <div className="border-b border-slate-100 bg-slate-50/50 p-5 dark:border-slate-800 dark:bg-slate-950/40">
           <div className="flex flex-col gap-4">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-[0.18em] text-gray-500 dark:text-slate-400">Verification Queue</p>
-              <h3 className="mt-1 text-lg font-black text-gray-900 dark:text-slate-100">Proof submission review queue</h3>
-              <p className="mt-1 text-sm text-gray-600 dark:text-slate-400">
-                Approve complete submissions or return incomplete ones with guidance for resubmission.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_220px_260px]">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.2fr)_220px_220px_auto]">
+              {/* Search Bar */}
               <div className="flex gap-2">
                 <div className="relative flex-1">
-                  <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <input
                     value={searchInput}
                     onChange={(event) => setSearchInput(sanitizeSearchQuery(event.target.value))}
@@ -543,23 +277,24 @@ const DEMO_PROOF_SUBMISSIONS: BeneficiaryProofSubmissionRecord[] = [
                         handleApplySearch()
                       }
                     }}
-                    placeholder="Search resident or code"
-                    className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-3 text-sm text-gray-700 shadow-sm outline-none transition-colors focus:border-gray-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-slate-500"
+                    placeholder="Search resident name or code..."
+                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-9 pr-3 text-sm text-slate-800 outline-none transition-colors focus:border-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={handleApplySearch}
-                  className="rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-gray-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
+                  className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
                 >
                   Search
                 </button>
               </div>
 
+              {/* Status Filter */}
               <FilterDropdown
                 value={selectedStatus}
                 options={[
-                  { value: 'Pending Verification', label: 'Pending Verification' },
+                  { value: PENDING_STATUS, label: 'Pending Verification' },
                   { value: ALL_STATUSES, label: 'All Statuses' },
                   { value: 'Approved', label: 'Approved' },
                   { value: 'Rejected', label: 'Needs Revision' },
@@ -570,324 +305,275 @@ const DEMO_PROOF_SUBMISSIONS: BeneficiaryProofSubmissionRecord[] = [
                 }}
               />
 
+              {/* Barangay Filter */}
               <FilterDropdown
                 value={selectedBarangay}
                 options={[
                   { value: ALL_BARANGAYS, label: ALL_BARANGAYS },
-                  ...scopedBarangays.map((barangay) => ({ value: barangay, label: barangay })),
+                  ...scopedBarangays.map((b) => ({ value: b, label: b })),
                 ]}
                 onChange={(val) => {
                   setSelectedBarangay(val)
                   setPage(1)
                 }}
               />
-            </div>
-          </div>
 
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => void fetchProofQueue()}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
-            >
-              <RefreshIcon className="h-3.5 w-3.5" />
-              Refresh queue
-            </button>
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Reset filters
-            </button>
-            {appliedSearch ? (
-              <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                Search: {appliedSearch}
-              </span>
-            ) : null}
-            <span className="rounded-full border border-gray-200 bg-white px-2.5 py-1 text-xs font-semibold text-gray-600 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300">
-              {proofSummary.total} matched submission{proofSummary.total === 1 ? '' : 's'}
-            </span>
-          </div>
-        </div>
-
-        {error ? (
-          <div className="px-6 py-10 text-center">
-            <p className="text-sm font-semibold text-red-600">{error}</p>
-          </div>
-        ) : (
-          <>
-            <div className="space-y-2 p-3 sm:p-4">
-              {proofLoading ? (
-                <div className="px-6 py-16 text-center">
-                  <div className="inline-flex flex-col items-center gap-2 text-gray-500 dark:text-slate-400">
-                    <SpinnerIcon className="h-8 w-8" />
-                    <span className="text-xs font-semibold uppercase tracking-[0.16em]">Loading proof queue</span>
-                  </div>
-                </div>
-              ) : proofRows.length === 0 ? (
-                <div className="px-6 py-16 text-center">
-                  <div className="mx-auto max-w-xl">
-                    <p className="text-base font-bold text-gray-800 dark:text-slate-100">No proof submissions matched this filter</p>
-                    <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">
-                      Try clearing filters, changing the search, or waiting for residents to sync new disaster proof requests.
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                proofRows.map((row) => {
-                  const rowId = getProofId(row)
-                  const proofUrls = getProofUrls(row)
-                  const proofUrl = proofUrls[0] || '#'
-                  const reviewNote = row.status === 'Rejected'
-                    ? row.rejectionReason || 'Returned for revision without a note.'
-                    : row.status === 'Approved'
-                      ? `Approved by ${row.reviewedBy || 'reviewer'}`
-                      : 'Awaiting admin verification'
-
-                  return (
-                    <article
-                      key={rowId}
-                      className="rounded-xl border border-gray-200 bg-white px-3 py-3 shadow-sm transition-colors hover:bg-gray-50/70 dark:border-slate-700 dark:bg-slate-950 dark:hover:bg-slate-900/80"
-                    >
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 flex-1 space-y-2">
-                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-1.5">
-                                <p className="truncate text-sm font-black text-gray-900 dark:text-slate-100 sm:text-base">{row.resident.fullName}</p>
-                                <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold ${statusBadgeClass(row.status)}`}>
-                                  {getProofStatusLabel(row.status)}
-                                </span>
-                                <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                                  {row.damageType}
-                                </span>
-                                {row.syncSource === 'OFFLINE_SYNC' ? (
-                                  <span className="inline-flex rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300">
-                                    Offline sync
-                                  </span>
-                                ) : null}
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-gray-500 dark:text-slate-400">
-                                <span className="font-semibold uppercase tracking-[0.12em]">{row.resident.residentCode}</span>
-                                <span className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700 dark:bg-slate-800 dark:text-slate-200">
-                                  <MapPinIcon className="h-3.5 w-3.5" />
-                                  {row.resident.barangay}
-                                </span>
-                                <span className="truncate">{row.event.name}</span>
-                                <span>{row.event.disasterType}</span>
-                                <span>{row.syncSource === 'OFFLINE_SYNC' ? 'Captured' : 'Submitted'} {formatDateTime(row.dateSubmitted)}</span>
-                                {row.syncSource === 'OFFLINE_SYNC' ? <span>Synced {formatDateTime(row.createdAt)}</span> : null}
-                                <span>Version {row.submissionVersion}</span>
-                              </div>
-                            </div>
-
-                            <div className="shrink-0">
-                              <div className="flex flex-wrap items-center justify-end gap-1.5">
-                                {proofUrls.map((url, index) => (
-                                  <a
-                                    key={`${rowId}-proof-${index + 1}`}
-                                    href={url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="group relative block h-12 w-12 overflow-hidden rounded-lg border border-gray-200 bg-gray-100 shadow-sm dark:border-slate-700 dark:bg-slate-800"
-                                    title={`Proof photo ${index + 1}`}
-                                  >
-                                    <img
-                                      src={url}
-                                      alt={`Proof photo ${index + 1} for ${row.resident.fullName}`}
-                                      className="h-full w-full object-cover transition-transform duration-150 group-hover:scale-105"
-                                    />
-                                  </a>
-                                ))}
-                                <a
-                                  href={proofUrl}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition-colors hover:bg-gray-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-                                >
-                                  <ImageIcon className="h-3.5 w-3.5" />
-                                  {proofUrls.length > 1 ? `${proofUrls.length} photos` : 'View proof'}
-                                </a>
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="grid gap-2 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
-                            <div className="rounded-xl bg-gray-50 px-3 py-2 dark:bg-slate-800/80">
-                              <p className="text-sm text-gray-700 dark:text-slate-200">{truncateText(row.description, 120)}</p>
-                              {row.supportingInfo ? (
-                                <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">{truncateText(row.supportingInfo, 90)}</p>
-                              ) : null}
-                            </div>
-
-                            <div className="rounded-xl bg-gray-50 px-3 py-2 dark:bg-slate-800/80">
-                              <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-500 dark:text-slate-400">Review</p>
-                              <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">{truncateText(reviewNote, 90)}</p>
-                              {row.reviewedAt ? (
-                                <p className="mt-1 text-[11px] text-gray-500 dark:text-slate-400">Reviewed {formatDateTime(row.reviewedAt)}</p>
-                              ) : null}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="lg:w-36 lg:pl-2">
-                          {row.status === 'Pending Verification' ? (
-                            <div className="grid grid-cols-2 gap-2 lg:grid-cols-1">
-                              <button
-                                type="button"
-                                onClick={() => openApproveModal(row)}
-                                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100"
-                              >
-                                Approve
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openRejectModal(row)}
-                                className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700 transition-colors hover:bg-rose-100"
-                              >
-                                Return
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="rounded-xl border border-dashed border-gray-200 px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400 dark:border-slate-700 dark:text-slate-500">
-                              No action needed
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </article>
-                  )
-                })
-              )}
-            </div>
-
-            <div className="flex flex-col gap-3 border-t border-gray-100 bg-gray-50/70 px-5 py-4 dark:border-slate-800 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs font-bold uppercase tracking-[0.16em] text-gray-500 dark:text-slate-400">Page {page} of {totalPages}</p>
+              {/* Refresh / Reset actions */}
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                  disabled={page <= 1 || proofLoading}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+                  onClick={() => void fetchProofQueue()}
+                  title="Refresh Queue"
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800 transition-colors shadow-sm"
                 >
-                  Prev
+                  <RefreshCw className="h-4 w-4" />
                 </button>
+                {(appliedSearch || selectedBarangay !== ALL_BARANGAYS || selectedStatus !== PENDING_STATUS) && (
+                  <button
+                    type="button"
+                    onClick={handleClearFilters}
+                    className="h-10 px-3 rounded-xl border border-slate-200 bg-white text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    Reset
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Filter Summary Breadcrumb */}
+            <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
+                Showing {proofRows.length} of {proofSummary.total} proof submission{proofSummary.total === 1 ? '' : 's'}
+              </span>
+              {appliedSearch && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Search: &ldquo;{appliedSearch}&rdquo;
+                </span>
+              )}
+              {selectedBarangay !== ALL_BARANGAYS && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                  Barangay: {selectedBarangay}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Table Content */}
+        <div className="overflow-x-auto">
+          {error ? (
+            <div className="p-12 text-center">
+              <div className="mx-auto max-w-md rounded-2xl border border-rose-200 bg-rose-50 p-6 text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-300">
+                <p className="font-semibold text-sm">{error}</p>
                 <button
                   type="button"
-                  onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                  disabled={page >= totalPages || proofLoading}
-                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-bold text-gray-600 shadow-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+                  onClick={() => void fetchProofQueue()}
+                  className="mt-3 text-xs font-bold underline"
                 >
-                  Next
+                  Try Again
                 </button>
               </div>
             </div>
-          </>
+          ) : proofLoading ? (
+            <div className="p-20 text-center">
+              <div className="inline-flex flex-col items-center gap-3 text-slate-400">
+                <RefreshCw className="h-8 w-8 animate-spin" />
+                <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Loading proof submissions...</span>
+              </div>
+            </div>
+          ) : proofRows.length === 0 ? (
+            <div className="p-20 text-center">
+              <div className="mx-auto max-w-sm">
+                <CheckCircle2 className="mx-auto h-12 w-12 text-slate-300 dark:text-slate-700" />
+                <h4 className="mt-3 text-base font-bold text-slate-800 dark:text-slate-200">No submissions found</h4>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  {selectedStatus === PENDING_STATUS
+                    ? 'All pending submissions have been reviewed for this scope.'
+                    : 'No proof records match your current filter parameters.'}
+                </p>
+                {(appliedSearch || selectedBarangay !== ALL_BARANGAYS) && (
+                  <button
+                    type="button"
+                    onClick={handleClearFilters}
+                    className="mt-4 text-xs font-semibold text-emerald-600 hover:underline dark:text-emerald-400"
+                  >
+                    Clear active filters
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/80 text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-400">
+                  <th className="py-3.5 px-6">Resident Applicant</th>
+                  <th className="py-3.5 px-4">Barangay</th>
+                  <th className="py-3.5 px-4">Disaster Event</th>
+                  <th className="py-3.5 px-4">Damage Type</th>
+                  <th className="py-3.5 px-4">Evidence</th>
+                  <th className="py-3.5 px-4">Submitted</th>
+                  <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-6 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
+                {proofRows.map((row) => {
+                  const proofId = getProofId(row)
+                  const urls = getProofUrls(row)
+                  const isPending = row.status === 'Pending Verification'
+
+                  return (
+                    <tr
+                      key={proofId}
+                      className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors cursor-pointer group"
+                      onClick={() => setActiveReviewRecord(row)}
+                    >
+                      {/* 1. Resident Applicant */}
+                      <td className="py-4 px-6">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                            {row.resident?.fullName?.charAt(0) || 'R'}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-sm text-slate-900 dark:text-white truncate">
+                              {row.resident?.fullName}
+                            </p>
+                            <span className="text-[11px] font-mono font-medium text-slate-400 dark:text-slate-500 uppercase">
+                              {row.resident?.residentCode || '-'}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+
+                      {/* 2. Barangay */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
+                          <MapPin className="h-3 w-3 text-slate-400" />
+                          {row.resident?.barangay || '-'}
+                        </span>
+                      </td>
+
+                      {/* 3. Event */}
+                      <td className="py-4 px-4">
+                        <div className="min-w-0 max-w-[180px]">
+                          <p className="truncate text-xs font-bold text-slate-800 dark:text-slate-200">
+                            {row.event?.name}
+                          </p>
+                          <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                            {row.event?.disasterType || 'Calamity'}
+                          </span>
+                        </div>
+                      </td>
+
+                      {/* 4. Damage Type */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <span className="inline-flex rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-bold text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                          {row.damageType}
+                        </span>
+                      </td>
+
+                      {/* 5. Evidence Photo Thumbnail */}
+                      <td className="py-4 px-4" onClick={(e) => e.stopPropagation()}>
+                        {urls.length > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setActiveReviewRecord(row)}
+                            className="group/photo relative flex h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 shadow-sm dark:border-slate-800"
+                            title="Click to view photos"
+                          >
+                            <img
+                              src={urls[0]}
+                              alt="Proof preview"
+                              className="h-full w-full object-cover transition-transform group-hover/photo:scale-110"
+                            />
+                            {urls.length > 1 && (
+                              <span className="absolute bottom-0 right-0 rounded-tl bg-black/75 px-1 text-[9px] font-bold text-white">
+                                +{urls.length - 1}
+                              </span>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-slate-400 italic">None</span>
+                        )}
+                      </td>
+
+                      {/* 6. Submitted Date */}
+                      <td className="py-4 px-4 whitespace-nowrap text-xs text-slate-600 dark:text-slate-300">
+                        {formatDateTime(row.dateSubmitted)}
+                      </td>
+
+                      {/* 7. Status */}
+                      <td className="py-4 px-4 whitespace-nowrap">
+                        <span
+                          className={`inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-bold ${statusBadgeClass(
+                            row.status,
+                          )}`}
+                        >
+                          {getProofStatusLabel(row.status)}
+                        </span>
+                      </td>
+
+                      {/* 8. Action Button */}
+                      <td className="py-4 px-6 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => setActiveReviewRecord(row)}
+                          className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition-all shadow-sm ${
+                            isPending
+                              ? 'bg-emerald-600 text-white hover:bg-emerald-700 dark:bg-emerald-600 dark:hover:bg-emerald-500'
+                              : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800'
+                          }`}
+                        >
+                          <Eye className="h-3.5 w-3.5" />
+                          {isPending ? 'Review Proof' : 'View Details'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Pagination Footer */}
+        {!proofLoading && proofRows.length > 0 && totalPages > 1 && (
+          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 px-6 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              Page {page} of {totalPages}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={page <= 1}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                disabled={page >= totalPages}
+                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
+              >
+                Next
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
         )}
       </section>
 
-      <ConfirmModal
-        isOpen={confirmApproveOpen && !!reviewTarget}
-        title="Approve Proof Submission"
-        body={
-          reviewTarget
-            ? `Approve the proof submission from ${reviewTarget.resident.fullName} for ${reviewTarget.event.name}? This will make the resident eligible for that distribution once the registration record is approved.`
-            : ''
-        }
-        confirmLabel={reviewLoading ? 'Approving...' : 'Approve Submission'}
-        loading={reviewLoading}
-        onCancel={closeReviewModals}
-        onConfirm={submitReview}
-      />
-
-      <RevisionRequestModal
-        open={!!reviewTarget && reviewDecision === 'Rejected'}
-        loading={reviewLoading}
-        residentName={reviewTarget?.resident.fullName || ''}
-        eventName={reviewTarget?.event.name || ''}
-        reason={reviewReason}
-        onReasonChange={setReviewReason}
-        onClose={closeReviewModals}
-        onSubmit={submitReview}
+      {/* 3. Dedicated Proof Review Modal */}
+      <BeneficiaryProofReviewModal
+        isOpen={Boolean(activeReviewRecord)}
+        submission={activeReviewRecord}
+        onClose={() => setActiveReviewRecord(null)}
+        onApprove={handleApprove}
+        onReject={handleReject}
       />
     </div>
-  )
-}
-
-function SpinnerIcon({ className }: { className?: string }) {
-  return (
-    <svg className={`${className || ''} animate-spin`} viewBox="0 0 24 24" fill="none">
-      <circle className="opacity-20" cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="3" />
-      <path d="M21 12a9 9 0 00-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function ClipboardIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 4h6m-7 3h8a2 2 0 012 2v9a2 2 0 01-2 2H8a2 2 0 01-2-2V9a2 2 0 012-2z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M10 4.5A1.5 1.5 0 0111.5 3h1A1.5 1.5 0 0114 4.5V7h-4V4.5z" />
-    </svg>
-  )
-}
-
-function ClockIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 7v5l3 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-    </svg>
-  )
-}
-
-function ShieldCheckIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 3l7 3v6c0 5-3.5 8.5-7 9-3.5-.5-7-4-7-9V6l7-3z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M9 12l2 2 4-4" />
-    </svg>
-  )
-}
-
-function AlertIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 9v4m0 4h.01M10.29 3.86l-7.5 13A1 1 0 003.66 18h16.68a1 1 0 00.87-1.5l-7.5-13a1 1 0 00-1.74 0z" />
-    </svg>
-  )
-}
-
-function RefreshIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M4 4v5h5M20 20v-5h-5M5.8 9A7 7 0 0118 6.3M18.2 15A7 7 0 016 17.7" />
-    </svg>
-  )
-}
-
-function SearchIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M21 21l-4.35-4.35M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z" />
-    </svg>
-  )
-}
-
-function ImageIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M4 6a2 2 0 012-2h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V6z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M8 14l2.5-2.5L15 16l2-2 3 3M9 9h.01" />
-    </svg>
-  )
-}
-
-function MapPinIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 21s6-4.5 6-10a6 6 0 10-12 0c0 5.5 6 10 6 10z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M12 11a2 2 0 100-4 2 2 0 000 4z" />
-    </svg>
   )
 }

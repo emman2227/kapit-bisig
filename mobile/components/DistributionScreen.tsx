@@ -27,7 +27,7 @@ interface DistributionScreenProps {
   distributionWarning?: string | null;
   distributionFetchedAt?: string | null;
   onRefreshDistributions?: (force?: boolean) => Promise<void>;
-  onNavigate?: (screen: 'home' | 'distributions' | 'profile') => void;
+  onNavigate?: (screen: 'home' | 'distributions' | 'profile' | 'proof-request' | 'qr') => void;
 }
 
 interface DistributionView extends ResidentDistributionItem {
@@ -211,6 +211,31 @@ export default function DistributionScreen({
                       </View>
                     ) : null}
                   </View>
+                  <View style={styles.tagRow}>
+                    {item.requiresBeneficiaryApproval ? (
+                      item.isBeneficiaryApproved ? (
+                        <View style={styles.approvedPill}>
+                          <Ionicons name="checkmark-circle" size={11} color="#065F46" />
+                          <Text style={styles.approvedPillText}>ENROLLED</Text>
+                        </View>
+                      ) : item.beneficiaryProofStatus === 'Pending Verification' ? (
+                        <View style={styles.underReviewPill}>
+                          <Ionicons name="time" size={10} color="#854D0E" />
+                          <Text style={styles.underReviewPillText}>PROOF IN REVIEW</Text>
+                        </View>
+                      ) : (
+                        <View style={styles.targetedPill}>
+                          <Ionicons name="shield-outline" size={10} color="#92400E" />
+                          <Text style={styles.targetedText}>PROOF REQUIRED</Text>
+                        </View>
+                      )
+                    ) : (
+                      <View style={styles.openPill}>
+                        <Ionicons name="people-outline" size={10} color="#065F46" />
+                        <Text style={styles.openText}>OPEN TO ALL</Text>
+                      </View>
+                    )}
+                  </View>
                   <View style={styles.metaRow}>
                     <Ionicons name="time-outline" size={14} color={residentColors.icon} />
                     <Text style={styles.metaText}>{item.timeLabel || item.dateLabel}</Text>
@@ -268,6 +293,75 @@ export default function DistributionScreen({
                 <Text style={styles.notesText}>{selected.notes}</Text>
               </View>
             ) : null}
+
+            {selected?.requiresBeneficiaryApproval ? (
+              selected.isBeneficiaryApproved ? (
+                <View style={styles.proofApprovedBanner}>
+                  <View style={styles.proofApprovedHeader}>
+                    <Ionicons name="checkmark-circle" size={19} color="#059669" />
+                    <Text style={styles.proofApprovedTitle}>Verified Beneficiary • Enrolled</Text>
+                  </View>
+                  <Text style={styles.proofApprovedDescription}>
+                    Your damage assessment has been verified. You are enrolled for this distribution. Present your QR claim pass at the venue to claim relief aid.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.qrActionButton}
+                    onPress={() => {
+                      setSelected(null);
+                      onNavigate?.('qr');
+                    }}
+                  >
+                    <Ionicons name="qr-code-outline" size={16} color={residentColors.inverse} />
+                    <Text style={styles.proofActionText}>View QR Claim Pass</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : selected.beneficiaryProofStatus === 'Pending Verification' ? (
+                <View style={styles.proofReviewBanner}>
+                  <View style={styles.proofReviewHeader}>
+                    <Ionicons name="time" size={18} color="#854D0E" />
+                    <Text style={styles.proofReviewTitle}>Damage Proof Under Review</Text>
+                  </View>
+                  <Text style={styles.proofReviewDescription}>
+                    Your submitted damage assessment is currently under review by the admin. We will notify you once approved.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.reviewActionButton}
+                    onPress={() => {
+                      setSelected(null);
+                      onNavigate?.('proof-request');
+                    }}
+                  >
+                    <Ionicons name="document-text-outline" size={16} color="#854D0E" />
+                    <Text style={styles.reviewActionText}>Check Review Status</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <View style={styles.proofRequiredBanner}>
+                  <View style={styles.proofRequiredHeader}>
+                    <Ionicons name="alert-circle" size={18} color="#B45309" />
+                    <Text style={styles.proofRequiredTitle}>Damage Assessment Required</Text>
+                  </View>
+                  <Text style={styles.proofRequiredDescription}>
+                    This distribution is restricted to residents with verified damage assessments. Submit your proof of damage to qualify and be enrolled.
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.proofActionButton}
+                    onPress={() => {
+                      setSelected(null);
+                      onNavigate?.('proof-request');
+                    }}
+                  >
+                    <Ionicons name="camera-outline" size={16} color={residentColors.inverse} />
+                    <Text style={styles.proofActionText}>Submit Proof of Damage</Text>
+                  </TouchableOpacity>
+                </View>
+              )
+            ) : (
+              <View style={styles.openBanner}>
+                <Ionicons name="checkmark-circle-outline" size={16} color="#065F46" />
+                <Text style={styles.openBannerText}>Open to all verified residents in the covered area.</Text>
+              </View>
+            )}
 
             <TouchableOpacity style={styles.doneButton} onPress={() => setSelected(null)}>
               <Text style={styles.doneText}>Done</Text>
@@ -330,6 +424,34 @@ const styles = StyleSheet.create({
   detailValue: { marginTop: 3, fontSize: 13, lineHeight: 18, fontWeight: '600', color: residentColors.ink },
   notesBox: { marginTop: 10, padding: 13, borderRadius: 12, backgroundColor: residentColors.surfaceMuted },
   notesText: { marginTop: 5, fontSize: 12, lineHeight: 18, color: residentColors.secondary },
+  tagRow: { marginTop: 5, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  targetedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D' },
+  targetedText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#92400E' },
+  approvedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  approvedPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#065F46' },
+  underReviewPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FDE047' },
+  underReviewPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#854D0E' },
+  openPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  openText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#065F46' },
+  proofApprovedBanner: { marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  proofApprovedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  proofApprovedTitle: { fontSize: 13, fontWeight: '800', color: '#065F46' },
+  proofApprovedDescription: { marginTop: 5, fontSize: 11.5, lineHeight: 16.5, color: '#047857' },
+  qrActionButton: { marginTop: 11, minHeight: 40, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, backgroundColor: residentColors.brand },
+  proofReviewBanner: { marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FDE047' },
+  proofReviewHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  proofReviewTitle: { fontSize: 13, fontWeight: '800', color: '#854D0E' },
+  proofReviewDescription: { marginTop: 5, fontSize: 11.5, lineHeight: 16.5, color: '#713F12' },
+  reviewActionButton: { marginTop: 11, minHeight: 40, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, backgroundColor: '#FEF08A', borderWidth: 1, borderColor: '#FACC15' },
+  reviewActionText: { color: '#713F12', fontSize: 12.5, fontWeight: '800' },
+  proofRequiredBanner: { marginTop: 14, padding: 13, borderRadius: 14, backgroundColor: '#FFFBEB', borderWidth: 1, borderColor: '#FDE68A' },
+  proofRequiredHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  proofRequiredTitle: { fontSize: 13, fontWeight: '800', color: '#92400E' },
+  proofRequiredDescription: { marginTop: 5, fontSize: 11.5, lineHeight: 16.5, color: '#78350F' },
+  proofActionButton: { marginTop: 11, minHeight: 40, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7, borderRadius: 10, backgroundColor: residentColors.brand },
+  proofActionText: { color: residentColors.inverse, fontSize: 12.5, fontWeight: '800' },
+  openBanner: { marginTop: 14, padding: 11, flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: 12, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  openBannerText: { flex: 1, fontSize: 11.5, lineHeight: 16, color: '#065F46', fontWeight: '600' },
   doneButton: { marginTop: 18, minHeight: 48, alignItems: 'center', justifyContent: 'center', borderRadius: 14, backgroundColor: residentColors.brand },
   doneText: { color: residentColors.inverse, fontSize: 14, fontWeight: '800' },
 });

@@ -156,6 +156,7 @@ router.post(
         scheduled,
         endsAt,
         notes,
+        requiresBeneficiaryApproval: requestedRequiresApproval,
       } = parsed.data;
 
       cleanIdempotencyStore();
@@ -322,6 +323,23 @@ router.post(
           });
         }
         disasterEvent = foundEvent;
+        requiresBeneficiaryApproval = requestedRequiresApproval === true;
+      } else if (requestedRequiresApproval === true) {
+        // Auto-resolve active disaster event for this barangay if one exists
+        const foundEvent = (await DisasterEvent.findOne({
+          status: 'Active',
+          barangays: barangay,
+        })
+          .sort({ eventDate: -1, createdAt: -1 })
+          .select('_id name status barangays')
+          .lean()) || (await DisasterEvent.findOne({ status: 'Active' })
+          .sort({ eventDate: -1, createdAt: -1 })
+          .select('_id name status barangays')
+          .lean());
+
+        if (foundEvent) {
+          disasterEvent = foundEvent;
+        }
         requiresBeneficiaryApproval = true;
       }
 
@@ -369,8 +387,12 @@ router.post(
 
       // Notify approved residents in the covered barangays.
       await broadcastResidentNotification({
-        title: 'New Relief Distribution',
-        message: `A relief distribution covering ${targetBarangays.join(', ')} has been scheduled on ${scheduled}. Approved beneficiary application is required before claiming.`,
+        title: requiresBeneficiaryApproval
+          ? 'Targeted Relief Distribution • Proof Required'
+          : 'New Relief Distribution',
+        message: requiresBeneficiaryApproval
+          ? `A targeted relief distribution for ${targetBarangays.join(', ')} has been scheduled on ${scheduled}. You must submit proof of damage in the app to become eligible.`
+          : `A relief distribution for ${targetBarangays.join(', ')} has been scheduled on ${scheduled}. Open to all verified residents.`,
         type: 'dispatch',
         meta: {
           distributionId: distribution._id.toString(),
@@ -378,7 +400,8 @@ router.post(
           assignedBarangays,
           targetBarangays,
           scheduled,
-          requiresBeneficiaryApproval: true,
+          requiresBeneficiaryApproval,
+          screen: requiresBeneficiaryApproval ? 'proof-request' : 'distributions',
         },
         targetBarangays,
       });
@@ -392,6 +415,7 @@ router.post(
           distributionId: distribution._id.toString(),
           targetBarangays,
           scheduled,
+          requiresBeneficiaryApproval,
         }).catch((error: unknown) => {
           console.warn('[distributionPush] Broadcast failed:', error instanceof Error ? error.message : 'Unknown error');
           return { status: 'provider_request_failed' as const, attempted: 0, sent: 0, skipped: 0, failed: 0 };
@@ -425,8 +449,20 @@ router.post(
       }
     } catch (error: unknown) {
       console.error('Error creating distribution:', error);
-      const message = error instanceof Error ? error.message : 'Failed to create distribution';
-      res.status(500).json({ success: false, code: 'VALIDATION_ERROR', message });
+      let userFriendlyMessage = 'Failed to create distribution. Please verify your inputs and try again.';
+      if (error instanceof mongoose.Error.ValidationError) {
+        userFriendlyMessage = Object.values(error.errors).map((e) => e.message).join(' ') || 'Validation error while creating distribution.';
+      } else if (error instanceof Error) {
+        const isInternalDbError = error.name.includes('Cast') ||
+          error.message.includes('$') ||
+          error.message.includes('Mongoose') ||
+          error.message.includes('BSON') ||
+          error.message.includes('at path');
+        if (!isInternalDbError && error.message.length < 150) {
+          userFriendlyMessage = error.message;
+        }
+      }
+      res.status(500).json({ success: false, code: 'INTERNAL_SERVER_ERROR', message: userFriendlyMessage });
     }
   }
 );

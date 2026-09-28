@@ -15,6 +15,7 @@ interface DistributionPushPayload {
   distributionId: string;
   targetBarangays: string[];
   scheduled: string | Date;
+  requiresBeneficiaryApproval?: boolean;
 }
 
 function isExpoPushToken(value: string): boolean {
@@ -69,13 +70,20 @@ export async function broadcastDistributionPush(
     return { status: 'provider_not_configured', attempted, sent: 0, skipped, failed: attempted };
   }
 
+  const isTargeted = payload.requiresBeneficiaryApproval === true;
   const messages = validDevices.map((device) => ({
     to: device.expoPushToken,
     sound: 'default',
     channelId: 'default',
-    title: 'New Relief Distribution',
-    body: `Relief distribution for ${targetBarangays.join(', ')} on ${formatSchedule(payload.scheduled)}.`,
-    data: { screen: 'distributions', distributionId: payload.distributionId },
+    title: isTargeted ? 'Targeted Relief Distribution • Proof Required' : 'New Relief Distribution',
+    body: isTargeted
+      ? `Relief distribution for ${targetBarangays.join(', ')} on ${formatSchedule(payload.scheduled)}. Damage assessment proof is required before claiming aid.`
+      : `Relief distribution for ${targetBarangays.join(', ')} on ${formatSchedule(payload.scheduled)}. Open to all verified residents.`,
+    data: {
+      screen: isTargeted ? 'proof-request' : 'distributions',
+      distributionId: payload.distributionId,
+      requiresBeneficiaryApproval: isTargeted,
+    },
   }));
 
   try {

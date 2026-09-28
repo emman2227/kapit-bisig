@@ -423,9 +423,21 @@ router.get(
 
       const residentMatch: Record<string, unknown> = {};
       if (req.authUser?.role === 'LGU_STAFF') {
-        residentMatch['resident.barangay'] = { $in: req.authUser.assignedBarangays ?? [] };
+        const assigned = req.authUser.assignedBarangays ?? [];
+        if (barangay) {
+          if (!assigned.includes(barangay)) {
+            return res.status(403).json({
+              success: false,
+              message: 'You do not have access to the requested barangay',
+            });
+          }
+          residentMatch['resident.barangay'] = barangay;
+        } else {
+          residentMatch['resident.barangay'] = { $in: assigned };
+        }
+      } else if (barangay) {
+        residentMatch['resident.barangay'] = barangay;
       }
-      if (barangay) residentMatch['resident.barangay'] = barangay;
       if (search) {
         const re = new RegExp(escapeRegex(search), 'i');
         residentMatch.$or = [
@@ -670,8 +682,8 @@ router.patch(
       return res.json({
         success: true,
         message: req.body.decision === 'Approved'
-          ? 'Proof submission approved and eligibility updated.'
-          : 'Proof submission rejected and eligibility updated.',
+          ? 'Proof submission approved.'
+          : 'Proof submission returned for revision.',
         data: {
           proofSubmission: result.submission,
           notificationDelivery: result.notificationDelivery,

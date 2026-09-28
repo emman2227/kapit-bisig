@@ -142,6 +142,7 @@ export default function DistributionPageClient() {
         scheduled: payload.scheduled,
         endsAt: payload.endsAt,
         notes: payload.notes,
+        requiresBeneficiaryApproval: payload.requiresBeneficiaryApproval,
       }, {
         idempotencyKey: crypto.randomUUID(),
       })

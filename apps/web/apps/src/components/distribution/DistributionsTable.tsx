@@ -421,7 +421,22 @@ export default function DistributionsTable({
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300">
                           {row.barangay.charAt(0)}
                         </div>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">{row.barangay}</span>
+                        <div>
+                          <div className="font-bold text-slate-900 dark:text-slate-100">{row.barangay}</div>
+                          <div className="mt-0.5">
+                            {row.requiresBeneficiaryApproval ? (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">
+                                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                                Targeted (Proof Required)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                                General Relief
+                              </span>
+                            )}
+                          </div>
+                        </div>
                       </div>
                     </td>
 

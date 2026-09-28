@@ -14,6 +14,7 @@ export type CreateDistributionPayload = {
   endsAt: string
   notes?: string
   disasterEventId?: string
+  requiresBeneficiaryApproval?: boolean
 }
 
 type StepFieldErrors = {
@@ -100,6 +101,8 @@ export default function NewDistributionModal({
 
   const [errors, setErrors] = useState<StepFieldErrors>({})
 
+  const [requiresBeneficiaryApproval, setRequiresBeneficiaryApproval] = useState<boolean>(false)
+
   const [staffQuery, setStaffQuery] = useState('')
   const [debouncedStaffQuery, setDebouncedStaffQuery] = useState('')
   const [staffData, setStaffData] = useState<ScanEligibleData>({ items: [], nextCursor: null })
@@ -116,6 +119,7 @@ export default function NewDistributionModal({
     setScheduled('')
     setEndsAt('')
     setNotes('')
+    setRequiresBeneficiaryApproval(false)
     setErrors({})
     setStaffQuery('')
     setDebouncedStaffQuery('')
@@ -378,7 +382,17 @@ export default function NewDistributionModal({
     }
 
     const code = err.response?.code
-    const message = err.response?.message || 'Failed to create distribution. Please try again.'
+    let message = err.response?.message || 'Failed to create distribution. Please try again.'
+    if (
+      message.includes('CastError') ||
+      message.includes('at path') ||
+      message.includes('$') ||
+      message.includes('Mongoose') ||
+      message.includes('ObjectId') ||
+      message.includes('Cast to')
+    ) {
+      message = 'Failed to create distribution. Please check your inputs and try again.'
+    }
 
     if (code === 'STAFF_SCHEDULE_CONFLICT') {
       nextErrors.assignedStaffIds = message
@@ -454,6 +468,7 @@ export default function NewDistributionModal({
         scheduled: new Date(scheduled).toISOString(),
         endsAt: new Date(endsAt).toISOString(),
         notes: notes.trim() ? notes.trim() : undefined,
+        requiresBeneficiaryApproval,
       })
     } catch (error: unknown) {
       applyServerValidation(error)
@@ -621,7 +636,7 @@ export default function NewDistributionModal({
                   </span>
                 </div>
 
-                <div className="mt-3 grid max-h-72 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
+                <div className="mt-3 grid max-h-48 grid-cols-1 gap-2 overflow-y-auto sm:grid-cols-2">
                   {barangayOptions.map((b) => {
                     const selected = b === barangay
                     return (
@@ -653,6 +668,82 @@ export default function NewDistributionModal({
                   Selected: <strong className="text-gray-900 dark:text-slate-100">{barangay || 'None'}</strong>
                 </div>
                 {errors.barangay && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{errors.barangay}</p>}
+
+                {/* Distribution Eligibility Mode */}
+                <div className="mt-5 rounded-2xl border border-gray-200 dark:border-slate-800 bg-gray-50/70 dark:bg-slate-800/40 p-4 sm:p-5">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-900 dark:text-slate-100">
+                      Distribution Eligibility Mode
+                    </label>
+                    <p className="mt-0.5 text-xs text-gray-500 dark:text-slate-400">
+                      Choose who can receive relief assistance in {barangay || 'the selected barangay'}.
+                    </p>
+                  </div>
+
+                  <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    {/* Option 1: General Relief */}
+                    <button
+                      type="button"
+                      onClick={() => setRequiresBeneficiaryApproval(false)}
+                      className={[
+                        'flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer relative',
+                        !requiresBeneficiaryApproval
+                          ? 'border-emerald-600 bg-emerald-50/80 dark:bg-emerald-950/40 ring-2 ring-emerald-500/20 shadow-sm'
+                          : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600',
+                      ].join(' ')}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/50 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          Open to All
+                        </span>
+                        <span className={`h-4 w-4 rounded-full border flex items-center justify-center text-[10px] ${!requiresBeneficiaryApproval ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-gray-300 dark:border-slate-600'}`}>
+                          {!requiresBeneficiaryApproval && <CheckIcon />}
+                        </span>
+                      </div>
+                      <div className="mt-2.5 font-bold text-sm text-gray-900 dark:text-slate-100">
+                        General Calamity Relief
+                      </div>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+                        Every verified resident household in {barangay || 'the barangay'} is eligible. Best for essential food packs, drinking water, and standard supplies.
+                      </p>
+                      <div className="mt-2 text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                        <span>✓ No damage assessment required</span>
+                      </div>
+                    </button>
+
+                    {/* Option 2: Targeted Specialized Assistance */}
+                    <button
+                      type="button"
+                      onClick={() => setRequiresBeneficiaryApproval(true)}
+                      className={[
+                        'flex flex-col text-left p-4 rounded-2xl border transition-all cursor-pointer relative',
+                        requiresBeneficiaryApproval
+                          ? 'border-amber-600 bg-amber-50/80 dark:bg-amber-950/40 ring-2 ring-amber-500/20 shadow-sm'
+                          : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-gray-300 dark:hover:border-slate-600',
+                      ].join(' ')}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                          Proof Required
+                        </span>
+                        <span className={`h-4 w-4 rounded-full border flex items-center justify-center text-[10px] ${requiresBeneficiaryApproval ? 'border-amber-600 bg-amber-600 text-white' : 'border-gray-300 dark:border-slate-600'}`}>
+                          {requiresBeneficiaryApproval && <CheckIcon />}
+                        </span>
+                      </div>
+                      <div className="mt-2.5 font-bold text-sm text-gray-900 dark:text-slate-100">
+                        Targeted Specialized Aid
+                      </div>
+                      <p className="mt-1 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
+                        Restricted to residents with approved damage proof in Target Beneficiaries. Best for cash aid, shelter repair, and livelihood grants.
+                      </p>
+                      <div className="mt-2 text-[11px] text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">
+                        <span>⚠ Only approved proof beneficiaries</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
 

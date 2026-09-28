@@ -24,6 +24,7 @@ import {
   discardQueuedResidentProofSubmission,
   fetchActiveBeneficiaryEvent,
   fetchResidentProofSubmissionStatus,
+  formatSyncErrorMessage,
   getQueuedResidentProofSubmissions,
   getResidentSession,
   ResidentDisasterEvent,
@@ -49,6 +50,7 @@ import {
   WatermarkOverlay,
   captureWatermarkedPhoto,
   buildWatermarkLabel,
+  getScaledWatermarkDimensions,
 } from '../services/sync/photoWatermark';
 
 const residentColors = residentTheme.colors;
@@ -171,6 +173,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
   const [watermarkUri, setWatermarkUri] = useState<string | null>(null);
   const [watermarkBarangay, setWatermarkBarangay] = useState('');
   const [watermarkDateLabel, setWatermarkDateLabel] = useState('');
+  const [watermarkDimensions, setWatermarkDimensions] = useState<{ width: number; height: number }>({ width: 720, height: 960 });
   const watermarkViewRef = useRef<View | null>(null);
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const residentTokenRef = useRef<string | null>(null);
@@ -344,6 +347,16 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
     const dateLabel = buildWatermarkLabel();
 
     for (const uri of uris) {
+      // Determine original image aspect ratio
+      const dims = await new Promise<{ width: number; height: number }>((resolve) => {
+        Image.getSize(
+          uri,
+          (w, h) => resolve(getScaledWatermarkDimensions(w, h)),
+          () => resolve({ width: 720, height: 960 }),
+        );
+      });
+
+      setWatermarkDimensions(dims);
       setWatermarkUri(uri);
       setWatermarkBarangay(barangay);
       setWatermarkDateLabel(dateLabel);
@@ -354,7 +367,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
       let finalUri = uri;
       try {
         if (watermarkViewRef.current) {
-          finalUri = await captureWatermarkedPhoto(watermarkViewRef);
+          finalUri = await captureWatermarkedPhoto(watermarkViewRef, dims.width, dims.height);
         }
       } catch {
         // Watermark failed — use original photo
@@ -588,9 +601,9 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
             </TouchableOpacity>
 
             <View style={styles.headerTextWrap}>
-              <Text style={styles.heroEyebrow}>RESIDENT REQUEST</Text>
-              <Text style={styles.heroTitle}>Send proof</Text>
-              <Text style={styles.heroDescription}>Tell us what happened and attach clear photos for a quick review.</Text>
+              <Text style={styles.heroEyebrow}>DAMAGE ASSESSMENT</Text>
+              <Text style={styles.heroTitle}>Submit Proof of Damage</Text>
+              <Text style={styles.heroDescription}>Upload photos and details of property or calamity damage to qualify for targeted relief distributions.</Text>
             </View>
             <View style={styles.heroIcon}>
               <Ionicons name="document-attach-outline" size={22} color={residentColors.inverse} />
@@ -655,7 +668,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
                             ? 'Sign in required'
                             : 'Waiting to sync'} · {record.photos.length} photos
                     </Text>
-                    {record.lastError ? <Text style={styles.savedProofError}>{record.lastError}</Text> : null}
+                    {record.lastError ? <Text style={styles.savedProofError}>{formatSyncErrorMessage(record.lastError)}</Text> : null}
                   </View>
                   <View style={styles.savedProofActions}>
                     {record.status === 'NEEDS_ATTENTION' ? (
@@ -724,12 +737,12 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
 
             <View style={styles.selectionBlock}>
               <View style={styles.selectionHeaderRow}>
-                <Typography variant="caption" color={theme.colors.textSecondary}>Active disaster event</Typography>
+                <Typography variant="caption" color={theme.colors.textSecondary}>Relief Program / Disaster Event</Typography>
               </View>
 
               {eventLoading ? (
                 <Typography variant="caption" color={theme.colors.textSecondary}>
-                  Checking the active disaster event...
+                  Checking for active relief events...
                 </Typography>
               ) : !activeEvent ? (
                 <View style={styles.emptyState}>
@@ -742,17 +755,17 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
                 <View style={styles.selectedDistributionCard}>
                   <View style={styles.selectedDistributionHeader}>
                     <View style={styles.selectedDistributionIcon}>
-                      <Ionicons name="thunderstorm-outline" size={16} color={residentColors.icon} />
+                      <Ionicons name="shield-checkmark-outline" size={18} color={residentColors.icon} />
                     </View>
                     <View style={styles.selectedDistributionCopy}>
-                      <Typography variant="body" weight="semiBold">{activeEvent.name}</Typography>
+                      <Typography variant="body" weight="semiBold">Calamity Damage Assessment</Typography>
                       <Typography variant="caption" color={theme.colors.textSecondary}>
-                        {activeEvent.disasterType} | {formatSchedule(activeEvent.eventDate)}
+                        {residentBarangay ? `Barangay ${residentBarangay} • ` : ''}Targeted Relief Assistance
                       </Typography>
                     </View>
                   </View>
                   <Typography variant="caption" color={theme.colors.textSecondary}>
-                    Your approved proof will apply automatically to matching distributions in {residentBarangay || 'your barangay'}.
+                    Your approved damage assessment qualifies your household for targeted relief distributions in {residentBarangay || 'your barangay'}.
                   </Typography>
                 </View>
               )}
@@ -959,6 +972,8 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
           barangay={watermarkBarangay}
           dateLabel={watermarkDateLabel}
           viewRef={watermarkViewRef}
+          width={watermarkDimensions.width}
+          height={watermarkDimensions.height}
         />
       ) : null}
     </SafeAreaView>

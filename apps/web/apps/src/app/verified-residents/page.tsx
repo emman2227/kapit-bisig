@@ -30,7 +30,7 @@ function formatVerifiedTimestamp(value?: string): string {
 
 export default function VerifiedResidentsPage() {
   const PAGE_SIZE = 5
-  const { user, loading, isSuperadmin } = useAuth()
+  const { user, loading } = useAuth()
   const router = useRouter()
 
   const [rows, setRows] = useState<ResidentRecord[]>([])
@@ -53,10 +53,10 @@ export default function VerifiedResidentsPage() {
     if (loading) return
     if (!user) {
       router.replace('/login')
-    } else if (!isSuperadmin) {
+    } else if (user.role !== 'SUPERADMIN' && user.role !== 'LGU_STAFF') {
       router.replace('/dashboard')
     }
-  }, [loading, user, isSuperadmin, router])
+  }, [loading, user, router])
 
   const fetchResidents = useCallback(async () => {
     setFetching(true)
@@ -145,7 +145,7 @@ export default function VerifiedResidentsPage() {
     [totalPages],
   )
 
-  if (loading || !user || !isSuperadmin) return null
+  if (loading || !user || (user.role !== 'SUPERADMIN' && user.role !== 'LGU_STAFF')) return null
 
   return (
     <DashboardLayout>

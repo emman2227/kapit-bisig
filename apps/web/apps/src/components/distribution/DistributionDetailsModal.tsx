@@ -68,11 +68,19 @@ export default function DistributionDetailsModal({
                   <div className="text-xs text-gray-500">
                     Distribution Location
                   </div>
-                  {distribution.requiresBeneficiaryApproval ? (
-                    <div className="mt-2 inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                      Target beneficiary approval required
-                    </div>
-                  ) : null}
+                  <div className="mt-2">
+                    {distribution.requiresBeneficiaryApproval ? (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-bold text-amber-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                        Targeted (Proof Required)
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-700">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        General Relief (Open to all)
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 

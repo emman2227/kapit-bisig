@@ -166,7 +166,7 @@ export async function isResidentApprovedBeneficiaryForDistribution(
 export async function enrollApprovedResidentsInDistribution(
   distribution: DistributionCoverage,
 ): Promise<EnrollmentSummary> {
-  if (!distribution.disasterEventId) {
+  if (!distribution.disasterEventId || !requiresBeneficiaryApproval(distribution)) {
     return { matchedResidents: 0, enrolledResidents: 0 };
   }
 

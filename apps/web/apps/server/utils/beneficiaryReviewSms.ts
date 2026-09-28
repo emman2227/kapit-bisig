@@ -19,6 +19,7 @@ export interface BeneficiaryReviewSmsInput {
   decision: 'Approved' | 'Rejected';
   scopeName: string;
   rejectionReason?: string;
+  residentName?: string;
 }
 
 interface BeneficiaryReviewSmsDependencies {
@@ -42,15 +43,17 @@ function compactText(value: string, maxLength: number): string {
 }
 
 function buildMessage(input: BeneficiaryReviewSmsInput): string {
-  const scopeName = compactText(input.scopeName || 'your relief request', 80);
+  const nameGreeting = input.residentName ? `Hi ${input.residentName}, ` : '';
+  const scopeName = compactText(input.scopeName || 'your relief request', 60);
+
   if (input.decision === 'Approved') {
-    return `[KapitBisig] Your proof for ${scopeName} was approved. You are now eligible for this relief distribution. Open the app for details.`;
+    return `[KapitBisig] ${nameGreeting}your proof for ${scopeName} was approved. You are now eligible for relief distribution. Please check your Kapit-Bisig app for details.`;
   }
 
-  const reason = compactText(input.rejectionReason || '', 120);
+  const reason = compactText(input.rejectionReason || '', 70);
   return reason
-    ? `[KapitBisig] Your proof for ${scopeName} needs an update. Reason: ${reason}. Open the app to resubmit.`
-    : `[KapitBisig] Your proof for ${scopeName} needs an update. Open the app to review and resubmit.`;
+    ? `[KapitBisig] ${nameGreeting}your proof for ${scopeName} needs an update. Reason: ${reason}. Please open the app to review and resubmit.`
+    : `[KapitBisig] ${nameGreeting}your proof for ${scopeName} needs an update. Please open the app to review and resubmit.`;
 }
 
 /**

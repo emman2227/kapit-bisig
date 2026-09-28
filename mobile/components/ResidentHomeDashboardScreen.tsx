@@ -211,14 +211,16 @@ export default function ResidentHomeDashboardScreen({
       ? 'Proof is under review'
       : proofStatus?.status === 'Rejected'
         ? 'Proof needs changes'
-        : activeEvent?.name || 'Request disaster assistance';
+        : 'Submit Proof of Damage';
   const proofDescription = proofStatus?.status === 'Approved'
     ? 'You are enrolled for matching barangay distributions.'
     : proofStatus?.status === 'Pending Verification'
       ? 'No need to submit again. Check your review status.'
       : proofStatus?.status === 'Rejected'
         ? 'Open your request to review the admin note.'
-        : 'Submit photos once to request support.';
+        : activeEvent?.name
+          ? `Upload damage photos for ${activeEvent.name} relief.`
+          : 'Submit damage photos to qualify for targeted relief.';
   const proofPresentation = proofStatus?.status === 'Approved'
     ? { icon: 'shield-checkmark-outline' as const, label: 'APPROVED', color: '#DCFCE7' }
     : proofStatus?.status === 'Pending Verification'
@@ -411,10 +413,28 @@ export default function ResidentHomeDashboardScreen({
                     <View style={styles.premiumCardCopy}>
                       <View style={styles.statusMetaRow}>
                         <Text style={styles.lightCardEyebrow}>RELIEF SCHEDULE</Text>
-                        <View style={styles.lightStatusPill}>
-                          <Text style={styles.lightStatusText}>
-                            {nextDistribution.residentClaimed ? 'CLAIMED' : nextDistribution.lifecycleStatus === 'Active' ? 'OPEN NOW' : 'UPCOMING'}
-                          </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          {nextDistribution.requiresBeneficiaryApproval ? (
+                            nextDistribution.isBeneficiaryApproved ? (
+                              <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0', flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                                <Ionicons name="checkmark-circle" size={9} color="#065F46" />
+                                <Text style={{ fontSize: 7.5, fontWeight: '800', color: '#065F46' }}>ENROLLED</Text>
+                              </View>
+                            ) : nextDistribution.beneficiaryProofStatus === 'Pending Verification' ? (
+                              <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FDE047' }}>
+                                <Text style={{ fontSize: 7.5, fontWeight: '800', color: '#854D0E' }}>PROOF IN REVIEW</Text>
+                              </View>
+                            ) : (
+                              <View style={{ paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D' }}>
+                                <Text style={{ fontSize: 7.5, fontWeight: '800', color: '#92400E' }}>PROOF REQUIRED</Text>
+                              </View>
+                            )
+                          ) : null}
+                          <View style={styles.lightStatusPill}>
+                            <Text style={styles.lightStatusText}>
+                              {nextDistribution.residentClaimed ? 'CLAIMED' : nextDistribution.lifecycleStatus === 'Active' ? 'OPEN NOW' : 'UPCOMING'}
+                            </Text>
+                          </View>
                         </View>
                       </View>
                       <Text style={styles.lightCardTitle} numberOfLines={1}>

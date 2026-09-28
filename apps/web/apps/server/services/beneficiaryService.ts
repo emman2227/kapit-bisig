@@ -682,6 +682,7 @@ export async function reviewResidentProof(params: ProofReviewInput): Promise<{
       decision: params.decision,
       scopeName,
       rejectionReason: submission.rejectionReason,
+      residentName: resident.firstName || resident.fullName || undefined,
     }),
     sendResidentPushNotification({
       residentId: resident._id.toString(),

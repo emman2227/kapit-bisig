@@ -16,6 +16,7 @@ export const createDistributionBody = z.object({
   assignedStaffIds: z.array(objectId)
     .min(1, 'Select at least 1 staff member'),
   notes: z.string().max(2000).optional().default(''),
+  requiresBeneficiaryApproval: z.boolean().optional(),
 }).strict().superRefine((data, ctx) => {
   if (data.assignedBarangays && data.assignedBarangays.length > 0) {
     const unique = new Set(data.assignedBarangays);

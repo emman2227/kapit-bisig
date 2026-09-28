@@ -30,8 +30,8 @@ import { cn } from '@/lib/utils'
 const mainNavItems = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard, superadminOnly: false },
   { name: 'Manage Users', href: '/users', icon: Users, superadminOnly: true },
-  { name: 'Resident Registration', href: '/resident-registration', icon: UserPlus, superadminOnly: true },
-  { name: 'Verified Residents', href: '/verified-residents', icon: UserCheck, superadminOnly: true },
+  { name: 'Resident Registration', href: '/resident-registration', icon: UserPlus, superadminOnly: false },
+  { name: 'Verified Residents', href: '/verified-residents', icon: UserCheck, superadminOnly: false },
   { name: 'Code Generation', href: '/code-generation', icon: ShieldCheck, superadminOnly: true },
   { name: 'Relief Registry', href: '/households', icon: House, superadminOnly: false },
   { name: 'Distribution', href: '/distribution', icon: ArrowLeftRight, superadminOnly: false },

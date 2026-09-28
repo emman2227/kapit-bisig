@@ -89,6 +89,9 @@ export interface ResidentDistributionItem {
   residentClaimed?: boolean;
   residentClaimStatus?: string | null;
   lifecycleStatus?: 'Upcoming' | 'Active' | 'Completed' | 'Archived';
+  requiresBeneficiaryApproval?: boolean;
+  isBeneficiaryApproved?: boolean;
+  beneficiaryProofStatus?: string | null;
 }
 
 export interface ResidentDistributionFetchResult {
@@ -984,6 +987,40 @@ export async function retryQueuedResidentProofSubmission(
   });
 }
 
+export function formatSyncErrorMessage(error?: string | null): string {
+  if (!error) return '';
+  const raw = String(error).trim();
+
+  if (
+    /network connection was lost/i.test(raw) ||
+    /failed to connect/i.test(raw) ||
+    /network request failed/i.test(raw) ||
+    /fetch failed/i.test(raw) ||
+    /econnrefused/i.test(raw) ||
+    /econnreset/i.test(raw)
+  ) {
+    return 'Connection lost. Please check your internet connection.';
+  }
+
+  if (/timeout/i.test(raw) || /timed out/i.test(raw)) {
+    return 'Connection timed out. Please try again.';
+  }
+
+  if (/500|internal server error/i.test(raw)) {
+    return 'Internal server error. Please try again later.';
+  }
+
+  if (/502|503|504|bad gateway|service unavailable/i.test(raw)) {
+    return 'Server is temporarily unavailable. Please try again.';
+  }
+
+  if (/ExpoModulesCore|Promise\.swift|\(at\s|\.ts:|\.js:|\.swift:/i.test(raw)) {
+    return 'Network connection interrupted. Please try again.';
+  }
+
+  return raw;
+}
+
 export async function syncQueuedResidentProofSubmissions(
   token: string,
   residentId: string,
@@ -1067,14 +1104,15 @@ export async function syncQueuedResidentProofSubmissions(
       failedCount++;
       await updateOfflineProofRecord(residentId, item.clientGeneratedId, {
         status: retryable ? 'PENDING_SYNC' : 'NEEDS_ATTENTION',
-        lastError: syncResult?.error || parsed.message || 'Unable to sync this proof.',
+        lastError: formatSyncErrorMessage(syncResult?.error || parsed.message || 'Unable to sync this proof.'),
         errorCode: syncResult?.errorCode || parsed.code || `HTTP_${response.status}`,
       });
     } catch (error) {
       failedCount++;
+      const message = error instanceof Error ? error.message : 'Network connection failed.';
       await updateOfflineProofRecord(residentId, item.clientGeneratedId, {
         status: 'PENDING_SYNC',
-        lastError: error instanceof Error ? error.message : 'Network connection failed.',
+        lastError: formatSyncErrorMessage(message),
         errorCode: 'NETWORK_ERROR',
       });
     }
