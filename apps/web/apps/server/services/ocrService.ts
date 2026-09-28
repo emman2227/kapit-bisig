@@ -132,7 +132,7 @@ async function getWorker(language: string): Promise<OcrWorker> {
   return workerPromise;
 }
 
-const PYTHON_AI_URL = process.env.PYTHON_BACKEND_URL || 'http://localhost:8000';
+const PYTHON_AI_URL = (process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000').replace('localhost', '127.0.0.1');
 
 async function tryPythonDeepLearningOCR(
   base64Payload: string,
@@ -155,11 +155,13 @@ async function tryPythonDeepLearningOCR(
     clearTimeout(timeout);
 
     if (!response.ok) {
+      console.warn(`[RapidOCR] Python backend returned status ${response.status} ${response.statusText}`);
       return null;
     }
 
     const data: any = await response.json();
     if (!data.success) {
+      console.warn(`[RapidOCR] Python backend returned success: false - reasons: ${JSON.stringify(data.reasons || [])}`);
       return null;
     }
 
@@ -176,7 +178,8 @@ async function tryPythonDeepLearningOCR(
       detectedKeywords: Array.isArray(data.detected_keywords) ? data.detected_keywords : [],
       verificationReasons: Array.isArray(data.reasons) ? data.reasons : [],
     };
-  } catch {
+  } catch (err: any) {
+    console.error(`[RapidOCR] Failed to contact Python OCR at ${PYTHON_AI_URL}:`, err.message || err);
     // Graceful fallback to local Tesseract
     return null;
   }
