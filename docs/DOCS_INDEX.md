@@ -22,6 +22,7 @@ This index is the primary entry point for project documentation.
 
 - System documentation (thesis/capstone): `docs/FACE_RECOGNITION_SYSTEM_DOCUMENTATION.md`
 - ID & Face Scan Improvements (Active Liveness, Deep-Learning OCR, Anti-Spoofing): `docs/ID_AND_FACE_VERIFICATION_CHANGES.md`
+- ID Verification & Mobile OTA Stabilization (Render 512MB RAM Tuning, Image Decoders, Network Architecture): `docs/ID_VERIFICATION_AND_MOBILE_OTA_STABILIZATION.md`
 
 ## Testing Assets
 
