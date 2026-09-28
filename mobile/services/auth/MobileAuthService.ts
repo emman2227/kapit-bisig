@@ -552,6 +552,8 @@ class MobileAuthService {
 
   /**
    * Validate the current token
+   * Returns false ONLY if the server definitively rejects the token (HTTP 401/403).
+   * Network errors or temporary 5xx errors return true to preserve offline/cached sessions.
    */
   async validateToken(): Promise<boolean> {
     if (!this.token) return false;
@@ -563,8 +565,13 @@ class MobileAuthService {
         },
       });
 
-      if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
         return false;
+      }
+
+      if (!response.ok) {
+        // Server error (e.g. 500, 502, 503) - preserve local session
+        return true;
       }
 
       const data = await response.json();
@@ -573,13 +580,13 @@ class MobileAuthService {
         // Update user data
         this.user = data.data;
         await this.setStoredItem(STORAGE_KEYS.USER_DATA, JSON.stringify(data.data));
-        return true;
       }
 
-      return false;
+      return true;
     } catch (error) {
-      console.error('[MobileAuthService] Token validation error:', error);
-      return false;
+      console.warn('[MobileAuthService] Token validation network error (session preserved):', error);
+      // Network failure / offline / Render cold-start: do not wipe session
+      return true;
     }
   }
 

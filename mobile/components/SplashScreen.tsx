@@ -28,6 +28,10 @@ import {
   residentLogin,
   saveResidentSession,
 } from '../services/api/ResidentQrService';
+import {
+  hasCompletedOnboarding,
+  setCompletedOnboarding,
+} from '../services/storage/OnboardingStorage';
 
 interface SplashScreenProps {
   onGetStarted: () => void;
@@ -65,10 +69,10 @@ export default function SplashScreen({
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
 
-  const [showLandingScreen, setShowLandingScreen] = useState(true);
+  const [showLandingScreen, setShowLandingScreen] = useState(initialView === 'landing');
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [showInitialSplash, setShowInitialSplash] = useState(false);
-  const [showLoginScreen, setShowLoginScreen] = useState(false);
+  const [showLoginScreen, setShowLoginScreen] = useState(initialView === 'login');
   const [showVolunteerLoginScreen, setShowVolunteerLoginScreen] = useState(false);
   const [showRegisterScreen, setShowRegisterScreen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -94,6 +98,8 @@ export default function SplashScreen({
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
+    let isMounted = true;
+
     if (initialView === 'login') {
       setShowLandingScreen(false);
       setShowOnboarding(false);
@@ -107,15 +113,36 @@ export default function SplashScreen({
       return;
     }
 
-    setShowLandingScreen(true);
-    setShowOnboarding(false);
-    setShowInitialSplash(false);
-    setShowLoginScreen(false);
-    setShowVolunteerLoginScreen(false);
-    setShowRegisterScreen(false);
-    setShowForgotPasswordScreen(false);
-    setForgotStep('mobile');
-    setLoginError('');
+    hasCompletedOnboarding()
+      .then((completed) => {
+        if (!isMounted) return;
+        if (completed) {
+          setShowLandingScreen(false);
+          setShowOnboarding(false);
+          setShowInitialSplash(false);
+          setShowRegisterScreen(false);
+          setShowVolunteerLoginScreen(false);
+          setShowForgotPasswordScreen(false);
+          setForgotStep('mobile');
+          setLoginError('');
+          setShowLoginScreen(true);
+        } else {
+          setShowLandingScreen(true);
+          setShowOnboarding(false);
+          setShowInitialSplash(false);
+          setShowLoginScreen(false);
+          setShowVolunteerLoginScreen(false);
+          setShowRegisterScreen(false);
+          setShowForgotPasswordScreen(false);
+          setForgotStep('mobile');
+          setLoginError('');
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
   }, [initialView]);
 
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -168,6 +195,7 @@ export default function SplashScreen({
       }
 
       await saveResidentSession(response.data);
+      await setCompletedOnboarding(true);
 
       if (onLogin) {
         onLogin();
@@ -319,8 +347,9 @@ export default function SplashScreen({
   };
 
   const handleRegisterComplete = () => {
+    setCompletedOnboarding(true).catch(() => undefined);
     setShowRegisterScreen(false);
-    setShowInitialSplash(true);
+    setShowLoginScreen(true);
     if (onRegister) {
       onRegister();
     }
@@ -400,6 +429,7 @@ export default function SplashScreen({
           setShowLoginScreen(true);
         }}
         onLoginSuccess={(user) => {
+          setCompletedOnboarding(true).catch(() => undefined);
           if (onVolunteerLogin) {
             onVolunteerLogin(user);
           } else {
@@ -821,6 +851,7 @@ export default function SplashScreen({
     const isLastSlide = currentIndex === slides.length - 1;
 
     const handleSkip = () => {
+      setCompletedOnboarding(true).catch(() => undefined);
       setShowOnboarding(false);
       setShowInitialSplash(true);
     };

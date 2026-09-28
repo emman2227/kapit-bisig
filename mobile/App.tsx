@@ -128,6 +128,10 @@ import {
   unregisterResidentPushDevice,
 } from './services/api/ResidentQrService';
 import { useOTAUpdates } from './hooks';
+import {
+  hasCompletedOnboarding,
+  setCompletedOnboarding,
+} from './services/storage/OnboardingStorage';
 
 type Screen = 'home' | 'distributions' | 'qr' | 'profile' | 'proof-request' | 'registration-revision';
 type AccountType = 'resident' | 'volunteer' | null;
@@ -235,7 +239,8 @@ export default function App() {
     Inter_700Bold,
   });
 
-  const [showSplash, setShowSplash] = useState(true);
+  const [isInitializingApp, setIsInitializingApp] = useState(true);
+  const [showSplash, setShowSplash] = useState(false);
   const [splashInitialView, setSplashInitialView] = useState<SplashInitialView>('landing');
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
   const [residentProfile, setResidentProfile] = useState<ResidentProfile | null>(null);
@@ -392,6 +397,24 @@ export default function App() {
           setIsVirtualIdLoading(usableCache.profile.status === 'Approved');
         }
         setAccountType('resident');
+      } else {
+        // Build baseline profile from stored session so resident is not logged out while offline or loading
+        const nameParts = (session.fullName || '').trim().split(/\s+/);
+        const fallbackProfile: ResidentProfile = {
+          id: session.residentId,
+          residentCode: session.residentCode || '',
+          firstName: nameParts[0] || session.fullName,
+          lastName: nameParts.slice(1).join(' ') || '',
+          fullName: session.fullName,
+          mobileNumber: session.mobileNumber,
+          barangay: session.barangay,
+          city: '',
+          streetAddress: '',
+          householdSize: 1,
+          status: session.status || 'Pending',
+        };
+        setResidentProfile(fallbackProfile);
+        setAccountType('resident');
       }
 
       const response = await fetchResidentProfile(token);
@@ -412,8 +435,8 @@ export default function App() {
           return false;
         }
 
-        // Network and server failures must not destroy a recently validated offline session.
-        return Boolean(usableCache || (preserveSessionOnFailure && residentProfile));
+        // Network, server, or rate-limit failures must not destroy a verified session.
+        return true;
       }
 
       const nextSession = {
@@ -465,11 +488,22 @@ export default function App() {
   };
 
   const handleGetStarted = () => {
-    setSplashInitialView('landing');
+    setSplashInitialView('login');
     setShowSplash(false);
   };
 
+  const handleResidentLoginSuccess = async () => {
+    setCompletedOnboarding(true).catch(() => undefined);
+    setAccountType('resident');
+    setShowSplash(false);
+    setCurrentScreen('home');
+    await loadResidentProfile(true);
+    registerBackgroundProofSync().catch(() => undefined);
+    syncCurrentResidentProofs().catch(() => undefined);
+  };
+
   const handleVolunteerLoginSuccess = (user: VolunteerUser) => {
+    setCompletedOnboarding(true).catch(() => undefined);
     // Ensure volunteer login is the only active session type.
     clearResidentSession().catch(() => undefined);
     clearResidentOfflineCache().catch(() => undefined);
@@ -481,7 +515,7 @@ export default function App() {
     setVirtualIdWarning(null);
     setAccountType('volunteer');
     setCurrentScreen('home');
-    setSplashInitialView('landing');
+    setSplashInitialView('login');
     setShowSplash(false);
   };
 
@@ -523,6 +557,7 @@ export default function App() {
     clearResidentOfflineCache().catch(() => undefined);
     clearResidentDistributionStore();
 
+    setCompletedOnboarding(true).catch(() => undefined);
     setResidentProfile(null);
     clearVirtualIdSnapshot().catch(() => undefined);
     setVirtualIdError(null);
@@ -568,50 +603,59 @@ export default function App() {
     quarantineLegacyOwnerlessQueue().catch(() => undefined);
     const stopProofCoordinator = startProofSyncCoordinator();
     const stopClaimCoordinator = startClaimSyncCoordinator();
-    Promise.all([getResidentSession(), loadResidentOfflineCache()])
-      .then(([session, cache]) => {
-        if (session && cache?.residentId === session.residentId && isOfflineCacheWithinGrace(cache)) {
+
+    const initializeApp = async () => {
+      try {
+        const onboardingDone = await hasCompletedOnboarding();
+
+        // 1. Restore volunteer session if active
+        const volunteerSessionActive = await mobileAuthService.initialize();
+        if (volunteerSessionActive) {
+          setVolunteerUser(mobileAuthService.getCurrentUser());
+          setResidentProfile(null);
+          setAccountType('volunteer');
           setShowSplash(false);
+          setIsInitializingApp(false);
+          registerBackgroundProofSync().catch(() => undefined);
+          return;
         }
-      })
-      .catch(() => undefined);
+
+        // 2. Restore resident session if active
+        const residentSessionActive = await loadResidentProfile(true);
+        if (residentSessionActive) {
+          setShowSplash(false);
+          setIsInitializingApp(false);
+          registerBackgroundProofSync().catch(() => undefined);
+          syncCurrentResidentProofs().catch(() => undefined);
+          return;
+        }
+
+        // 3. No active session - route to login (if onboarding already done) or landing
+        if (onboardingDone) {
+          setSplashInitialView('login');
+        } else {
+          setSplashInitialView('landing');
+        }
+        setShowSplash(true);
+      } catch (error) {
+        console.error('App initialization error:', error);
+        setShowSplash(true);
+        setSplashInitialView('login');
+      } finally {
+        setIsInitializingApp(false);
+      }
+    };
+
+    initializeApp().catch(() => {
+      setIsInitializingApp(false);
+      setShowSplash(true);
+    });
+
     return () => {
       stopProofCoordinator();
       stopClaimCoordinator();
     };
   }, []);
-
-  useEffect(() => {
-    if (!showSplash) {
-      const initializeSession = async () => {
-        setIsProfileLoading(true);
-
-        try {
-          const volunteerSessionActive = await mobileAuthService.initialize();
-          if (volunteerSessionActive) {
-            setVolunteerUser(mobileAuthService.getCurrentUser());
-            setResidentProfile(null);
-            setAccountType('volunteer');
-            return;
-          }
-
-          const residentSessionActive = await loadResidentProfile();
-          if (!residentSessionActive) {
-            setShowSplash(true);
-            setAccountType(null);
-          }
-        } finally {
-          setIsProfileLoading(false);
-        }
-      };
-
-      initializeSession().catch(() => undefined);
-
-      // Register background proof sync after session is resolved
-      registerBackgroundProofSync().catch(() => undefined);
-      syncCurrentResidentProofs().catch(() => undefined);
-    }
-  }, [showSplash]);
 
   useEffect(() => {
     if (accountType === 'resident' && residentProfile?.status === 'Approved') {
@@ -737,7 +781,7 @@ export default function App() {
     };
   }, [accountType, isResidentPending, residentProfile?.id]);
 
-  if (!fontsLoaded) {
+  if (!fontsLoaded || isInitializingApp) {
     return (
       <SafeAreaProvider>
         <View style={styles.loadingContainer}>
@@ -753,6 +797,7 @@ export default function App() {
       <SafeAreaProvider>
         <SplashScreen
           onGetStarted={handleGetStarted}
+          onLogin={handleResidentLoginSuccess}
           onVolunteerLogin={handleVolunteerLoginSuccess}
           initialView={splashInitialView}
         />
