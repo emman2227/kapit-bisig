@@ -19,7 +19,7 @@ import { resolveOptionalApiBaseUrl } from '../config/apiSecurity';
 // ============================================
 
 // Default API URL - Update this with your server IP in development
-const DEFAULT_API_URL = 'http://192.168.1.4:8000';
+const DEFAULT_API_URL = 'https://kapit-bisig.onrender.com';
 
 // Get API URL from environment or use default (null in production if unset)
 const API_BASE_URL = resolveOptionalApiBaseUrl(

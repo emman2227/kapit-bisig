@@ -99,7 +99,7 @@ export default function FaceScannerV2({
   onCancel,
   apiBaseUrl = resolveOptionalApiBaseUrl(
     process.env.EXPO_PUBLIC_FACE_API_URL,
-    'http://192.168.1.4:8000',
+    'https://kapit-bisig.onrender.com',
     'FaceScannerV2',
   ) ?? undefined,
   userId,

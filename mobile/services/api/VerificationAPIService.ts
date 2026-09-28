@@ -16,7 +16,7 @@ const EncodingType = {
 const API_CONFIG = {
   baseUrl: resolveApiBaseUrl(
     process.env.EXPO_PUBLIC_API_URL,
-    'http://192.168.1.4:3001/api',
+    'https://kapit-bisig.onrender.com/api',
     'VerificationAPIService',
   ),
   timeout: 30000, // 30 seconds for AI processing

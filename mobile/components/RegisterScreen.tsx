@@ -40,12 +40,12 @@ const { width } = Dimensions.get('window');
 // API Configuration
 const API_URL = resolveApiBaseUrl(
   process.env.EXPO_PUBLIC_API_URL,
-  'http://192.168.1.4:3001/api',
+  'https://kapit-bisig.onrender.com/api',
   'RegisterScreen API',
 );
 const FACE_API_URL = resolveOptionalApiBaseUrl(
   process.env.EXPO_PUBLIC_FACE_API_URL,
-  'http://192.168.1.4:8000',
+  'https://kapit-bisig.onrender.com',
   'RegisterScreen Face API',
 );
 const FACE_CAPTURE_ATTEMPT_LIMIT = 10;
@@ -631,7 +631,9 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
     setPasswordServerError(serverPasswordError);
 
     if (!mobileNumberError) {
-      isDuplicateMobile = !(await checkMobileAvailability(normalizeMobileForLookup(mobileNumber)));
+      const isAvailable = await checkMobileAvailability(normalizeMobileForLookup(mobileNumber));
+      // Only flag duplicate if definitively taken, not when network error occurred
+      isDuplicateMobile = !isAvailable && mobileAvailabilityStatus === 'taken';
     } else {
       setMobileChecked(false);
     }

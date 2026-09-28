@@ -14,7 +14,7 @@ import { resolveApiBaseUrl, resolveDevApiFallbackUrl } from '../config/apiSecuri
 
 const API_URL = resolveApiBaseUrl(
   process.env.EXPO_PUBLIC_API_URL,
-  'http://192.168.1.4:3001/api',
+  'https://kapit-bisig.onrender.com/api',
   'SmsVerificationService',
 );
 

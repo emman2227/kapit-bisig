@@ -14,7 +14,7 @@ const EncodingType = {
 
 const VERIFICATION_API_BASE_URL = resolveApiBaseUrl(
   process.env.EXPO_PUBLIC_API_URL,
-  'http://192.168.1.4:3001/api',
+  'https://kapit-bisig.onrender.com/api',
   'IDValidationService OCR API',
 );
 
