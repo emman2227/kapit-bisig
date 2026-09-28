@@ -41,8 +41,10 @@ class FaceEmbeddingService:
                 return
 
             options = ort.SessionOptions()
-            options.intra_op_num_threads = 2
+            options.intra_op_num_threads = 1
             options.inter_op_num_threads = 1
+            options.enable_cpu_mem_arena = False
+            options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
             options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
             self.session = ort.InferenceSession(

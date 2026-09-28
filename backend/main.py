@@ -409,8 +409,8 @@ def rebuild_face_index():
 load_database()
 rebuild_face_index()
 
-# Warm up model on startup (prevents first-request delay)
-warmup_model()
+# Warm up model on first request (conserves 100MB+ RAM on 512MB RAM hosts)
+# warmup_model()
 
 # ============================================
 # UTILITY FUNCTIONS
@@ -426,19 +426,42 @@ def decode_base64_image(base64_string: str) -> np.ndarray:
     Returns:
         OpenCV image as numpy array (BGR format)
     """
+    if not base64_string:
+        raise ValueError("Empty image string provided.")
+
     # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
     if 'base64,' in base64_string:
         base64_string = base64_string.split('base64,')[1]
-    
+
+    # Clean whitespace and handle URL-encoded spaces
+    base64_string = base64_string.strip().replace(" ", "+")
+
+    # Fix potential base64 padding
+    missing_padding = len(base64_string) % 4
+    if missing_padding:
+        base64_string += '=' * (4 - missing_padding)
+
     # Decode base64 to bytes
     image_bytes = base64.b64decode(base64_string)
-    
+
     # Convert to numpy array
     nparr = np.frombuffer(image_bytes, np.uint8)
-    
+
     # Decode image (OpenCV BGR format)
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    
+
+    if image is None:
+        # Fallback to PIL (handles progressive JPEGs, EXIF rotation, RGBA conversions)
+        try:
+            from PIL import Image, ImageOps
+            import io
+            pil_img = Image.open(io.BytesIO(image_bytes))
+            pil_img = ImageOps.exif_transpose(pil_img)
+            pil_img = pil_img.convert('RGB')
+            image = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+        except Exception as e:
+            logger.error(f"[decode_base64_image] PIL fallback decode failed: {e}")
+
     if image is None:
         raise ValueError("Failed to decode image. Please ensure the image is valid.")
 
@@ -1972,6 +1995,9 @@ async def verify_id_document(request: IDVerifyRequest):
             error=str(e),
             reasons=[f"Document processing failed: {str(e)}"]
         )
+    finally:
+        import gc
+        gc.collect()
 
 # ============================================
 # RUN SERVER

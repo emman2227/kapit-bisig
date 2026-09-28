@@ -72,13 +72,12 @@ async function preprocessImageForOCR(buffer: Buffer): Promise<Buffer> {
       // 4. Ensure minimum DPI for Tesseract accuracy (at least ~2000px wide)
       //    without enlarging small images that would only amplify noise
       .resize({
-        width: 2400,
-        height: 2400,
+        width: 900,
+        height: 900,
         fit: 'inside',
         withoutEnlargement: true,
       })
-      // 5. Output as lossless PNG to avoid re-introducing JPEG artifacts
-      .png()
+      .jpeg({ quality: 85 })
       .toBuffer();
   } catch (err) {
     // If sharp fails (corrupt image, unsupported format), return the original

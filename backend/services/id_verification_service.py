@@ -73,6 +73,9 @@ class IDVerificationService:
             self.ocr_engine = RapidOCR(
                 intra_op_num_threads=1,
                 inter_op_num_threads=1,
+                det_limit_side_len=720,
+                det_limit_type='max',
+                rec_batch_num=1,
                 use_cls=False
             )
             logger.info("[IDVerificationService] RapidOCR ONNX engine initialized successfully (low-memory 1-thread mode).")
@@ -286,12 +289,12 @@ class IDVerificationService:
         reasons = []
         scores = {}
 
-        # Downscale image immediately to max 800px to ensure total memory stays under 180MB on 512MB RAM hosts
+        # Downscale image immediately to max 720px to ensure total memory stays under 180MB on 512MB RAM hosts
         if image is not None and image.size > 0:
             h, w = image.shape[:2]
             max_dim = max(h, w)
-            if max_dim > 800:
-                scale = 800.0 / max_dim
+            if max_dim > 720:
+                scale = 720.0 / max_dim
                 image = cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
         # 0. Auto-crop to card boundary if card is framed on a background
@@ -403,6 +406,9 @@ class IDVerificationService:
             (legit_score >= 50.0 and (has_portrait or len(detected_keywords) >= 2)) or
             (len(detected_keywords) >= 3)
         )
+
+        import gc
+        gc.collect()
 
         return {
             "is_valid_id": is_valid_id,
