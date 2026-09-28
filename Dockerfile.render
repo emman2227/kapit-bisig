@@ -37,8 +37,8 @@ COPY apps/web/apps/scripts /app/apps/web/apps/scripts
 COPY apps/web/apps/public /app/apps/web/apps/public
 
 RUN cd /app/apps/web/apps && \
-    npm install && \
-    npm run server:build && \
+    npm install --include=dev && \
+    ./node_modules/.bin/tsc --project tsconfig.server.json && \
     npm prune --production
 
 # 3. Copy full Python backend (including ONNX models and services)
