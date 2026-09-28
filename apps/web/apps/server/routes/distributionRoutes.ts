@@ -23,7 +23,9 @@ import { validateRequest } from '../validation/validateRequest';
 import {
   createDistributionBody,
   distributionIdParams,
+  distributionRosterParams,
   rescheduleDistributionBody,
+  syncClaimsBody,
   updateDistributionStaffBody,
 } from '../validation/distribution.schema';
 import { logAudit } from '../utils/audit';
@@ -35,9 +37,32 @@ import {
   countRegisteredHouseholdsForDistribution,
   enrollApprovedResidentsInDistribution,
   getEligibleResidentIdsByDistribution,
+  getEligibleResidentIdsForDistribution,
   getTargetBarangays,
+  isResidentApprovedBeneficiaryForDistribution,
   requiresBeneficiaryApproval,
+  upsertDistributionClaimFromClaim,
 } from '../services/distributionFlowService';
+import { upsertOfflineSyncLog } from '../services/beneficiaryService';
+
+function getMaskedName(fullName: string): string {
+  const parts = String(fullName || '')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return 'Uxxxx Uxxxx';
+  }
+  if (parts.length === 1) {
+    const firstInitial = parts[0][0]?.toUpperCase() || 'U';
+    return `${firstInitial}xxxx`;
+  }
+
+  const firstInitial = parts[0][0]?.toUpperCase() || 'U';
+  const lastInitial = parts[parts.length - 1][0]?.toUpperCase() || 'U';
+  return `${firstInitial}xxxx ${lastInitial}xxxx`;
+}
 
 const router = Router();
 
@@ -632,7 +657,7 @@ router.get('/scanner/active', async (req: AuthRequest, res: Response) => {
       const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
       const registered = targets.reduce((sum, b) => sum + (residentCountMap[b] ?? 0), 0);
       const claimed = claimedCountMap[distribution._id.toString()] ?? 0;
-      const derivedStatus = claimed > 0 && registered > 0 && claimed >= registered ? 'Claimed' : distribution.status;
+      const derivedStatus = distribution.status;
       return deriveDistributionLifecycle({
         ...distribution,
         status: derivedStatus,
@@ -645,7 +670,7 @@ router.get('/scanner/active', async (req: AuthRequest, res: Response) => {
       const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
       const registered = targets.reduce((sum, b) => sum + (residentCountMap[b] ?? 0), 0);
       const claimed = claimedCountMap[distribution._id.toString()] ?? 0;
-      const derivedStatus = claimed > 0 && registered > 0 && claimed >= registered ? 'Claimed' : distribution.status;
+      const derivedStatus = distribution.status;
       return {
         ...distribution,
         id: distribution._id.toString(),
@@ -676,6 +701,442 @@ router.get('/scanner/active', async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: 'Unable to load scanner assignments.' });
   }
 });
+
+/**
+ * GET /api/distributions/scanner/roster/:distributionId
+ *
+ * Pre-downloads the eligible resident roster for a distribution
+ * so staff can scan offline without internet connectivity.
+ */
+router.get(
+  '/scanner/roster/:distributionId',
+  validateRequest({ params: distributionRosterParams }),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if ((req.authUser?.role !== 'LGU_STAFF' && req.authUser?.role !== 'SUPERADMIN') || !req.authUser?.userId) {
+        return res.status(403).json({
+          success: false,
+          code: 'SCANNER_FORBIDDEN',
+          message: 'Only authenticated LGU staff can download scanner rosters.',
+        });
+      }
+
+      const staffId = req.authUser.userId;
+      const { distributionId } = req.params;
+
+      const distribution = await Distribution.findById(distributionId).lean();
+      if (!distribution || distribution.archivedAt) {
+        return res.status(404).json({
+          success: false,
+          message: 'Distribution not found',
+        });
+      }
+
+      const isAssigned = (distribution.assignedStaffIds ?? []).some(
+        (id) => id.toString() === staffId
+      );
+      if (req.authUser.role !== 'SUPERADMIN' && !isAssigned) {
+        return res.status(403).json({
+          success: false,
+          code: 'SCANNER_NOT_ASSIGNED',
+          message: 'Your staff account is not assigned to this distribution.',
+        });
+      }
+
+      const scopedBarangays = await getScopedBarangays(req.authUser);
+      const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
+      if (req.authUser.role !== 'SUPERADMIN' && !targets.some((b) => scopedBarangays.includes(b))) {
+        return res.status(403).json({
+          success: false,
+          code: 'SCANNER_OUT_OF_SCOPE',
+          message: 'Distribution is out of your assigned barangay scope.',
+        });
+      }
+
+      const requiresBeneficiary = requiresBeneficiaryApproval(distribution as any);
+      let residents: Array<{
+        _id: mongoose.Types.ObjectId;
+        residentCode?: string;
+        fullName?: string;
+        barangay: string;
+        qrVersion?: number;
+      }> = [];
+
+      if (requiresBeneficiary) {
+        const eligibleIds = await getEligibleResidentIdsForDistribution(distributionId);
+        residents = await Resident.find({
+          _id: mongoose.trusted({ $in: eligibleIds.map((id) => new mongoose.Types.ObjectId(id)) }),
+          status: 'Approved',
+          qrStatus: 'ACTIVE',
+        })
+          .setOptions({ sanitizeFilter: false })
+          .select('_id residentCode fullName barangay qrVersion')
+          .lean();
+      } else {
+        residents = await Resident.find({
+          barangay: mongoose.trusted({ $in: targets }),
+          status: 'Approved',
+        })
+          .setOptions({ sanitizeFilter: false })
+          .select('_id residentCode fullName barangay qrVersion')
+          .lean();
+      }
+
+      // Query already claimed households for this distribution
+      const claimedDocs = await DistributionClaim.find({
+        distributionId: distribution._id,
+      })
+        .select('householdId')
+        .lean();
+      const claimedSet = new Set(claimedDocs.map((c) => c.householdId.toString()));
+
+      const roster = residents.map((r) => ({
+        residentId: r._id.toString(),
+        residentCode: r.residentCode || '',
+        maskedName: getMaskedName(r.fullName || ''),
+        barangay: r.barangay,
+        qrVersion: r.qrVersion ?? 1,
+        isApprovedBeneficiary: true,
+        alreadyClaimed: claimedSet.has(r._id.toString()),
+      }));
+
+      return res.json({
+        success: true,
+        data: {
+          distributionId: distribution._id.toString(),
+          barangay: distribution.barangay,
+          assignedBarangays: distribution.assignedBarangays ?? [],
+          requiresBeneficiaryApproval: requiresBeneficiary,
+          totalCount: roster.length,
+          claimedCount: claimedSet.size,
+          generatedAt: new Date().toISOString(),
+          roster,
+        },
+      });
+    } catch (error: any) {
+      console.error('[SCANNER_ROSTER]', error);
+      return res.status(500).json({ success: false, message: 'Unable to generate scanner roster.', error: error?.message || String(error) });
+    }
+  }
+);
+
+/**
+ * POST /api/distributions/scanner/sync-claims
+ *
+ * Accepts a batch of claims recorded offline by staff/volunteers.
+ * Validates eligibility, guards against duplicates, records Claims and DistributionClaims,
+ * and tracks sync operations in OfflineSyncQueue.
+ */
+router.post(
+  '/scanner/sync-claims',
+  validateRequest({ body: syncClaimsBody }),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      if ((req.authUser?.role !== 'LGU_STAFF' && req.authUser?.role !== 'SUPERADMIN') || !req.authUser?.userId) {
+        return res.status(403).json({
+          success: false,
+          code: 'SCANNER_FORBIDDEN',
+          message: 'Only authenticated LGU staff can sync claims.',
+        });
+      }
+
+      const staffId = req.authUser.userId;
+      const { deviceId, distributionId, claims } = req.body;
+
+      const distribution = await Distribution.findById(distributionId)
+        .select('_id barangay assignedBarangays assignedStaffIds requiresBeneficiaryApproval status archivedAt')
+        .lean();
+
+      if (!distribution || distribution.archivedAt) {
+        return res.status(404).json({
+          success: false,
+          message: 'Distribution not found',
+        });
+      }
+
+      const isAssigned = (distribution.assignedStaffIds ?? []).some(
+        (id) => id.toString() === staffId
+      );
+      if (req.authUser.role !== 'SUPERADMIN' && !isAssigned) {
+        return res.status(403).json({
+          success: false,
+          code: 'SCANNER_NOT_ASSIGNED',
+          message: 'Your staff account is not assigned to this distribution.',
+        });
+      }
+
+      const scopedBarangays = await getScopedBarangays(req.authUser);
+      const targets = getTargetBarangays(distribution.barangay, distribution.assignedBarangays ?? []);
+      const coverage = new Set<string>(targets);
+
+      if (req.authUser.role !== 'SUPERADMIN' && !targets.some((b) => scopedBarangays.includes(b))) {
+        return res.status(403).json({
+          success: false,
+          code: 'SCANNER_OUT_OF_SCOPE',
+          message: 'Distribution is out of your assigned barangay scope.',
+        });
+      }
+
+      const actorRole = (req.authUser.role === 'SUPERADMIN' ? 'SUPERADMIN' : 'LGU_STAFF') as 'SUPERADMIN' | 'LGU_STAFF';
+      const staffName = req.authUser.sub || req.authUser.userId || 'Mobile Scanner';
+      const distributionSite = `${distribution.barangay} Barangay Hall`;
+      const results: Array<{
+        clientGeneratedId: string;
+        syncStatus: 'Synced' | 'Duplicate' | 'Failed';
+        claimId?: string;
+        residentId: string;
+        residentCode?: string;
+        error?: string;
+      }> = [];
+
+      for (const item of claims as Array<{
+        clientGeneratedId: string;
+        residentId: string;
+        residentCode?: string;
+        scannedAt: string;
+      }>) {
+        await upsertOfflineSyncLog({
+          actorId: staffId,
+          actorRole,
+          queueType: 'CLAIM',
+          clientGeneratedId: item.clientGeneratedId,
+          deviceId,
+          residentId: item.residentId,
+          distributionId: distribution._id.toString(),
+          payload: {
+            ...item,
+            distributionId: distribution._id.toString(),
+          },
+          syncStatus: 'Processing',
+        });
+
+        try {
+          const resident = await Resident.findById(item.residentId)
+            .select('_id residentCode fullName barangay status')
+            .lean();
+
+          if (!resident || resident.status !== 'Approved') {
+            const err = 'Approved resident not found';
+            await upsertOfflineSyncLog({
+              actorId: staffId,
+              actorRole,
+              queueType: 'CLAIM',
+              clientGeneratedId: item.clientGeneratedId,
+              deviceId,
+              residentId: item.residentId,
+              distributionId: distribution._id.toString(),
+              payload: { ...item, distributionId: distribution._id.toString() },
+              syncStatus: 'Failed',
+              errorMessage: err,
+            });
+            results.push({
+              clientGeneratedId: item.clientGeneratedId,
+              syncStatus: 'Failed',
+              residentId: item.residentId,
+              error: err,
+            });
+            continue;
+          }
+
+          if (!coverage.has(resident.barangay)) {
+            const err = 'Resident barangay is not covered by this distribution';
+            await upsertOfflineSyncLog({
+              actorId: staffId,
+              actorRole,
+              queueType: 'CLAIM',
+              clientGeneratedId: item.clientGeneratedId,
+              deviceId,
+              residentId: item.residentId,
+              distributionId: distribution._id.toString(),
+              payload: { ...item, distributionId: distribution._id.toString() },
+              syncStatus: 'Failed',
+              errorMessage: err,
+            });
+            results.push({
+              clientGeneratedId: item.clientGeneratedId,
+              syncStatus: 'Failed',
+              residentId: item.residentId,
+              error: err,
+            });
+            continue;
+          }
+
+          if (requiresBeneficiaryApproval(distribution as any)) {
+            const isApprovedBeneficiary = await isResidentApprovedBeneficiaryForDistribution(
+              distribution._id.toString(),
+              resident._id.toString()
+            );
+            if (!isApprovedBeneficiary) {
+              const err = 'Resident is not an approved target beneficiary for this distribution';
+              await upsertOfflineSyncLog({
+                actorId: staffId,
+                actorRole,
+                queueType: 'CLAIM',
+                clientGeneratedId: item.clientGeneratedId,
+                deviceId,
+                residentId: item.residentId,
+                distributionId: distribution._id.toString(),
+                payload: { ...item, distributionId: distribution._id.toString() },
+                syncStatus: 'Failed',
+                errorMessage: err,
+              });
+              results.push({
+                clientGeneratedId: item.clientGeneratedId,
+                syncStatus: 'Failed',
+                residentId: item.residentId,
+                error: err,
+              });
+              continue;
+            }
+          }
+
+          // Check if already claimed
+          const householdId = resident._id.toString();
+          const existingClaim = await Claim.findOne({
+            claimCategory: 'DISTRIBUTION',
+            householdId,
+            distributionId: distribution._id.toString(),
+          }).lean();
+
+          if (existingClaim) {
+            await upsertOfflineSyncLog({
+              actorId: staffId,
+              actorRole,
+              queueType: 'CLAIM',
+              clientGeneratedId: item.clientGeneratedId,
+              deviceId,
+              residentId: householdId,
+              distributionId: distribution._id.toString(),
+              claimMongoId: existingClaim._id?.toString(),
+              claimId: existingClaim.claimId,
+              payload: { ...item, distributionId: distribution._id.toString() },
+              syncStatus: 'Synced',
+              errorMessage: '',
+            });
+
+            results.push({
+              clientGeneratedId: item.clientGeneratedId,
+              syncStatus: 'Duplicate',
+              claimId: existingClaim.claimId,
+              residentId: householdId,
+              residentCode: resident.residentCode,
+            });
+            continue;
+          }
+
+          const householdCode =
+            String(resident.residentCode || '').trim() ||
+            `HH-${resident.barangay.slice(0, 2).toUpperCase()}-${resident._id.toString().slice(-4).toUpperCase()}`;
+
+          const claimId = `CLM-${new Date().getFullYear()}-${Math.floor(Math.random() * 100000).toString().padStart(5, '0')}`;
+          const scannedAtDate = new Date(item.scannedAt);
+          const validScannedAt = Number.isNaN(scannedAtDate.getTime()) ? new Date() : scannedAtDate;
+
+          const upsertResult = await Claim.updateOne(
+            { householdId, distributionId: distribution._id.toString(), claimCategory: 'DISTRIBUTION' },
+            {
+              $setOnInsert: {
+                claimId,
+                householdId,
+                residentId: householdId,
+                householdCode,
+                barangay: resident.barangay,
+                distributionId: distribution._id.toString(),
+                distributionSite,
+                staffUserId: staffId,
+                staffName,
+                claimCategory: 'DISTRIBUTION',
+                claimStatus: 'Claimed',
+                scannedBy: staffId,
+                scannedAt: validScannedAt,
+                source: 'OFFLINE_SYNC',
+                syncMetadata: {
+                  deviceId,
+                  clientGeneratedId: item.clientGeneratedId,
+                  offlineCapturedAt: validScannedAt,
+                },
+                status: 'CONFIRMED',
+                errorMessage: '',
+              },
+            },
+            { upsert: true, setDefaultsOnInsert: true }
+          );
+
+          const claim = await Claim.findOne({
+            householdId,
+            distributionId: distribution._id.toString(),
+            claimCategory: 'DISTRIBUTION',
+          });
+
+          if (claim) {
+            claim.status = 'CONFIRMED';
+            claim.errorMessage = '';
+            await claim.save();
+            await upsertDistributionClaimFromClaim(claim);
+          }
+
+          await upsertOfflineSyncLog({
+            actorId: staffId,
+            actorRole,
+            queueType: 'CLAIM',
+            clientGeneratedId: item.clientGeneratedId,
+            deviceId,
+            residentId: householdId,
+            distributionId: distribution._id.toString(),
+            claimMongoId: claim?._id?.toString(),
+            claimId: claim?.claimId || claimId,
+            payload: { ...item, distributionId: distribution._id.toString() },
+            syncStatus: 'Synced',
+          });
+
+          await logAudit(req as unknown as any, 'OFFLINE_SYNC_RECEIVED', 'OfflineSyncQueue', item.clientGeneratedId, {
+            queueType: 'CLAIM',
+            distributionId: distribution._id.toString(),
+            claimId: claim?.claimId || claimId,
+          });
+
+          results.push({
+            clientGeneratedId: item.clientGeneratedId,
+            syncStatus: upsertResult.upsertedCount === 1 ? 'Synced' : 'Duplicate',
+            claimId: claim?.claimId || claimId,
+            residentId: householdId,
+            residentCode: resident.residentCode,
+          });
+        } catch (innerErr: any) {
+          const errMsg = innerErr?.message || 'Failed to process claim';
+          await upsertOfflineSyncLog({
+            actorId: staffId,
+            actorRole,
+            queueType: 'CLAIM',
+            clientGeneratedId: item.clientGeneratedId,
+            deviceId,
+            residentId: item.residentId,
+            distributionId: distribution._id.toString(),
+            payload: { ...item, distributionId: distribution._id.toString() },
+            syncStatus: 'Failed',
+            errorMessage: errMsg,
+          });
+          results.push({
+            clientGeneratedId: item.clientGeneratedId,
+            syncStatus: 'Failed',
+            residentId: item.residentId,
+            error: errMsg,
+          });
+        }
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          synced: results,
+        },
+      });
+    } catch (error) {
+      console.error('[SCANNER_SYNC_CLAIMS]', error);
+      return res.status(500).json({ success: false, message: 'Unable to sync offline claims.' });
+    }
+  }
+);
 
 /**
  * PATCH /api/distributions/:id/reschedule

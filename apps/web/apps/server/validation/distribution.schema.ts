@@ -139,3 +139,21 @@ export const updateDistributionStaffBody = z.object({
 /* GET /api/distributions/:id/households */
 // reuses distributionIdParams
 
+/* GET /api/distributions/scanner/roster/:distributionId */
+export const distributionRosterParams = z.object({
+  distributionId: objectId,
+}).strict();
+
+/* POST /api/distributions/scanner/sync-claims */
+export const syncClaimsBody = z.object({
+  deviceId: z.string().min(1, 'Device ID is required'),
+  distributionId: objectId,
+  claims: z.array(
+    z.object({
+      clientGeneratedId: z.string().min(1, 'Client generated ID is required'),
+      residentId: objectId,
+      residentCode: z.string().optional().default(''),
+      scannedAt: z.string().min(1, 'Scanned date is required'),
+    })
+  ).min(1, 'At least 1 claim required').max(500, 'Maximum 500 claims per batch'),
+}).strict();

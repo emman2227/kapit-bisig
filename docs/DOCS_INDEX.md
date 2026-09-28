@@ -8,6 +8,7 @@ This index is the primary entry point for project documentation.
 - API reference: `docs/API_DOCUMENTATION.md`
 - Database schema: `docs/DATABASE_SCHEMA.md`
 - Target beneficiary feature: `docs/TARGET_BENEFICIARY_IMPLEMENTATION.md`
+- Staff Offline Scanner Mode: `docs/STAFF_OFFLINE_SCANNER_IMPLEMENTATION.md`
 - Maintenance and operations: `docs/MAINTENANCE_NOTES.md`
 
 ## Setup and Integration

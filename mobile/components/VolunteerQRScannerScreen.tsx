@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -7,11 +7,28 @@ import {
   ActivityIndicator,
   ScrollView,
   Vibration,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { mobileAuthService } from '../services/auth/MobileAuthService';
+import { parseQrToken } from '../services/sync/QrTokenParser';
+import {
+  saveDistributionRoster,
+  loadDistributionRoster,
+  isResidentClaimedLocally,
+  addOfflineClaim,
+  listOfflineClaims,
+  type OfflineRosterData,
+} from '../services/sync/ScannerOfflineStore';
+import {
+  getClaimSyncSnapshot,
+  subscribeToClaimSync,
+  refreshClaimSyncSnapshot,
+  syncPendingClaims,
+  type ClaimSyncSnapshot,
+} from '../services/sync/ClaimSyncCoordinator';
 
 interface VolunteerQRScannerScreenProps {
   onBack: () => void;
@@ -151,55 +168,153 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
     return `${firstInitial}xxxx ${lastInitial}xxxx`;
   };
 
+  const [syncSnapshot, setSyncSnapshot] = useState<ClaimSyncSnapshot>(getClaimSyncSnapshot());
+  const [hasRoster, setHasRoster] = useState(false);
+  const [isDownloadingRoster, setIsDownloadingRoster] = useState(false);
+  const [rosterStats, setRosterStats] = useState<{ total: number; claimed: number } | null>(null);
+  const [offlineClaimsCount, setOfflineClaimsCount] = useState(0);
+
+  useEffect(() => {
+    return subscribeToClaimSync(setSyncSnapshot);
+  }, []);
+
+  const targetDistId = activeDistribution?.id || nearestUpcoming?.id;
+
+  useEffect(() => {
+    const checkRoster = async () => {
+      if (!targetDistId) {
+        setHasRoster(false);
+        setRosterStats(null);
+        setOfflineClaimsCount(0);
+        return;
+      }
+      const user = await mobileAuthService.getCurrentUser();
+      if (!user?.id) return;
+
+      const [roster, localClaims] = await Promise.all([
+        loadDistributionRoster(user.id, targetDistId),
+        listOfflineClaims(user.id, targetDistId),
+      ]);
+
+      if (roster) {
+        setHasRoster(true);
+        setRosterStats({ total: roster.totalCount, claimed: roster.claimedCount });
+      } else {
+        setHasRoster(false);
+        setRosterStats(null);
+      }
+      setOfflineClaimsCount(localClaims.length);
+    };
+
+    checkRoster().catch(() => undefined);
+  }, [targetDistId, activeDistribution?.id, nearestUpcoming?.id]);
+
+  const handleDownloadOfflineRoster = async () => {
+    const dist = activeDistribution || nearestUpcoming;
+    if (!dist?.id) return;
+    setIsDownloadingRoster(true);
+    try {
+      const user = await mobileAuthService.getCurrentUser();
+      if (!user?.id) {
+        Alert.alert('Error', 'Please log in again.');
+        return;
+      }
+
+      const response = await mobileAuthService.authenticatedRequest<{
+        success: boolean;
+        data?: OfflineRosterData;
+        message?: string;
+      }>(`/distributions/scanner/roster/${dist.id}`, { method: 'GET' });
+
+      if (response.success && response.data?.success && response.data.data) {
+        const rosterData = response.data.data;
+        await saveDistributionRoster(user.id, dist.id, rosterData);
+        setHasRoster(true);
+        setRosterStats({ total: rosterData.totalCount, claimed: rosterData.claimedCount });
+        Alert.alert('Ready for Offline', `Downloaded ${rosterData.totalCount} eligible residents. You can now scan without internet!`);
+      } else {
+        Alert.alert('Download Failed', response.error || response.data?.message || 'Unable to download roster.');
+      }
+    } catch (err: any) {
+      Alert.alert('Download Failed', err?.message || 'Network error downloading roster.');
+    } finally {
+      setIsDownloadingRoster(false);
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (syncSnapshot.syncing) return;
+    try {
+      const result = await syncPendingClaims(targetDistId);
+      if (result.syncedCount > 0 || result.duplicateCount > 0) {
+        Alert.alert(
+          'Sync Complete',
+          `Successfully synced ${result.syncedCount} claim(s)${result.duplicateCount > 0 ? ` (${result.duplicateCount} duplicate)` : ''}.${result.failedCount > 0 ? `\n${result.failedCount} claim(s) failed.` : ''}`
+        );
+      } else if (result.failedCount > 0) {
+        Alert.alert('Sync Failed', `${result.failedCount} claim(s) failed to sync with the server.`);
+      }
+      if (targetDistId) {
+        const user = await mobileAuthService.getCurrentUser();
+        if (user?.id) {
+          const localClaims = await listOfflineClaims(user.id, targetDistId);
+          setOfflineClaimsCount(localClaims.length);
+        }
+      }
+    } catch (err: any) {
+      Alert.alert('Sync Error', err?.message || 'Failed to sync offline claims.');
+    }
+  };
+
   useEffect(() => {
     return () => {
       lastScanRef.current = null;
     };
   }, []);
 
+  const loadActiveDistributions = useCallback(async () => {
+    const response = await mobileAuthService.authenticatedRequest<{
+      success: boolean;
+      data?: {
+        active: Array<ScannerDistribution & { _id?: string }>;
+        nearestUpcoming?: (ScannerDistribution & { _id?: string }) | null;
+      };
+    }>('/distributions/scanner/active', { method: 'GET' });
+
+    if (!response.success || !response.data?.success || !response.data.data) {
+      setAssignmentMessage(response.error || 'Unable to load scanner assignments.');
+      return;
+    }
+
+    const normalize = (item: ScannerDistribution & { _id?: string }): ScannerDistribution => ({
+      ...item,
+      id: item.id || item._id || '',
+      assignedBarangays: item.assignedBarangays || [],
+    });
+    const active = (response.data.data.active || []).map(normalize).filter((item) => item.id);
+    const upcoming = response.data.data.nearestUpcoming
+      ? normalize(response.data.data.nearestUpcoming)
+      : null;
+
+    setActiveDistributions(active);
+    setNearestUpcoming(upcoming);
+    setActiveDistribution(active.length === 1 ? active[0] : null);
+    setAssignmentMessage(
+      active.length > 1
+        ? 'Choose which active distribution this scanner should record claims against.'
+        : active.length === 0 && upcoming
+          ? `No active distribution. Your nearest assignment starts ${formatScheduleLabel(upcoming.scheduled)}.`
+          : active.length === 0
+            ? 'No active or upcoming distribution is explicitly assigned to this account.'
+            : null,
+    );
+  }, []);
+
   useEffect(() => {
-    const loadActiveDistributions = async () => {
-      const response = await mobileAuthService.authenticatedRequest<{
-        success: boolean;
-        data?: {
-          active: Array<ScannerDistribution & { _id?: string }>;
-          nearestUpcoming?: (ScannerDistribution & { _id?: string }) | null;
-        };
-      }>('/distributions/scanner/active', { method: 'GET' });
-
-      if (!response.success || !response.data?.success || !response.data.data) {
-        setAssignmentMessage(response.error || 'Unable to load scanner assignments.');
-        return;
-      }
-
-      const normalize = (item: ScannerDistribution & { _id?: string }): ScannerDistribution => ({
-        ...item,
-        id: item.id || item._id || '',
-        assignedBarangays: item.assignedBarangays || [],
-      });
-      const active = (response.data.data.active || []).map(normalize).filter((item) => item.id);
-      const upcoming = response.data.data.nearestUpcoming
-        ? normalize(response.data.data.nearestUpcoming)
-        : null;
-
-      setActiveDistributions(active);
-      setNearestUpcoming(upcoming);
-      setActiveDistribution(active.length === 1 ? active[0] : null);
-      setAssignmentMessage(
-        active.length > 1
-          ? 'Choose which active distribution this scanner should record claims against.'
-          : active.length === 0 && upcoming
-            ? `No active distribution. Your nearest assignment starts ${formatScheduleLabel(upcoming.scheduled)}.`
-            : active.length === 0
-              ? 'No active or upcoming distribution is explicitly assigned to this account.'
-              : null,
-      );
-    };
-
     loadActiveDistributions().catch(() => {
       setAssignmentMessage('Unable to load scanner assignments.');
     });
-  }, []);
+  }, [loadActiveDistributions]);
 
   const playSuccessFeedback = async () => {    Vibration.vibrate(80);
   };
@@ -228,6 +343,105 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
     setResolveLatencyMs(null);
     setClaimStatusText(null);
     const startedAt = Date.now();
+
+    if (!syncSnapshot.online) {
+      // OFFLINE MODE SCANNING
+      const targetDistribution = activeDistribution || nearestUpcoming;
+      if (!targetDistribution?.id) {
+        setError('No distribution selected to record claims against.');
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      const user = await mobileAuthService.getCurrentUser();
+      if (!user?.id) {
+        setError('Session not found. Please log in.');
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      const rosterData = await loadDistributionRoster(user.id, targetDistribution.id);
+      if (!rosterData || !rosterData.roster || rosterData.roster.length === 0) {
+        setError('Offline mode: No downloaded roster found for this distribution. Please connect to internet to download the roster first.');
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      const parsed = parseQrToken(data);
+      if (!parsed || !parsed.residentCode) {
+        setError('Invalid or unrecognized QR code format.');
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      const resident = rosterData.roster.find(
+        (r) => r.residentCode.toUpperCase() === parsed.residentCode.toUpperCase()
+      );
+
+      if (!resident) {
+        setError(`Resident (${parsed.residentCode}) is not in this distribution's eligible roster.`);
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      setResolvedResident({
+        residentId: resident.residentId,
+        fullName: resident.maskedName,
+        maskedName: resident.maskedName,
+        fromCache: true,
+      });
+
+      // Check if already claimed locally or in roster
+      const alreadyClaimedLocally = await isResidentClaimedLocally(user.id, targetDistribution.id, resident.residentId);
+      if (resident.alreadyClaimed || alreadyClaimedLocally) {
+        setClaimStatusText('Resident already claimed for this distribution.');
+        setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: true, justClaimed: false } : prev));
+        await playSuccessFeedback();
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      if (!activeDistribution?.id) {
+        // Upcoming distribution pre-check only
+        setClaimStatusText(
+          `Pre-check verified for Barangay ${targetDistribution.barangay}. Distribution starts at ${formatScheduleLabel(targetDistribution.scheduled)}. Supplies cannot be claimed yet.`
+        );
+        await playSuccessFeedback();
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      // Record offline claim
+      await addOfflineClaim(user.id, activeDistribution.id, {
+        clientGeneratedId: `off-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        distributionId: activeDistribution.id,
+        residentId: resident.residentId,
+        residentCode: resident.residentCode,
+        maskedName: resident.maskedName,
+        scannedAt: new Date().toISOString(),
+      });
+
+      setOfflineClaimsCount((prev) => prev + 1);
+      setActiveDistribution((prev) => (prev ? { ...prev, claimedHouseholds: (prev.claimedHouseholds || 0) + 1 } : prev));
+      setActiveDistributions((prev) =>
+        prev.map((d) => (d.id === activeDistribution.id ? { ...d, claimedHouseholds: (d.claimedHouseholds || 0) + 1 } : d))
+      );
+
+      setClaimStatusText('Claim recorded offline. Relief can now be released. (Will sync when reconnected)');
+      setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: false, justClaimed: true } : prev));
+      await playSuccessFeedback();
+      setResolveLatencyMs(Date.now() - startedAt);
+      setIsResolving(false);
+      refreshClaimSyncSnapshot().catch(() => undefined);
+      return;
+    }
 
     const targetDistributionId = activeDistribution?.id || nearestUpcoming?.id;
 
@@ -308,6 +522,13 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
     setResolvedResident(null);
     setResolveLatencyMs(null);
     setClaimStatusText(null);
+  };
+
+  const handleRefresh = async () => {
+    handleScanAgain();
+    await loadActiveDistributions().catch(() => {
+      setAssignmentMessage('Unable to load scanner assignments.');
+    });
   };
 
   const displayedDistribution = activeDistribution || nearestUpcoming;
@@ -407,12 +628,54 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
           <Ionicons name="arrow-back" size={20} color="#0F172A" />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Claim Scanner</Text>
-        <TouchableOpacity onPress={handleScanAgain} style={styles.roundButton}>
+        <TouchableOpacity onPress={handleRefresh} style={styles.roundButton}>
           <Ionicons name="refresh-outline" size={20} color="#0F172A" />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} showsVerticalScrollIndicator={false}>
+        {!syncSnapshot.online && (
+          <View style={styles.offlineBanner}>
+            <Ionicons name="cloud-offline-outline" size={20} color="#9A3412" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.offlineBannerTitle}>Offline Scanner Mode</Text>
+              <Text style={styles.offlineBannerSubtitle}>
+                {hasRoster
+                  ? `Scanning offline using local roster (${rosterStats?.total || 0} residents)`
+                  : 'No local roster downloaded yet. Connect to internet to download.'}
+              </Text>
+            </View>
+            {syncSnapshot.pendingCount > 0 && (
+              <View style={styles.offlineBadge}>
+                <Text style={styles.offlineBadgeText}>{syncSnapshot.pendingCount} pending</Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {syncSnapshot.online && syncSnapshot.pendingCount > 0 && (
+          <View style={styles.syncBanner}>
+            <Ionicons name="cloud-upload-outline" size={20} color="#047857" />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.syncBannerTitle}>Ready to Sync</Text>
+              <Text style={styles.syncBannerSubtitle}>
+                {syncSnapshot.pendingCount} offline claim(s) waiting to sync.
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={styles.syncButton}
+              onPress={handleManualSync}
+              disabled={syncSnapshot.syncing}
+            >
+              {syncSnapshot.syncing ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <Text style={styles.syncButtonText}>Sync Now</Text>
+              )}
+            </TouchableOpacity>
+          </View>
+        )}
+
         <View style={styles.heroCard}>
           <View style={styles.heroRow}>
             <View>
@@ -514,10 +777,14 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
               </Text>
             </View>
           ) : !!assignmentMessage ? (
-            <View style={styles.assignmentNotice}>
+            <TouchableOpacity onPress={handleRefresh} style={styles.assignmentNotice} activeOpacity={0.7}>
               <Ionicons name="information-circle-outline" size={16} color="#B45309" />
-              <Text style={styles.assignmentNoticeText}>{assignmentMessage}</Text>
-            </View>
+              <View style={{ flex: 1, marginLeft: 8 }}>
+                <Text style={styles.assignmentNoticeText}>{assignmentMessage}</Text>
+                <Text style={[styles.assignmentNoticeText, { fontWeight: '600', marginTop: 2 }]}>Tap here to retry</Text>
+              </View>
+              <Ionicons name="refresh" size={16} color="#B45309" />
+            </TouchableOpacity>
           ) : null}
 
           <View style={styles.distributionMetaRow}>
@@ -555,6 +822,53 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
               )}
             </View>
           </View>
+
+          {displayedDistribution?.id && (
+            <View style={styles.offlineSection}>
+              <View style={styles.offlineRow}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.offlineSectionTitleRow}>
+                    <Ionicons
+                      name={hasRoster ? 'shield-checkmark-outline' : 'cloud-offline-outline'}
+                      size={15}
+                      color={hasRoster ? '#059669' : '#D97706'}
+                    />
+                    <Text style={styles.offlineSectionTitle}>Offline Scanner Mode</Text>
+                  </View>
+                  <Text style={styles.offlineSectionSubtitle}>
+                    {hasRoster
+                      ? `Ready: ${rosterStats?.total || 0} residents loaded on this phone`
+                      : 'Download roster ahead of time to scan without internet'}
+                  </Text>
+                  {offlineClaimsCount > 0 && (
+                    <Text style={styles.offlineClaimsCountText}>
+                      📦 {offlineClaimsCount} claim(s) recorded locally on this device
+                    </Text>
+                  )}
+                </View>
+                <TouchableOpacity
+                  style={[styles.downloadRosterButton, isDownloadingRoster && { opacity: 0.7 }]}
+                  onPress={handleDownloadOfflineRoster}
+                  disabled={isDownloadingRoster}
+                >
+                  {isDownloadingRoster ? (
+                    <ActivityIndicator size="small" color="#0F766E" />
+                  ) : (
+                    <>
+                      <Ionicons
+                        name={hasRoster ? 'refresh-outline' : 'download-outline'}
+                        size={14}
+                        color="#0F766E"
+                      />
+                      <Text style={styles.downloadRosterButtonText}>
+                        {hasRoster ? 'Update' : 'Download'}
+                      </Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
         </View>
 
         <View style={styles.scannerCard}>
@@ -1228,5 +1542,116 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontSize: 14,
     letterSpacing: 0.2,
+  },
+  offlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFEDD5',
+    borderColor: '#FED7AA',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  offlineBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#9A3412',
+  },
+  offlineBannerSubtitle: {
+    fontSize: 12,
+    color: '#C2410C',
+    marginTop: 2,
+  },
+  offlineBadge: {
+    backgroundColor: '#EA580C',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  offlineBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  syncBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#DCFCE7',
+    borderColor: '#BBF7D0',
+    borderWidth: 1,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 12,
+  },
+  syncBannerTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  syncBannerSubtitle: {
+    fontSize: 12,
+    color: '#15803D',
+    marginTop: 2,
+  },
+  syncButton: {
+    backgroundColor: '#059669',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  syncButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  offlineSection: {
+    marginTop: 14,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  offlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  offlineSectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  offlineSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  offlineSectionSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  offlineClaimsCountText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#0F766E',
+    marginTop: 4,
+  },
+  downloadRosterButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#F0FDFA',
+    borderColor: '#99F6E4',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  downloadRosterButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0F766E',
   },
 });

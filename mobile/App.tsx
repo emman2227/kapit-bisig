@@ -86,6 +86,8 @@ import {
   startProofSyncCoordinator,
   syncCurrentResidentProofs,
 } from './services/sync/ProofSyncCoordinator';
+import { startClaimSyncCoordinator } from './services/sync/ClaimSyncCoordinator';
+import { countTotalPendingClaims } from './services/sync/ScannerOfflineStore';
 import {
   clearResidentOfflineCache,
   isOfflineCacheWithinGrace,
@@ -492,6 +494,17 @@ export default function App() {
       }
     }).catch(() => undefined);
     if (accountType === 'volunteer') {
+      const user = volunteerUser || mobileAuthService.getCurrentUser();
+      if (user?.id) {
+        countTotalPendingClaims(user.id).then((pending) => {
+          if (pending > 0) {
+            Alert.alert(
+              'Unsynced Claims',
+              `You have ${pending} recorded offline claim(s) that have not synced yet. They will remain saved and sync when an assigned account reconnects.`,
+            );
+          }
+        }).catch(() => undefined);
+      }
       mobileAuthService.logout().catch(() => undefined);
       setVolunteerUser(null);
     }
@@ -550,7 +563,8 @@ export default function App() {
 
   useEffect(() => {
     quarantineLegacyOwnerlessQueue().catch(() => undefined);
-    const stopCoordinator = startProofSyncCoordinator();
+    const stopProofCoordinator = startProofSyncCoordinator();
+    const stopClaimCoordinator = startClaimSyncCoordinator();
     Promise.all([getResidentSession(), loadResidentOfflineCache()])
       .then(([session, cache]) => {
         if (session && cache?.residentId === session.residentId && isOfflineCacheWithinGrace(cache)) {
@@ -558,7 +572,10 @@ export default function App() {
         }
       })
       .catch(() => undefined);
-    return stopCoordinator;
+    return () => {
+      stopProofCoordinator();
+      stopClaimCoordinator();
+    };
   }, []);
 
   useEffect(() => {
