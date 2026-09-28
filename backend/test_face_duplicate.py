@@ -13,6 +13,11 @@ Commands:
 
 import sys
 import os
+if sys.platform == "win32":
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from datetime import datetime

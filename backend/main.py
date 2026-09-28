@@ -6,7 +6,7 @@ System Flow:
 1. Receive image from mobile app
 2. Detect face using OpenCV
 3. Extract face region
-4. Convert to embedding using DeepFace
+4. Convert to embedding using FaceNet ONNX
 5. Compare with registered faces (1:N matching)
 6. Return "Verified" or "Not Recognized"
 
@@ -23,7 +23,7 @@ import base64
 import cv2
 import cv2.data
 import numpy as np
-from deepface import DeepFace
+from services.face_embedding_service import face_embedder
 import os
 import json
 from datetime import datetime
@@ -111,9 +111,9 @@ def require_admin_auth(
 FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.65"))  # Similarity threshold for verification
 DUPLICATE_THRESHOLD = float(os.getenv("DUPLICATE_THRESHOLD", "0.70"))    # Threshold for duplicate detection during registration
 MIN_FACE_SIZE = int(os.getenv("MIN_FACE_SIZE", "80"))                    # Minimum face size in pixels
-MODEL_NAME = os.getenv("MODEL_NAME", "Facenet")                          # DeepFace model: Facenet, VGG-Face, OpenFace, etc.
-DETECTOR_BACKEND = os.getenv("DETECTOR_BACKEND", "opencv")               # Faster on CPU; override to retinaface for accuracy
-DETECTOR_FOR_DETECT = os.getenv("DETECTOR_FOR_DETECT", "opencv")         # deepface or opencv
+MODEL_NAME = os.getenv("MODEL_NAME", "Facenet-ONNX")                        # FaceNet ONNX embedding model (512-d)
+DETECTOR_BACKEND = os.getenv("DETECTOR_BACKEND", "opencv")               # Faster on CPU; Haar cascade
+DETECTOR_FOR_DETECT = os.getenv("DETECTOR_FOR_DETECT", "opencv")         # opencv detector
 BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "18"))                # Laplacian variance; lower = more tolerant
 LIVENESS_MIN_PASSES = int(os.getenv("LIVENESS_MIN_PASSES", "1"))         # Minimum checks that must pass
 LOW_RES_THRESHOLD = int(os.getenv("LOW_RES_THRESHOLD", "360"))           # px; below this treat liveness as uncertain
@@ -335,14 +335,12 @@ def get_image_hash(image: np.ndarray) -> str:
     """Generate hash for image caching"""
     return hashlib.md5(image.tobytes()).hexdigest()
 
-# Pre-warm the DeepFace model on startup
+# Pre-warm the FaceNet ONNX model on startup
 def warmup_model():
-    """Pre-load DeepFace model to avoid first-request delay"""
+    """Pre-load FaceNet ONNX model to avoid first-request delay"""
     try:
-        logger.info(f"Pre-loading {MODEL_NAME} model...")
-        # Create a dummy image to trigger model loading
-        dummy = np.zeros((224, 224, 3), dtype=np.uint8)
-        DeepFace.represent(dummy, model_name=MODEL_NAME, detector_backend="skip", enforce_detection=False)
+        logger.info("Pre-loading FaceNet ONNX model...")
+        face_embedder.warmup()
         logger.info("Model pre-loaded successfully!")
     except Exception as e:
         logger.warning(f"Model warmup failed (will load on first request): {e}")
@@ -388,7 +386,7 @@ def rebuild_face_index():
 
     for user_id, data in face_database.items():
         embedding = data.get("embedding")
-        if not isinstance(embedding, list) or len(embedding) == 0:
+        if not isinstance(embedding, list) or len(embedding) != face_embedder.embedding_dimension:
             continue
         vectors.append(np.array(embedding, dtype=np.float32))
         user_ids.append(user_id)
@@ -537,41 +535,9 @@ def detect_faces_opencv(image: np.ndarray) -> dict:
 
 def detect_faces_deepface(image: np.ndarray) -> dict:
     """
-    Detect faces using DeepFace detector backend (retinaface/mtcnn/etc.)
-    Returns the same structure as detect_faces_opencv.
+    Fallback face detection. Uses OpenCV Haar cascade (ONNX/CPU friendly).
     """
-    try:
-        faces = DeepFace.extract_faces(
-            img_path=image,
-            detector_backend=DETECTOR_BACKEND,
-            enforce_detection=False
-        )
-    except Exception as e:
-        logger.warning(f"DeepFace detection failed, falling back to OpenCV: {e}")
-        return detect_faces_opencv(image)
-
-    face_boxes = []
-    for f in faces:
-        if isinstance(f, dict):
-            area = f.get("facial_area") or {}
-            x = int(area.get("x", 0))
-            y = int(area.get("y", 0))
-            w = int(area.get("w", 0))
-            h = int(area.get("h", 0))
-            if w > 0 and h > 0:
-                face_boxes.append([x, y, w, h])
-
-    if len(face_boxes) == 0:
-        # Fallback to OpenCV if DeepFace found nothing
-        return detect_faces_opencv(image)
-
-    return {
-        "has_face": len(face_boxes) > 0,
-        "face_count": len(face_boxes),
-        "faces": face_boxes,
-        "image_width": image.shape[1],
-        "image_height": image.shape[0]
-    }
+    return detect_faces_opencv(image)
 
 def extract_face_crop(image: np.ndarray, face_bbox: list, padding_ratio: float = 0.12) -> np.ndarray:
     """
@@ -702,67 +668,38 @@ def check_liveness_basic(image: np.ndarray, face_bbox: list) -> tuple[bool, dict
 
 def get_face_embedding(image: np.ndarray) -> list:
     """
-    Generate face embedding using DeepFace
-    OPTIMIZED: Uses 'skip' detector when face already detected for faster processing
+    Generate face embedding using FaceNet ONNX.
+    Detects face first, then extracts embedding from face crop.
     
     Args:
         image: OpenCV image (BGR format)
         
     Returns:
-        128-dimensional face embedding vector (for Facenet)
+        512-dimensional face embedding vector
     """
     try:
-        # DeepFace.represent expects BGR image (OpenCV format)
-        # Use 'skip' detector if face was already validated - much faster!
-        embedding = DeepFace.represent(
-            img_path=image,
-            model_name=MODEL_NAME,
-            detector_backend=DETECTOR_BACKEND,
-            enforce_detection=True
-        )
-        
-        if not embedding:
+        detection = detect_faces_opencv(image)
+        if not detection["has_face"] or len(detection["faces"]) == 0:
             raise ValueError("No face detected in image")
-        
-        first_emb = embedding[0] if isinstance(embedding, list) else embedding
-        if isinstance(first_emb, dict) and "embedding" in first_emb:
-            emb_vec = first_emb["embedding"]
-            return list(emb_vec) if not isinstance(emb_vec, list) else emb_vec
-        raise ValueError("Could not extract embedding from model output")
+        face_crop = extract_face_crop(image, detection["faces"][0])
+        return face_embedder.get_embedding_fast(face_crop)
     except Exception as e:
         logger.error(f"Face embedding generation failed: {e}")
         raise ValueError(f"Could not generate face embedding: {str(e)}")
 
 def get_face_embedding_fast(face_crop: np.ndarray) -> list:
     """
-    FAST embedding extraction for pre-cropped face images.
+    FAST embedding extraction for pre-cropped face images using FaceNet ONNX.
     Skips face detection entirely - use when face is already extracted.
     
     Args:
         face_crop: Pre-cropped face region (BGR format)
         
     Returns:
-        Face embedding vector
+        512-dimensional face embedding vector
     """
     try:
-        # Resize to model's expected input (160x160 for Facenet)
-        face_resized = cv2.resize(face_crop, (160, 160))
-        
-        embedding = DeepFace.represent(
-            img_path=face_resized,
-            model_name=MODEL_NAME,
-            detector_backend="skip",  # Skip detection - face already cropped
-            enforce_detection=False
-        )
-        
-        if not embedding:
-            raise ValueError("Could not generate embedding")
-        
-        first_emb = embedding[0] if isinstance(embedding, list) else embedding
-        if isinstance(first_emb, dict) and "embedding" in first_emb:
-            emb_vec = first_emb["embedding"]
-            return list(emb_vec) if not isinstance(emb_vec, list) else emb_vec
-        raise ValueError("Could not extract embedding from model output")
+        return face_embedder.get_embedding_fast(face_crop)
     except Exception as e:
         logger.error(f"Fast embedding failed: {e}")
         raise ValueError(f"Could not generate face embedding: {str(e)}")
@@ -1308,7 +1245,7 @@ async def register_face(request: FaceRegisterRequest):
         # Check for duplicate face (1:N matching against existing faces)
         matrix = face_index.get("matrix")
         norms = face_index.get("norms")
-        if len(face_index["user_ids"]) > 0 and matrix is not None and norms is not None:
+        if len(face_index["user_ids"]) > 0 and matrix is not None and norms is not None and matrix.size > 0 and matrix.shape[1] == len(embedding):
             query = np.array(embedding, dtype=np.float32)
             query_norm = np.linalg.norm(query)
             if query_norm > 0:
@@ -1565,7 +1502,7 @@ async def check_duplicate_face(request: DuplicateCheckRequest, http_request: Req
 
         for resident in registered_faces:
             stored_embedding = resident.get("embedding_vector", [])
-            if not stored_embedding:
+            if not stored_embedding or len(stored_embedding) != len(embedding):
                 continue
 
             valid_records.append(resident)
@@ -1862,7 +1799,7 @@ async def verify_face(request: FaceVerifyRequest):
         logger.info(f"Comparing against {len(face_index['user_ids'])} registered faces...")
         matrix = face_index.get("matrix")
         norms = face_index.get("norms")
-        if matrix is None or norms is None:
+        if matrix is None or norms is None or matrix.size == 0 or matrix.shape[1] != len(embedding):
             return FaceVerifyResponse(
                 verified=False,
                 confidence=0.0,
@@ -2073,5 +2010,6 @@ if __name__ == "__main__":
     print("  Duplicate Check: POST /api/face/check-duplicate")
     print("="*60 + "\n")
     
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    server_port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=server_port)
 

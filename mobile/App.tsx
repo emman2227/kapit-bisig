@@ -127,6 +127,7 @@ import {
   registerResidentPushDevice,
   unregisterResidentPushDevice,
 } from './services/api/ResidentQrService';
+import { useOTAUpdates } from './hooks';
 
 type Screen = 'home' | 'distributions' | 'qr' | 'profile' | 'proof-request' | 'registration-revision';
 type AccountType = 'resident' | 'volunteer' | null;
@@ -225,6 +226,8 @@ const notificationHandler: NotificationHandler = {
 setNotificationHandler(notificationHandler);
 
 export default function App() {
+  useOTAUpdates();
+
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
     Inter_500Medium,

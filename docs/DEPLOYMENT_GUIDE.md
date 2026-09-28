@@ -30,17 +30,19 @@ npm run migrate:superadmin
    - **Name**: `kapitbisig-api` (or your choice)
    - **Region**: Singapore (`ap-southeast`) or nearest to your users
    - **Branch**: `main`
-   - **Root Directory**: `apps/web/apps`
-   - **Runtime**: `Node`
-   - **Build Command**:
-     ```bash
-     npm install && npm run server:build
-     ```
-   - **Start Command**:
-     ```bash
-     npm run server:prod
-     ```
-   - **Instance Type**: Free or Starter
+   - **Root Directory**: leave blank (or `.`)
+   - **Runtime**: `Docker`
+   - **Dockerfile Path**: `Dockerfile.render`
+   - **Instance Type**: Free (512 MB RAM)
+
+> [!TIP]
+> **Unified Deployment:** Using `Dockerfile.render` packages both the **Node.js Express API Server** and the **Python FastAPI AI Backend (FaceNet ONNX + RapidOCR)** inside a single container via `supervisord`. The entire container uses only **~330 MB idle / ~380 MB peak**, comfortably fitting into Render's 512 MB limit, running 24/7 with zero Cloudflare tunnels needed!
+
+*(Alternative: Node-only without AI)*
+- **Root Directory**: `apps/web/apps`
+- **Runtime**: `Node`
+- **Build Command**: `npm install && npm run server:build`
+- **Start Command**: `npm run server:prod`
 
 ### Step 2.2: Set Environment Variables on Render
 Under the **Environment** tab of your Render service, add the following environment variables:
@@ -122,3 +124,18 @@ In the Vercel **Environment Variables** section, add:
    - Go to **Settings** (`/settings`).
    - Confirm that Superadmin can view and update their profile and avatar.
    - For production security, change the Superadmin password under Settings using the email OTP verification.
+
+---
+
+## 5. Mobile App Configuration (`mobile/.env`)
+
+When using the Unified Render Deployment, update `mobile/.env`:
+
+```env
+EXPO_PUBLIC_API_URL=https://kapitbisig-api.onrender.com/api
+EXPO_PUBLIC_FACE_API_URL=https://kapitbisig-api.onrender.com
+```
+
+> [!NOTE]
+> Since the Express API server proxies all mobile face recognition and ID OCR endpoints directly to the Python AI engine in the same Render container, no Cloudflare tunnel is needed anymore. Both the backend and AI are online 24/7!
+

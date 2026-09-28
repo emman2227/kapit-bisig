@@ -39,6 +39,7 @@ import verificationRoutes from './routes/verificationRoutes';
 import beneficiaryRoutes from './routes/beneficiaryRoutes';
 import residentAuthRoutes from './routes/residentAuthRoutes';
 import staffMobileAuthRoutes from './routes/staffMobileAuthRoutes';
+import aiProxyRoutes from './routes/aiProxyRoutes';
 
 import { requireAuth, requireStaffOrSuperadmin } from './middleware/unifiedAuth';
 import { generalRateLimiter } from './middleware/rateLimiter';
@@ -136,6 +137,7 @@ app.use('/api/users', profileRoutes); // /api/users/me/* (must be before userRou
 app.use('/api/users', userRoutes);
 
 app.use('/api/residents', residentRoutes); // route-level auth (register is public)
+app.use('/api', aiProxyRoutes); // proxy mobile face recognition and ID OCR to Python backend
 app.use('/api/face', faceRoutes); // route-level auth where needed
 app.use('/api/household', residentAuthRoutes); // resident login/logout/me
 app.use('/api/household', householdRoutes);

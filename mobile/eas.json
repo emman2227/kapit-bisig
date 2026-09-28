@@ -13,12 +13,21 @@
       "channel": "preview",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_ALLOW_INSECURE_HTTP": "true",
+        "EXPO_PUBLIC_API_URL": "https://kapitbisig-api.onrender.com/api",
+        "EXPO_PUBLIC_FACE_API_URL": "https://builder-reason-against-voip.trycloudflare.com"
       }
     },
     "production": {
       "channel": "production",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "NODE_ENV": "production"
       }
     }
   }

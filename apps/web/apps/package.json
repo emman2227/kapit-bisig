@@ -22,6 +22,7 @@
     "seed:brgy5x10": "node server/scripts/seedBrgy5x10.js",
     "seed:brgy:loadtest": "node server/scripts/seedBrgy5x10.js",
     "seed:target-beneficiary-demo": "ts-node --project tsconfig.server.json server/scripts/seedTargetBeneficiaryDemo.ts",
+    "generate:qr-sheet": "node server/scripts/generateResidentQrSheet.js",
     "demo:scan:san-jose": "ts-node --project tsconfig.server.json server/scripts/runSanJoseScanDemo.ts",
     "migrate:distribution-ends": "ts-node --project tsconfig.server.json server/scripts/backfillDistributionEndsAt.ts",
     "migrate:superadmin": "ts-node --project tsconfig.server.json server/scripts/transferSuperadminToDb.ts",

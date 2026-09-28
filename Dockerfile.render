@@ -1,0 +1,57 @@
+# Unified Production Dockerfile for Kapit-Bisig
+# Runs Node.js Express API Server + Python FastAPI AI Backend
+# Memory footprint: ~330 MB idle / ~380 MB peak (Fits comfortably in Render Free 512 MB RAM)
+
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DEBIAN_FRONTEND=noninteractive \
+    NODE_ENV=production \
+    PYTHON_BACKEND_URL=http://127.0.0.1:8000
+
+# Install system dependencies (Node.js 20, Supervisor, OpenCV/ONNX libraries)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    gnupg \
+    supervisor \
+    libgl1 \
+    libglib2.0-0 \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 1. Install Python dependencies
+COPY backend/requirements-deploy.txt /app/backend/requirements-deploy.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r /app/backend/requirements-deploy.txt
+
+# 2. Install Node.js dependencies and build Express TypeScript server
+COPY apps/web/apps/package*.json /app/apps/web/apps/
+COPY apps/web/apps/tsconfig*.json /app/apps/web/apps/
+COPY apps/web/apps/server /app/apps/web/apps/server
+COPY apps/web/apps/scripts /app/apps/web/apps/scripts
+COPY apps/web/apps/public /app/apps/web/apps/public
+
+RUN cd /app/apps/web/apps && \
+    npm install && \
+    npm run server:build && \
+    npm prune --production
+
+# 3. Copy full Python backend (including ONNX models and services)
+COPY backend /app/backend
+
+# 4. Copy supervisor configuration and entrypoint
+COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+EXPOSE 10000
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-10000}/api/health || exit 1
+
+CMD ["/app/start.sh"]

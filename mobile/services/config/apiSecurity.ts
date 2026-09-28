@@ -36,13 +36,14 @@ function ensureSecureApiUrl(rawUrl: string, serviceLabel: string): void {
 
   const host = parsed.hostname;
   const isDevHost = DEV_HOST_ALLOWLIST.has(host) || isPrivateIPv4(host);
+  const allowInternalHttp = process.env.EXPO_PUBLIC_ALLOW_INSECURE_HTTP === 'true';
 
-  if (__DEV__ && isDevHost) {
+  if ((__DEV__ || allowInternalHttp) && isDevHost) {
     return;
   }
 
   throw new Error(
-    `${serviceLabel}: Insecure HTTP URL is not allowed outside local development.`,
+    `${serviceLabel}: Insecure HTTP URL is not allowed outside local/internal development. Use HTTPS for production.`,
   );
 }
 

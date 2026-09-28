@@ -1,0 +1,15 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.git
+.gitignore
+.vscode/
+_bench_lowlight/
+_bench_verify/
+eval_results/
+face_embeddings.json.bak
+*.log

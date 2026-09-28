@@ -7,7 +7,9 @@
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/0f27a006-752a-408c-a8c7-95c83e3157d4"
+      "url": "https://u.expo.dev/ce00ce67-ccf9-4868-9fff-bf67223dd80c",
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
     },
     "ios": {
       "supportsTablet": true
@@ -19,7 +21,8 @@
         "foregroundImage": "./assets/logo.png",
         "backgroundColor": "#ffffff"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "usesCleartextTraffic": true
     },
     "web": {
       "favicon": "./assets/logo.png"
@@ -40,9 +43,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "0f27a006-752a-408c-a8c7-95c83e3157d4"
+        "projectId": "ce00ce67-ccf9-4868-9fff-bf67223dd80c"
       }
     },
-    "owner": "angela-gabriele"
+    "owner": "mrprinceu"
   }
 }

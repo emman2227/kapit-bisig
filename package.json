@@ -9,13 +9,16 @@
     "dev:web": "cd apps/web/apps && npm run dev:clean",
     "dev:server": "cd apps/web/apps && npm run server:dev",
     "dev:face": "cd backend && .\\venv\\Scripts\\python.exe main.py",
+    "tunnel:face": ".\\scripts\\cloudflared.exe tunnel --url http://localhost:8000",
+    "tunnel:server": ".\\scripts\\cloudflared.exe tunnel --url http://localhost:3001",
     "dev:mobile": "cd mobile && npm run start",
     "dev:web-server": "concurrently -n \"web,server\" -c \"blue,green\" \"npm run dev:web\" \"npm run dev:server\"",
     "install:all": "npm install && cd apps/web/apps && npm install && cd ../../../mobile && npm install",
     "build:web": "cd apps/web/apps && npm run build",
     "test:auth:newman": "npx newman run docs/postman/KapitBisig_Auth_Security.postman_collection.json -e docs/postman/KapitBisig_Local.postman_environment.json --reporters cli",
     "test:auth:newman:insecure": "npx newman run docs/postman/KapitBisig_Auth_Security.postman_collection.json -e docs/postman/KapitBisig_Local.postman_environment.json --reporters cli --insecure",
-    "test:api:phase3": "cd apps/web/apps/server && npx tsx test/runPhase3NewmanTests.ts"
+    "test:api:phase3": "cd apps/web/apps/server && npx tsx test/runPhase3NewmanTests.ts",
+    "qr:sheet": "cd apps/web/apps && npm run generate:qr-sheet"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
