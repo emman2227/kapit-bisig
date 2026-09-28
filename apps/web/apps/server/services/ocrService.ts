@@ -140,7 +140,7 @@ async function tryPythonDeepLearningOCR(
 ): Promise<OCRServiceResult | null> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 45000);
 
     const response = await fetch(`${PYTHON_AI_URL}/api/id/verify-document`, {
       method: 'POST',
@@ -204,7 +204,7 @@ export async function verifyIDDocumentDetailed(
   try {
     const payload = stripDataUrlPrefix(String(image || '').trim());
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 15000);
+    const timeout = setTimeout(() => controller.abort(), 45000);
 
     const response = await fetch(`${PYTHON_AI_URL}/api/id/verify-document`, {
       method: 'POST',
@@ -250,30 +250,40 @@ export async function performOCRFromBase64Image(
     return pythonResult;
   }
 
-  // 2. Fallback to local Tesseract worker
+  // 2. Fallback to local Tesseract worker with crash guard
   const normalizedLanguage = normalizeLanguage(language);
-  const rawBuffer = Buffer.from(payload, 'base64');
+  try {
+    const rawBuffer = Buffer.from(payload, 'base64');
 
-  // Pre-process the image for significantly better OCR accuracy
-  const processedBuffer = await preprocessImageForOCR(rawBuffer);
+    // Pre-process the image for significantly better OCR accuracy
+    const processedBuffer = await preprocessImageForOCR(rawBuffer);
 
-  const worker = await getWorker(normalizedLanguage);
-  const result = await worker.recognize(processedBuffer);
-  const data = result.data;
+    const worker = await getWorker(normalizedLanguage);
+    const result = await worker.recognize(processedBuffer);
+    const data = result.data;
 
-  return {
-    text: String(data.text || '').trim(),
-    confidence: Number(data.confidence || 0) / 100,
-    blocks: (data.words || []).map((word) => ({
-      text: word.text || '',
-      confidence: Number(word.confidence || 0) / 100,
-      boundingBox: {
-        x: word.bbox.x0,
-        y: word.bbox.y0,
-        width: Math.max(0, word.bbox.x1 - word.bbox.x0),
-        height: Math.max(0, word.bbox.y1 - word.bbox.y0),
-      },
-    })),
-    languageUsed: normalizedLanguage,
-  };
+    return {
+      text: String(data.text || '').trim(),
+      confidence: Number(data.confidence || 0) / 100,
+      blocks: (data.words || []).map((word) => ({
+        text: word.text || '',
+        confidence: Number(word.confidence || 0) / 100,
+        boundingBox: {
+          x: word.bbox.x0,
+          y: word.bbox.y0,
+          width: Math.max(0, word.bbox.x1 - word.bbox.x0),
+          height: Math.max(0, word.bbox.y1 - word.bbox.y0),
+        },
+      })),
+      languageUsed: normalizedLanguage,
+    };
+  } catch (err: any) {
+    console.error('[ocrService] Tesseract worker failed safely:', err.message || err);
+    return {
+      text: '',
+      confidence: 0,
+      blocks: [],
+      languageUsed: normalizedLanguage,
+    };
+  }
 }

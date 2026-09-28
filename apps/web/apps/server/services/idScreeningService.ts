@@ -798,10 +798,9 @@ export async function screenSubmittedId(input: {
     throw new Error(backValidation.message);
   }
 
-  const [frontOcr, backOcr] = await Promise.all([
-    performOCRFromBase64Image(input.frontIdImage, 'eng+fil', input.idType),
-    performOCRFromBase64Image(input.backIdImage, 'eng+fil', input.idType),
-  ]);
+  // Process front and back ID sequentially to avoid CPU contention and memory spikes on Render
+  const frontOcr = await performOCRFromBase64Image(input.frontIdImage, 'eng+fil', input.idType);
+  const backOcr = await performOCRFromBase64Image(input.backIdImage, 'eng+fil', input.idType);
 
   const activeEngine = frontOcr.languageUsed === 'rapidocr-onnx' ? 'RapidOCR PP-OCRv4 (AI)' : 'Tesseract (Fallback)';
   console.log(`\n========================================`);
