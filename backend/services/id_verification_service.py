@@ -70,8 +70,12 @@ class IDVerificationService:
     def _init_ocr(self):
         try:
             from rapidocr_onnxruntime import RapidOCR
-            self.ocr_engine = RapidOCR()
-            logger.info("[IDVerificationService] RapidOCR ONNX engine initialized successfully.")
+            self.ocr_engine = RapidOCR(
+                intra_op_num_threads=1,
+                inter_op_num_threads=1,
+                use_cls=False
+            )
+            logger.info("[IDVerificationService] RapidOCR ONNX engine initialized successfully (low-memory 1-thread mode).")
         except Exception as e:
             logger.error(f"[IDVerificationService] Failed to initialize RapidOCR: {e}", exc_info=True)
             self.ocr_engine = None
@@ -281,6 +285,14 @@ class IDVerificationService:
         """
         reasons = []
         scores = {}
+
+        # Downscale image immediately to max 800px to ensure total memory stays under 180MB on 512MB RAM hosts
+        if image is not None and image.size > 0:
+            h, w = image.shape[:2]
+            max_dim = max(h, w)
+            if max_dim > 800:
+                scale = 800.0 / max_dim
+                image = cv2.resize(image, (int(w * scale), int(h * scale)), interpolation=cv2.INTER_AREA)
 
         # 0. Auto-crop to card boundary if card is framed on a background
         working_image, was_auto_cropped = self.auto_crop_card(image)
