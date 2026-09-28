@@ -2,6 +2,7 @@
   "expo": {
     "name": "kapit-bisig",
     "slug": "kapit-bisig",
+    "version": "1.0.0",
     "scheme": "kapitbisig",
     "runtimeVersion": {
       "policy": "appVersion"

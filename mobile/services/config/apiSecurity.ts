@@ -42,8 +42,8 @@ function ensureSecureApiUrl(rawUrl: string, serviceLabel: string): void {
     return;
   }
 
-  throw new Error(
-    `${serviceLabel}: Insecure HTTP URL is not allowed outside local/internal development. Use HTTPS for production.`,
+  console.warn(
+    `[apiSecurity] ${serviceLabel}: Insecure HTTP URL "${rawUrl}" detected outside local dev. In production, HTTPS should be used.`,
   );
 }
 

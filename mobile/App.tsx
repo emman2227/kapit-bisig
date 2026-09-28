@@ -737,7 +737,16 @@ export default function App() {
     };
   }, [accountType, isResidentPending, residentProfile?.id]);
 
-  if (!fontsLoaded) return null;
+  if (!fontsLoaded) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#16A34A" />
+        </View>
+        <StatusBar style="dark" />
+      </SafeAreaProvider>
+    );
+  }
 
   if (showSplash) {
     return (
