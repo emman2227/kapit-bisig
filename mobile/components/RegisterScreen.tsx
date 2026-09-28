@@ -1344,14 +1344,14 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
   // ============================================
 
   /** Minimum dimensions for an ID image to produce reliable OCR results. */
-  const ID_IMAGE_MIN_WIDTH = 800;
-  const ID_IMAGE_MIN_HEIGHT = 500;
+  const ID_IMAGE_MIN_WIDTH = 600;
+  const ID_IMAGE_MIN_HEIGHT = 380;
   /** Minimum file size in bytes before we reject the image (too compressed = no detail). */
-  const ID_IMAGE_MIN_FILE_BYTES = 30 * 1024; // 30 KB
+  const ID_IMAGE_MIN_FILE_BYTES = 20 * 1024; // 20 KB
   /** Maximum original file size accepted by the mobile ID uploader. */
-  const ID_IMAGE_MAX_FILE_BYTES = 5 * 1024 * 1024; // 5 MB
+  const ID_IMAGE_MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
   /** Target width for pre-processed ID images sent to the server. */
-  const ID_IMAGE_TARGET_WIDTH = 1600;
+  const ID_IMAGE_TARGET_WIDTH = 900;
 
   /**
    * Validate and pre-process an ID card image before it is used in the

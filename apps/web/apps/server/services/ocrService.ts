@@ -139,6 +139,18 @@ async function tryPythonDeepLearningOCR(
   idType?: string,
 ): Promise<OCRServiceResult | null> {
   try {
+    let payload = base64Payload;
+    try {
+      const rawBuffer = Buffer.from(base64Payload, 'base64');
+      const resized = await sharp(rawBuffer)
+        .resize({ width: 900, height: 900, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      payload = resized.toString('base64');
+    } catch {
+      // If sharp resize fails, use original payload
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
 
@@ -146,7 +158,7 @@ async function tryPythonDeepLearningOCR(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        image: base64Payload,
+        image: payload,
         id_type: idType,
       }),
       signal: controller.signal,
@@ -202,7 +214,18 @@ export async function verifyIDDocumentDetailed(
   expectedIdNumber?: string,
 ): Promise<DeepLearningIDVerificationResult | null> {
   try {
-    const payload = stripDataUrlPrefix(String(image || '').trim());
+    let payload = stripDataUrlPrefix(String(image || '').trim());
+    try {
+      const rawBuffer = Buffer.from(payload, 'base64');
+      const resized = await sharp(rawBuffer)
+        .resize({ width: 900, height: 900, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      payload = resized.toString('base64');
+    } catch {
+      // fallback to original payload
+    }
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000);
 

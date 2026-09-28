@@ -64,7 +64,24 @@ router.all('/face/registration-logs', (req: Request, res: Response) => proxyToPy
 router.all('/face/clear-all', (req: Request, res: Response) => proxyToPython(req, res, '/api/face/clear-all'));
 router.all('/face/user/:id', (req: Request, res: Response) => proxyToPython(req, res, `/api/face/user/${req.params.id}`));
 
+import sharp from 'sharp';
+
 // ID OCR Endpoint
-router.all('/id/verify-document', (req: Request, res: Response) => proxyToPython(req, res, '/api/id/verify-document'));
+router.all('/id/verify-document', async (req: Request, res: Response) => {
+  if (req.body && typeof req.body.image === 'string' && req.body.image.length > 0) {
+    try {
+      const marker = 'base64,';
+      const idx = req.body.image.indexOf(marker);
+      const rawB64 = idx === -1 ? req.body.image : req.body.image.slice(idx + marker.length);
+      const buf = Buffer.from(rawB64, 'base64');
+      const resized = await sharp(buf)
+        .resize({ width: 900, height: 900, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 85 })
+        .toBuffer();
+      req.body.image = resized.toString('base64');
+    } catch {}
+  }
+  return proxyToPython(req, res, '/api/id/verify-document');
+});
 
 export default router;
