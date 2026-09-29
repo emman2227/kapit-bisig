@@ -110,9 +110,24 @@ export default function RegistrationOtpModal({
       if (result.success && result.verifiedToken) {
         onSuccess(result.verifiedToken);
       } else {
-        setErrorMessage(result.message || 'Incorrect verification code. Please try again.');
-        if (typeof result.attemptsLeft === 'number') {
-          setAttemptsLeft(result.attemptsLeft);
+        const isExpired = result.code === 'OTP_EXPIRED' || result.message?.toLowerCase().includes('expired');
+        const isMaxAttempts = result.code === 'MAX_ATTEMPTS' || result.message?.toLowerCase().includes('too many');
+
+        if (isExpired) {
+          setErrorMessage('Verification code has expired. Please request a new code.');
+          setOtp('');
+          setAttemptsLeft(null);
+          setResendCooldown(0); // Immediately unlock Resend button
+        } else if (isMaxAttempts) {
+          setErrorMessage('Too many incorrect attempts. Please request a new code.');
+          setOtp('');
+          setAttemptsLeft(0);
+          setResendCooldown(0); // Immediately unlock Resend button
+        } else {
+          setErrorMessage(result.message || 'Incorrect verification code. Please try again.');
+          if (typeof result.attemptsLeft === 'number') {
+            setAttemptsLeft(result.attemptsLeft);
+          }
         }
       }
     } catch (err) {
