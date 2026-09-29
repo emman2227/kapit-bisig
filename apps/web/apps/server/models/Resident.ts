@@ -42,8 +42,23 @@ function getBarangayCode(barangay: string): string {
 
 async function generateResidentCode(barangay: string): Promise<string> {
   const year = new Date().getFullYear();
-  const sequence = await getNextResidentSequence(`resident:${year}`);
   const code = getBarangayCode(barangay);
+
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const sequence = await getNextResidentSequence(`resident:${year}`);
+    const candidate = `${code}-${year}-${String(sequence).padStart(6, '0')}`;
+    const residentModel = mongoose.models.Resident;
+    if (residentModel) {
+      const exists = await residentModel.exists({ residentCode: candidate });
+      if (!exists) {
+        return candidate;
+      }
+    } else {
+      return candidate;
+    }
+  }
+
+  const sequence = await getNextResidentSequence(`resident:${year}`);
   return `${code}-${year}-${String(sequence).padStart(6, '0')}`;
 }
 

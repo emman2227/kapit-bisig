@@ -573,6 +573,29 @@ export class HouseholdRegistrationService {
             ? Object.keys(saveError.keyPattern)[0]
             : null;
           const duplicateIsId = duplicateKey === 'idNumber';
+          const duplicateIsMobile = duplicateKey === 'mobileNumber';
+          const duplicateIsResidentCode = duplicateKey === 'residentCode';
+
+          let errorCode = 'VALIDATION_FAILED';
+          let userMessage = 'A duplicate record already exists in the system.';
+          let logMessage = `Registration failed - duplicate key (${duplicateKey || 'unknown'})`;
+          let validationErrors: Array<{ field: string; code: string; message: string }> = [];
+
+          if (duplicateIsId) {
+            errorCode = 'DUPLICATE_ID';
+            userMessage = 'This ID number is already registered.';
+            logMessage = 'Registration failed - duplicate ID number (unique index)';
+            validationErrors = [{ field: 'idNumber', code: 'DUPLICATE_ID', message: 'ID number is already registered' }];
+          } else if (duplicateIsMobile) {
+            errorCode = 'DUPLICATE_MOBILE';
+            userMessage = 'This mobile number is already registered.';
+            logMessage = 'Registration failed - duplicate mobile number (unique index)';
+            validationErrors = [{ field: 'mobileNumber', code: 'DUPLICATE_MOBILE', message: 'Mobile number is already registered' }];
+          } else if (duplicateIsResidentCode) {
+            errorCode = 'SYSTEM_ERROR';
+            userMessage = 'Registration sequence conflict. Please try submitting again.';
+            logMessage = 'Registration failed - duplicate resident code (unique index)';
+          }
 
           await RegistrationAuditLog.log({
             eventType: 'REGISTRATION_FAILED',
@@ -582,23 +605,17 @@ export class HouseholdRegistrationService {
             ipAddress,
             userAgent,
             requestId,
-            message: duplicateIsId
-              ? 'Registration failed - duplicate ID number (unique index)'
-              : 'Registration failed - duplicate mobile number (unique index)',
+            message: logMessage,
             success: false,
-            errorCode: duplicateIsId ? 'DUPLICATE_ID' : 'DUPLICATE_MOBILE',
+            errorCode,
             processingTimeMs: Date.now() - startTime,
           });
 
           return {
             success: false,
-            message: duplicateIsId
-              ? 'This ID number is already registered.'
-              : 'This mobile number is already registered.',
-            errorCode: duplicateIsId ? 'DUPLICATE_ID' : 'DUPLICATE_MOBILE',
-            validationErrors: duplicateIsId
-              ? [{ field: 'idNumber', code: 'DUPLICATE_ID', message: 'ID number is already registered' }]
-              : [{ field: 'mobileNumber', code: 'DUPLICATE_MOBILE', message: 'Mobile number is already registered' }],
+            message: userMessage,
+            errorCode,
+            validationErrors: validationErrors.length > 0 ? validationErrors : undefined,
           };
         }
 
