@@ -122,7 +122,7 @@ export async function captureWatermarkedPhoto(
 ): Promise<string> {
   const uri = await captureRef(viewRef, {
     format: 'jpg',
-    quality: 0.85,
+    quality: 0.92,
     ...(width && height ? { width, height } : {}),
   });
   return uri;

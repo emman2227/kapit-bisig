@@ -434,7 +434,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
       allowsEditing: false,
       allowsMultipleSelection: true,
       selectionLimit: remaining,
-      quality: 0.7,
+      quality: 0.9,
     });
 
     if (!result.canceled) {
@@ -457,7 +457,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
       allowsEditing: false,
-      quality: 0.7,
+      quality: 0.9,
     });
 
     if (!result.canceled && result.assets[0]?.uri) {

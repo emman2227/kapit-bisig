@@ -93,12 +93,12 @@ export default function ResidentRegistrationRevisionScreen({
       ? await ImagePicker.launchCameraAsync({
           mediaTypes: ['images'],
           allowsEditing: false,
-          quality: 0.7,
+          quality: 0.9,
         })
       : await ImagePicker.launchImageLibraryAsync({
           mediaTypes: ['images'],
           allowsEditing: false,
-          quality: 0.7,
+          quality: 0.9,
         });
 
     if (result.canceled || !result.assets[0]?.uri) {
