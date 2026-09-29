@@ -172,7 +172,9 @@ export const scannerOperationRateLimiter: RateLimitRequestHandler = rateLimit({
  */
 export const loginRateLimiter: RateLimitRequestHandler = rateLimit({
   windowMs: 15 * 60 * 1000, // 15-minute window
-  max: isTest ? 10000 : 5, // Only 5 attempts allowed
+  max: isTest || process.env.NODE_ENV === 'development'
+    ? 10000
+    : (Number(process.env.LOGIN_RATE_LIMIT_MAX) || 100), // Accommodate testing & shared NAT networks
   message: {
     success: false,
     message: 'Too many login attempts. Please try again later.',
@@ -181,7 +183,7 @@ export const loginRateLimiter: RateLimitRequestHandler = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIP,
-  skipSuccessfulRequests: false, // Count ALL requests
+  skipSuccessfulRequests: true, // Only count failed attempts so successful logins do not consume limit
   handler: (req: Request, res: Response) => {
     console.warn(`[SECURITY] Login rate limit exceeded for IP: ${getClientIP(req)}`);
     res.status(429).json({
@@ -200,12 +202,14 @@ export const loginRateLimiter: RateLimitRequestHandler = rateLimit({
  * - Abuse of registration for enumeration
  * 
  * Policy:
- * - 3 registration attempts per hour per IP
+ * - 60 registration attempts per hour per IP (supports field/testing setups)
  * - Legitimate users rarely need more than 1-2 attempts
  */
 export const registrationRateLimiter: RateLimitRequestHandler = rateLimit({
   windowMs: 60 * 60 * 1000, // 1-hour window
-  max: isTest ? 10000 : 3, // 3 registrations per hour
+  max: isTest || process.env.NODE_ENV === 'development'
+    ? 10000
+    : (Number(process.env.REGISTRATION_RATE_LIMIT_MAX) || 60),
   message: {
     success: false,
     message: 'Too many accounts created from this IP. Please try again later.',
@@ -214,6 +218,7 @@ export const registrationRateLimiter: RateLimitRequestHandler = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIP,
+  skipSuccessfulRequests: true,
   handler: (req: Request, res: Response) => {
     console.warn(`[SECURITY] Registration rate limit exceeded for IP: ${getClientIP(req)}`);
     
@@ -295,7 +300,9 @@ export const passwordResetRateLimiter = passwordResetSendRateLimiter;
  */
 export const loginOtpRateLimiter: RateLimitRequestHandler = rateLimit({
   windowMs: 15 * 60 * 1000, // 15-minute window
-  max: isTest ? 10000 : 3,
+  max: isTest || process.env.NODE_ENV === 'development'
+    ? 10000
+    : (Number(process.env.LOGIN_OTP_RATE_LIMIT_MAX) || 30),
   message: {
     success: false,
     message: 'Too many OTP requests. Please try again later.',
@@ -304,6 +311,7 @@ export const loginOtpRateLimiter: RateLimitRequestHandler = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getClientIP,
+  skipSuccessfulRequests: true,
   handler: (req: Request, res: Response) => {
     res.status(429).json({
       success: false,
