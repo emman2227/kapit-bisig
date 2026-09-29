@@ -176,8 +176,9 @@ export default function NewDistributionModal({
 
   const scheduleMaxLocal = useMemo(() => {
     const now = new Date()
-    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 0, 0)
-    return formatDateTimeLocal(endOfMonth)
+    const maxDate = new Date(now.getTime() + 31 * 24 * 60 * 60 * 1000)
+    maxDate.setHours(23, 59, 0, 0)
+    return formatDateTimeLocal(maxDate)
   }, [open])
 
   const endsAtMaxLocal = useMemo(() => {
@@ -207,9 +208,8 @@ export default function NewDistributionModal({
       out.scheduled = 'Scheduled date/time is invalid.'
     } else if (date.getTime() < minAllowed) {
       out.scheduled = `Scheduled date/time must be at least ${SCHEDULE_MIN_LEAD_MINUTES} minutes from now.`
-    } else if (date.getFullYear() !== now.getFullYear() || date.getMonth() !== now.getMonth()) {
-      const monthLabel = now.toLocaleString('en-US', { month: 'long', year: 'numeric' })
-      out.scheduled = `Schedule must stay within ${monthLabel}. Next month is not allowed.`
+    } else if (date.getTime() > now.getTime() + 31 * 24 * 60 * 60 * 1000) {
+      out.scheduled = 'Schedule must be within the next 31 days.'
     } else {
       const hour = date.getHours()
       const isBeforeStart = hour < DISTRIBUTION_START_HOUR
