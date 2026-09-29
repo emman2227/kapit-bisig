@@ -56,18 +56,25 @@ export function persistVerificationImage(value: string, prefix: string): string 
     return raw;
   }
 
-  ensureUploadDir();
-
-  const ext = getExtFromMime(parsed.mime);
-  const fileName = `${prefix}-${Date.now()}-${crypto.randomUUID()}${ext}`;
-  const absPath = path.join(UPLOAD_DIR, fileName);
   const buffer = Buffer.from(parsed.base64, 'base64');
   if (buffer.length > VERIFICATION_IMAGE_MAX_BYTES) {
     throw new Error(`Verification image exceeds the maximum size of ${Math.floor(VERIFICATION_IMAGE_MAX_BYTES / (1024 * 1024))}MB.`);
   }
-  fs.writeFileSync(absPath, buffer);
 
-  return `${VERIFICATION_IMAGE_PUBLIC_BASE_PATH}/${fileName}`;
+  // Also best-effort write to local disk if directory is writable (cache)
+  try {
+    ensureUploadDir();
+    const ext = getExtFromMime(parsed.mime);
+    const fileName = `${prefix}-${Date.now()}-${crypto.randomUUID()}${ext}`;
+    const absPath = path.join(UPLOAD_DIR, fileName);
+    fs.writeFileSync(absPath, buffer);
+  } catch {
+    // Disk write error is non-fatal since the data URL is stored in MongoDB
+  }
+
+  // Return the data URL directly so it is stored in MongoDB Atlas,
+  // making it durable across cloud container redeploys and accessible from any client
+  return raw;
 }
 
 /**

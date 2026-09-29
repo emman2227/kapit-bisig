@@ -48,6 +48,29 @@ function formatDateTime(value?: string | null): string {
   })
 }
 
+function resolveAssetUrl(input?: string | null): string | null {
+  const value = String(input || '').trim()
+  if (!value) return null
+  if (value.startsWith('http://') || value.startsWith('https://') || value.startsWith('data:')) {
+    return value
+  }
+  if (!value.startsWith('/')) {
+    return value
+  }
+
+  const apiBase = process.env.NEXT_PUBLIC_API_URL?.trim() || '/api'
+  if (apiBase.startsWith('http://') || apiBase.startsWith('https://')) {
+    try {
+      const origin = new URL(apiBase).origin
+      return `${origin}${value}`
+    } catch {
+      return value
+    }
+  }
+
+  return value
+}
+
 function getProofUrls(submission: BeneficiaryProofSubmissionRecord | null): string[] {
   if (!submission) return []
   const list = [
@@ -191,7 +214,7 @@ export default function BeneficiaryProofReviewModal({
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 dark:border-slate-800 dark:bg-slate-950 flex items-center justify-center">
               {activePhoto ? (
                 <img
-                  src={activePhoto}
+                  src={resolveAssetUrl(activePhoto) || ''}
                   alt={`Damage proof evidence for ${submission.resident?.fullName}`}
                   className="h-full w-full object-contain cursor-pointer transition-transform hover:scale-[1.01]"
                   onClick={() => setIsZoomed(true)}
@@ -243,7 +266,7 @@ export default function BeneficiaryProofReviewModal({
                         : 'border-slate-200 dark:border-slate-800 opacity-60 hover:opacity-100'
                     }`}
                   >
-                    <img src={url} alt={`Thumbnail ${idx + 1}`} className="h-full w-full object-cover" />
+                    <img src={resolveAssetUrl(url) || ''} alt={`Thumbnail ${idx + 1}`} className="h-full w-full object-cover" />
                   </button>
                 ))}
               </div>
@@ -419,7 +442,7 @@ export default function BeneficiaryProofReviewModal({
             <X className="h-6 w-6" />
           </button>
           <img
-            src={activePhoto}
+            src={resolveAssetUrl(activePhoto) || ''}
             alt="Full size damage proof"
             className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
           />
