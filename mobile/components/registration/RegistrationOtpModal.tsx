@@ -174,6 +174,9 @@ export default function RegistrationOtpModal({
       transparent
       animationType="fade"
       onRequestClose={onClose}
+      onShow={() => {
+        inputRef.current?.focus();
+      }}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.backdrop}>
@@ -203,45 +206,48 @@ export default function RegistrationOtpModal({
                 <Text style={styles.phoneNumberHighlight}>{formatMobileNumber(mobileNumber)}</Text>
               </Text>
 
-              {/* Hidden Real TextInput */}
-              <TextInput
-                ref={inputRef}
-                value={otp}
-                onChangeText={handleOtpChange}
-                keyboardType="number-pad"
-                maxLength={OTP_LENGTH}
-                style={styles.hiddenInput}
-                autoFocus
-                textContentType="oneTimeCode"
-                autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
-              />
+              {/* OTP Input Section: Visual boxes with direct native TextInput overlay */}
+              <View style={styles.otpInputWrapper}>
+                {/* 6 Digit Input Boxes Display (underneath, pointerEvents="none") */}
+                <View
+                  style={styles.otpContainer}
+                  pointerEvents="none"
+                >
+                  {Array.from({ length: OTP_LENGTH }).map((_, index) => {
+                    const digit = otp[index] || '';
+                    const isCurrent = index === otp.length;
+                    const isFilled = index < otp.length;
 
-              {/* 6 Digit Input Boxes Display */}
-              <TouchableOpacity
-                activeOpacity={1}
-                onPress={() => inputRef.current?.focus()}
-                style={styles.otpContainer}
-              >
-                {Array.from({ length: OTP_LENGTH }).map((_, index) => {
-                  const digit = otp[index] || '';
-                  const isCurrent = index === otp.length;
-                  const isFilled = index < otp.length;
+                    return (
+                      <View
+                        key={index}
+                        style={[
+                          styles.otpBox,
+                          isFilled && styles.otpBoxFilled,
+                          isCurrent && styles.otpBoxActive,
+                          errorMessage && styles.otpBoxError,
+                        ]}
+                      >
+                        <Text style={styles.otpDigit}>{digit}</Text>
+                      </View>
+                    );
+                  })}
+                </View>
 
-                  return (
-                    <View
-                      key={index}
-                      style={[
-                        styles.otpBox,
-                        isFilled && styles.otpBoxFilled,
-                        isCurrent && styles.otpBoxActive,
-                        errorMessage && styles.otpBoxError,
-                      ]}
-                    >
-                      <Text style={styles.otpDigit}>{digit}</Text>
-                    </View>
-                  );
-                })}
-              </TouchableOpacity>
+                {/* Real TextInput directly overlaying the boxes */}
+                <TextInput
+                  ref={inputRef}
+                  value={otp}
+                  onChangeText={handleOtpChange}
+                  keyboardType={Platform.OS === 'ios' ? 'number-pad' : 'numeric'}
+                  maxLength={OTP_LENGTH}
+                  style={styles.otpOverlayInput}
+                  textContentType="oneTimeCode"
+                  autoComplete={Platform.OS === 'android' ? 'sms-otp' : 'one-time-code'}
+                  caretHidden={true}
+                  selectionColor="transparent"
+                />
+              </View>
 
               {/* Status / Error Messages */}
               {errorMessage && (
@@ -389,18 +395,25 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#1A1A1A',
   },
-  hiddenInput: {
-    position: 'absolute',
-    width: 1,
-    height: 1,
-    opacity: 0,
+  otpInputWrapper: {
+    position: 'relative',
+    width: '100%',
+    marginBottom: 18,
   },
   otpContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     width: '100%',
-    marginBottom: 18,
     gap: 8,
+  },
+  otpOverlayInput: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    opacity: 0.01,
+    color: 'transparent',
   },
   otpBox: {
     flex: 1,
