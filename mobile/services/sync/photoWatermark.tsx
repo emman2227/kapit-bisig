@@ -80,7 +80,7 @@ const watermarkStyles = StyleSheet.create({
     position: 'absolute',
     left: -9999,
     top: -9999,
-    backgroundColor: '#000',
+    backgroundColor: 'transparent',
   },
   overlay: {
     position: 'absolute',

@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Maximize2,
+  Sun,
 } from 'lucide-react'
 
 interface BeneficiaryProofReviewModalProps {
@@ -93,6 +94,7 @@ export default function BeneficiaryProofReviewModal({
 }: BeneficiaryProofReviewModalProps) {
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState(0)
   const [isZoomed, setIsZoomed] = useState(false)
+  const [isEnhanced, setIsEnhanced] = useState(false)
   const [showRevisionForm, setShowRevisionForm] = useState(false)
   const [revisionReason, setRevisionReason] = useState('')
   const [submittingAction, setSubmittingAction] = useState(false)
@@ -198,16 +200,33 @@ export default function BeneficiaryProofReviewModal({
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                 Uploaded Evidence ({photos.length} photo{photos.length === 1 ? '' : 's'})
               </p>
-              {activePhoto && (
-                <button
-                  type="button"
-                  onClick={() => setIsZoomed(true)}
-                  className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
-                >
-                  <Maximize2 className="h-3.5 w-3.5" />
-                  Full image
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {activePhoto && (
+                  <button
+                    type="button"
+                    onClick={() => setIsEnhanced((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                      isEnhanced
+                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/70 dark:text-amber-300 ring-1 ring-amber-400/50 shadow-sm'
+                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    }`}
+                    title={isEnhanced ? 'Reset normal brightness' : 'Brighten / Enhance dark photo'}
+                  >
+                    <Sun className={`h-3.5 w-3.5 ${isEnhanced ? 'text-amber-500 fill-amber-500/20' : ''}`} />
+                    {isEnhanced ? 'Brightened' : 'Brighten'}
+                  </button>
+                )}
+                {activePhoto && (
+                  <button
+                    type="button"
+                    onClick={() => setIsZoomed(true)}
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                    Full image
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Active Photo Container */}
@@ -216,7 +235,10 @@ export default function BeneficiaryProofReviewModal({
                 <img
                   src={resolveAssetUrl(activePhoto) || ''}
                   alt={`Damage proof evidence for ${submission.resident?.fullName}`}
-                  className="h-full w-full object-contain cursor-pointer transition-transform hover:scale-[1.01]"
+                  className="h-full w-full object-contain cursor-pointer transition-all hover:scale-[1.01]"
+                  style={{
+                    filter: isEnhanced ? 'brightness(1.3) contrast(1.1)' : 'none',
+                  }}
                   onClick={() => setIsZoomed(true)}
                 />
               ) : (
@@ -263,10 +285,17 @@ export default function BeneficiaryProofReviewModal({
                     className={`relative h-16 w-16 shrink-0 overflow-hidden rounded-xl border-2 transition-all ${
                       idx === selectedPhotoIndex
                         ? 'border-emerald-500 ring-2 ring-emerald-500/20 shadow-md'
-                        : 'border-slate-200 dark:border-slate-800 opacity-60 hover:opacity-100'
+                        : 'border-slate-200 dark:border-slate-800 opacity-90 hover:opacity-100'
                     }`}
                   >
-                    <img src={resolveAssetUrl(url) || ''} alt={`Thumbnail ${idx + 1}`} className="h-full w-full object-cover" />
+                    <img
+                      src={resolveAssetUrl(url) || ''}
+                      alt={`Thumbnail ${idx + 1}`}
+                      className="h-full w-full object-cover transition-all"
+                      style={{
+                        filter: isEnhanced ? 'brightness(1.25) contrast(1.08)' : 'none',
+                      }}
+                    />
                   </button>
                 ))}
               </div>
@@ -433,18 +462,37 @@ export default function BeneficiaryProofReviewModal({
 
       {/* Lightbox Modal for Full Image Zoom */}
       {isZoomed && activePhoto && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 p-4">
-          <button
-            type="button"
-            onClick={() => setIsZoomed(false)}
-            className="absolute top-5 right-5 rounded-full bg-white/20 p-2.5 text-white hover:bg-white/40 transition-colors"
-          >
-            <X className="h-6 w-6" />
-          </button>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/95 p-4">
+          <div className="absolute top-5 right-5 flex items-center gap-3 z-10">
+            <button
+              type="button"
+              onClick={() => setIsEnhanced((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-xs font-semibold transition-all ${
+                isEnhanced
+                  ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30 ring-2 ring-amber-300'
+                  : 'bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm'
+              }`}
+              title={isEnhanced ? 'Reset normal brightness' : 'Brighten / Enhance dark photo'}
+            >
+              <Sun className={`h-4 w-4 ${isEnhanced ? 'fill-white' : ''}`} />
+              {isEnhanced ? 'Enhanced' : 'Brighten photo'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsZoomed(false)}
+              className="rounded-full bg-white/20 p-2 text-white hover:bg-white/40 transition-colors backdrop-blur-sm"
+              title="Close full image"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
           <img
             src={resolveAssetUrl(activePhoto) || ''}
             alt="Full size damage proof"
-            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl"
+            className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl transition-all"
+            style={{
+              filter: isEnhanced ? 'brightness(1.3) contrast(1.1)' : 'none',
+            }}
           />
         </div>
       )}
