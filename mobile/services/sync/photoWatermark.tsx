@@ -55,6 +55,7 @@ export function WatermarkOverlay({
   viewRef,
   width = 720,
   height = 960,
+  onLoad,
 }: {
   uri: string;
   barangay: string;
@@ -62,10 +63,17 @@ export function WatermarkOverlay({
   viewRef: React.RefObject<View | null>;
   width?: number;
   height?: number;
+  onLoad?: () => void;
 }) {
   return (
     <View ref={viewRef} style={[watermarkStyles.container, { width, height }]} collapsable={false}>
-      <Image source={{ uri }} style={{ width, height }} resizeMode="contain" />
+      <Image
+        source={{ uri }}
+        style={{ width, height }}
+        resizeMode="contain"
+        fadeDuration={0}
+        onLoad={onLoad}
+      />
       <View style={watermarkStyles.overlay}>
         <Text style={watermarkStyles.text} numberOfLines={1}>
           {dateLabel} • Brgy. {barangay} • Kapit-Bisig
@@ -80,7 +88,7 @@ const watermarkStyles = StyleSheet.create({
     position: 'absolute',
     left: -9999,
     top: -9999,
-    backgroundColor: 'transparent',
+    backgroundColor: '#FFFFFF',
   },
   overlay: {
     position: 'absolute',

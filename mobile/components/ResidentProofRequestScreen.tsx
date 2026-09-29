@@ -175,6 +175,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
   const [watermarkDateLabel, setWatermarkDateLabel] = useState('');
   const [watermarkDimensions, setWatermarkDimensions] = useState<{ width: number; height: number }>({ width: 720, height: 960 });
   const watermarkViewRef = useRef<View | null>(null);
+  const imageLoadedResolveRef = useRef<(() => void) | null>(null);
   const draftSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const residentTokenRef = useRef<string | null>(null);
   const residentIdRef = useRef<string | null>(null);
@@ -341,6 +342,13 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
     }
   }, [loadScreenData]);
 
+  const handleWatermarkImageLoad = useCallback(() => {
+    if (imageLoadedResolveRef.current) {
+      imageLoadedResolveRef.current();
+      imageLoadedResolveRef.current = null;
+    }
+  }, []);
+
   const appendAssets = useCallback(async (uris: string[]) => {
     // Apply watermark to each photo before adding
     const barangay = residentBarangay || 'Unknown';
@@ -361,8 +369,14 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
       setWatermarkBarangay(barangay);
       setWatermarkDateLabel(dateLabel);
 
-      // Give the watermark overlay time to render
-      await new Promise((resolve) => setTimeout(resolve, 150));
+      // Wait for image to load with fadeDuration={0} (eliminates Android 300ms fade-in darkening)
+      await Promise.race([
+        new Promise<void>((resolve) => {
+          imageLoadedResolveRef.current = resolve;
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 600)),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 60));
 
       let finalUri = uri;
       try {
@@ -974,6 +988,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
           viewRef={watermarkViewRef}
           width={watermarkDimensions.width}
           height={watermarkDimensions.height}
+          onLoad={handleWatermarkImageLoad}
         />
       ) : null}
     </SafeAreaView>

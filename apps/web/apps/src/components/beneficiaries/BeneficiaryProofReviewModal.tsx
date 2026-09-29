@@ -237,7 +237,7 @@ export default function BeneficiaryProofReviewModal({
                   alt={`Damage proof evidence for ${submission.resident?.fullName}`}
                   className="h-full w-full object-contain cursor-pointer transition-all hover:scale-[1.01]"
                   style={{
-                    filter: isEnhanced ? 'brightness(1.3) contrast(1.1)' : 'none',
+                    filter: isEnhanced ? 'brightness(1.45) contrast(1.15)' : 'none',
                   }}
                   onClick={() => setIsZoomed(true)}
                 />
@@ -491,7 +491,7 @@ export default function BeneficiaryProofReviewModal({
             alt="Full size damage proof"
             className="max-h-[90vh] max-w-[90vw] object-contain rounded-lg shadow-2xl transition-all"
             style={{
-              filter: isEnhanced ? 'brightness(1.3) contrast(1.1)' : 'none',
+              filter: isEnhanced ? 'brightness(1.45) contrast(1.15)' : 'none',
             }}
           />
         </div>
