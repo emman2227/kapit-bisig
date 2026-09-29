@@ -143,7 +143,6 @@ export default function NewDistributionModal({
     setIsLoadingPreApproved(true)
     api.previewBeneficiaries({
       barangay,
-      assignedBarangays,
     })
       .then((res) => {
         if (!isCancelled && res.success && res.data) {
@@ -160,7 +159,7 @@ export default function NewDistributionModal({
     return () => {
       isCancelled = true
     }
-  }, [open, barangay, assignedBarangays])
+  }, [open, barangay])
 
   useEffect(() => {
     const timer = setTimeout(() => {

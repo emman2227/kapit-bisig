@@ -668,7 +668,8 @@ export const api = {
     if (params.disasterEventId) sp.append('disasterEventId', params.disasterEventId);
     const qs = sp.toString();
     const response = await fetch(`${API_URL}/distributions/preview-beneficiaries${qs ? `?${qs}` : ''}`, {
-      headers: getAuthHeaders(),
+      headers: createHeaders(),
+      credentials: 'include',
     });
     return handleResponse<ApiResponse<{ count: number; targetBarangays: string[] }>>(response);
   },
