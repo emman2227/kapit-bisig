@@ -1371,9 +1371,23 @@ def save_face_embedding_to_mongodb(embedding_data: dict) -> Optional[str]:
     
     try:
         embedding_data["created_at"] = datetime.now()
-        result = db.face_embeddings.insert_one(embedding_data)
-        print(f"  Face embedding saved to MongoDB: {result.inserted_id}")
-        return str(result.inserted_id)
+        mobile = embedding_data.get("mobile_number")
+        if mobile:
+            result = db.face_embeddings.update_one(
+                {"mobile_number": mobile},
+                {"$set": embedding_data},
+                upsert=True
+            )
+            saved_id = str(result.upserted_id) if result.upserted_id else None
+            if not saved_id:
+                existing = db.face_embeddings.find_one({"mobile_number": mobile}, {"_id": 1})
+                saved_id = str(existing.get("_id")) if existing else None
+            print(f"  Face embedding upserted to MongoDB: {saved_id}")
+            return saved_id
+        else:
+            result = db.face_embeddings.insert_one(embedding_data)
+            print(f"  Face embedding saved to MongoDB: {result.inserted_id}")
+            return str(result.inserted_id)
     except Exception as e:
         logger.error(f"Failed to save face embedding to MongoDB: {e}")
         return None
@@ -1523,9 +1537,20 @@ async def check_duplicate_face(request: DuplicateCheckRequest, http_request: Req
         valid_records = []
         embedding_rows = []
 
+        applicant_mobile = ""
+        if request.resident_data:
+            applicant_mobile = str(request.resident_data.get("mobileNumber", "")).strip()
+
         for resident in registered_faces:
             stored_embedding = resident.get("embedding_vector", [])
             if not stored_embedding or len(stored_embedding) != len(embedding):
+                continue
+
+            # Self-exclusion: If the applicant is retrying registration with the SAME mobile number,
+            # do not treat their own pending embedding as an unauthorized duplicate.
+            stored_mobile = str(resident.get("mobile_number", "")).strip()
+            if applicant_mobile and stored_mobile and applicant_mobile == stored_mobile:
+                print(f"  Skipping self-match for applicant mobile: {applicant_mobile}")
                 continue
 
             valid_records.append(resident)
