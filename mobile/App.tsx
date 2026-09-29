@@ -664,6 +664,14 @@ export default function App() {
   }, [accountType, refreshResidentVirtualId, residentProfile?.status]);
 
   useEffect(() => {
+    if (!isResidentPending) return;
+    const interval = setInterval(() => {
+      loadResidentProfile(true).catch(() => undefined);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [isResidentPending]);
+
+  useEffect(() => {
     if (accountType !== 'resident') return;
     const subscription = AppState.addEventListener('change', (nextState) => {
       if (nextState === 'active') {
@@ -919,6 +927,7 @@ export default function App() {
             virtualIdError={virtualIdError}
             virtualIdWarning={virtualIdWarning}
             onRefreshVirtualId={refreshResidentVirtualId}
+            onRefreshProfile={() => loadResidentProfile(true)}
             distributionItems={residentDistributions.items}
             isDistributionLoading={residentDistributions.isLoading}
             distributionWarning={residentDistributions.warning}

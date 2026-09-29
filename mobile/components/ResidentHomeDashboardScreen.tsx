@@ -51,6 +51,7 @@ interface ResidentHomeDashboardScreenProps {
   virtualIdError?: string | null;
   virtualIdWarning?: string | null;
   onRefreshVirtualId?: (force?: boolean) => Promise<void>;
+  onRefreshProfile?: () => Promise<boolean | void>;
   distributionItems?: ResidentDistributionItem[];
   isDistributionLoading?: boolean;
   distributionWarning?: string | null;
@@ -97,6 +98,7 @@ export default function ResidentHomeDashboardScreen({
   virtualIdError = null,
   virtualIdWarning = null,
   onRefreshVirtualId,
+  onRefreshProfile,
   distributionItems = [],
   isDistributionLoading = false,
   distributionWarning = null,
@@ -180,6 +182,7 @@ export default function ResidentHomeDashboardScreen({
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
+      await onRefreshProfile?.();
       await Promise.all([
         onRefreshDistributions?.(true),
         loadNotifications(),
@@ -189,7 +192,7 @@ export default function ResidentHomeDashboardScreen({
     } finally {
       setIsRefreshing(false);
     }
-  }, [loadAssistanceStatus, loadNotifications, onRefreshDistributions, onRefreshVirtualId]);
+  }, [loadAssistanceStatus, loadNotifications, onRefreshDistributions, onRefreshProfile, onRefreshVirtualId]);
 
   const openNotification = useCallback(async (item: NotificationView) => {
     // 1. Immediately close modal so notification vanishes from view
