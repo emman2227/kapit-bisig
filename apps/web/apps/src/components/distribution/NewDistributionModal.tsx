@@ -102,6 +102,8 @@ export default function NewDistributionModal({
   const [errors, setErrors] = useState<StepFieldErrors>({})
 
   const [requiresBeneficiaryApproval, setRequiresBeneficiaryApproval] = useState<boolean>(false)
+  const [preApprovedCount, setPreApprovedCount] = useState<number | null>(null)
+  const [isLoadingPreApproved, setIsLoadingPreApproved] = useState(false)
 
   const [staffQuery, setStaffQuery] = useState('')
   const [debouncedStaffQuery, setDebouncedStaffQuery] = useState('')
@@ -126,9 +128,39 @@ export default function NewDistributionModal({
     setStaffData({ items: [], nextCursor: null })
     setIsCreating(false)
     setIsLoadingStaff(false)
+    setPreApprovedCount(null)
+    setIsLoadingPreApproved(false)
     cacheRef.current = new Map()
     selectedStaffRef.current = new Map()
   }, [open])
+
+  useEffect(() => {
+    if (!open || !barangay) {
+      setPreApprovedCount(null)
+      return
+    }
+    let isCancelled = false
+    setIsLoadingPreApproved(true)
+    api.previewBeneficiaries({
+      barangay,
+      assignedBarangays,
+    })
+      .then((res) => {
+        if (!isCancelled && res.success && res.data) {
+          setPreApprovedCount(res.data.count)
+        }
+      })
+      .catch(() => {
+        if (!isCancelled) setPreApprovedCount(0)
+      })
+      .finally(() => {
+        if (!isCancelled) setIsLoadingPreApproved(false)
+      })
+
+    return () => {
+      isCancelled = true
+    }
+  }, [open, barangay, assignedBarangays])
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -732,14 +764,31 @@ export default function NewDistributionModal({
                           {requiresBeneficiaryApproval && <CheckIcon />}
                         </span>
                       </div>
-                      <div className="mt-2.5 font-bold text-sm text-gray-900 dark:text-slate-100">
-                        Targeted Specialized Aid
+                      <div className="mt-2.5 font-bold text-sm text-gray-900 dark:text-slate-100 flex items-center justify-between">
+                        <span>Targeted Specialized Aid</span>
+                        {barangay && preApprovedCount !== null && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-200 dark:bg-amber-900/70 text-amber-900 dark:text-amber-200">
+                            {isLoadingPreApproved ? '...' : `${preApprovedCount} pre-approved`}
+                          </span>
+                        )}
                       </div>
                       <p className="mt-1 text-xs text-gray-600 dark:text-slate-300 leading-relaxed">
                         Restricted to residents with approved damage proof in Target Beneficiaries. Best for cash aid, shelter repair, and livelihood grants.
                       </p>
-                      <div className="mt-2 text-[11px] text-amber-700 dark:text-amber-400 font-semibold flex items-center gap-1">
-                        <span>⚠ Only approved proof beneficiaries</span>
+                      <div className="mt-2 text-[11px] text-amber-700 dark:text-amber-400 font-semibold flex flex-col gap-0.5">
+                        <span className="flex items-center gap-1">
+                          <span>✓ Pre-approved beneficiaries auto-enrolled on creation</span>
+                        </span>
+                        {barangay && preApprovedCount !== null && preApprovedCount > 0 && (
+                          <span className="text-emerald-700 dark:text-emerald-400 font-medium">
+                            • {preApprovedCount} approved {preApprovedCount === 1 ? 'household' : 'households'} in coverage ready for instant claim pass
+                          </span>
+                        )}
+                        {barangay && preApprovedCount === 0 && (
+                          <span className="text-slate-500 dark:text-slate-400 font-normal">
+                            • 0 households currently pre-approved (residents can submit proof after scheduling)
+                          </span>
+                        )}
                       </div>
                     </button>
                   </div>

@@ -653,6 +653,27 @@ export const api = {
   },
 
   /**
+   * Preview pre-approved beneficiaries count for covered barangays.
+   */
+  async previewBeneficiaries(params: {
+    barangay: string;
+    assignedBarangays?: string[];
+    disasterEventId?: string;
+  }): Promise<ApiResponse<{ count: number; targetBarangays: string[] }>> {
+    const sp = new URLSearchParams();
+    if (params.barangay) sp.append('barangay', params.barangay);
+    if (params.assignedBarangays && params.assignedBarangays.length > 0) {
+      sp.append('assignedBarangays', params.assignedBarangays.join(','));
+    }
+    if (params.disasterEventId) sp.append('disasterEventId', params.disasterEventId);
+    const qs = sp.toString();
+    const response = await fetch(`${API_URL}/distributions/preview-beneficiaries${qs ? `?${qs}` : ''}`, {
+      headers: getAuthHeaders(),
+    });
+    return handleResponse<ApiResponse<{ count: number; targetBarangays: string[] }>>(response);
+  },
+
+  /**
    * Search eligible scanner staff for a distribution scope.
    */
   async getScanEligibleUsers(params: {

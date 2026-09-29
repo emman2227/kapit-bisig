@@ -34,6 +34,7 @@ import { broadcastDistributionSms } from '../utils/distributionSms';
 import { broadcastDistributionPush } from '../utils/distributionPush';
 import { deriveDistributionLifecycle } from '../utils/distributionLifecycle';
 import {
+  countPreApprovedBeneficiariesForCoverage,
   countRegisteredHouseholdsForDistribution,
   enrollApprovedResidentsInDistribution,
   getEligibleResidentIdsByDistribution,
@@ -348,7 +349,7 @@ router.post(
           });
         }
         disasterEvent = foundEvent;
-        requiresBeneficiaryApproval = requestedRequiresApproval === true;
+        requiresBeneficiaryApproval = requestedRequiresApproval !== false;
       } else if (requestedRequiresApproval === true) {
         // Auto-resolve active disaster event for this barangay if one exists
         const foundEvent = (await DisasterEvent.findOne({
@@ -594,6 +595,40 @@ router.get(
       res.status(500).json({ success: false, message });
     }
   }
+);
+
+/**
+ * GET /api/distributions/preview-beneficiaries
+ *
+ * Previews the count of pre-approved beneficiaries in the covered barangays.
+ */
+router.get(
+  '/preview-beneficiaries',
+  requireStaffOrSuperadmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const barangay = typeof req.query.barangay === 'string' ? req.query.barangay : '';
+      let assignedBarangays: string[] = [];
+      if (Array.isArray(req.query.assignedBarangays)) {
+        assignedBarangays = req.query.assignedBarangays as string[];
+      } else if (typeof req.query.assignedBarangays === 'string') {
+        assignedBarangays = req.query.assignedBarangays.split(',').map((b) => b.trim()).filter(Boolean);
+      }
+      const targetBarangays = getTargetBarangays(barangay, assignedBarangays);
+      const disasterEventId = typeof req.query.disasterEventId === 'string' ? req.query.disasterEventId : undefined;
+      const count = await countPreApprovedBeneficiariesForCoverage(targetBarangays, disasterEventId);
+      return res.json({
+        success: true,
+        data: {
+          count,
+          targetBarangays,
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to preview beneficiaries';
+      return res.status(500).json({ success: false, message });
+    }
+  },
 );
 
 /**

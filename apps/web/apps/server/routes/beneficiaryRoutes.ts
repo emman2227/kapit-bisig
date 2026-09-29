@@ -125,7 +125,28 @@ router.get('/events', validateRequest({ query: listDisasterEventsQuery }), async
 
 router.get('/events/active', async (_req: Request, res: Response) => {
   try {
-    const event = await DisasterEvent.findOne({ status: 'Active' }).sort({ eventDate: -1, createdAt: -1 });
+    let event = await DisasterEvent.findOne({ status: 'Active' }).sort({ eventDate: -1, createdAt: -1 });
+    if (!event) {
+      event = await DisasterEvent.findOne({ name: 'General Calamity Damage Assessment' });
+      if (!event) {
+        event = await DisasterEvent.create({
+          name: 'General Calamity Damage Assessment',
+          disasterType: 'Other',
+          description: 'Official damage proof intake and relief beneficiary verification for affected residents.',
+          barangays: [
+            'Bolo', 'Bongalon', 'Dulig', 'Laois', 'Magsaysay',
+            'Poblacion', 'San Gonzalo', 'San Jose', 'Tobuan', 'Uyong',
+          ],
+          eventDate: new Date(),
+          status: 'Active',
+          createdBy: 'system',
+          updatedBy: 'system',
+        });
+      } else if (event.status !== 'Active') {
+        event.status = 'Active';
+        await event.save();
+      }
+    }
     return res.json({
       success: true,
       data: event,

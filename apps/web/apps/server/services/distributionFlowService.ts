@@ -136,7 +136,7 @@ export async function isResidentApprovedBeneficiaryForDistribution(
     return false;
   }
 
-  const eligibility = await BeneficiaryEligibility.findOne({
+  let eligibility = await BeneficiaryEligibility.findOne({
     distributionId: new mongoose.Types.ObjectId(distributionId),
     residentId: new mongoose.Types.ObjectId(residentId),
     status: 'Eligible',
@@ -145,6 +145,20 @@ export async function isResidentApprovedBeneficiaryForDistribution(
   })
     .select('_id')
     .lean();
+
+  if (!eligibility) {
+    const distribution = await Distribution.findById(distributionId).select('disasterEventId').lean();
+    if (distribution?.disasterEventId) {
+      eligibility = await BeneficiaryEligibility.findOne({
+        disasterEventId: distribution.disasterEventId,
+        residentId: new mongoose.Types.ObjectId(residentId),
+        distributionId: null,
+        status: 'Eligible',
+        registrationStatus: 'Approved',
+        proofStatus: 'Approved',
+      }).select('_id').lean();
+    }
+  }
 
   if (!eligibility) {
     return false;
@@ -160,38 +174,58 @@ export async function isResidentApprovedBeneficiaryForDistribution(
 }
 
 /**
- * Copies approved disaster-event eligibility into a distribution-specific
+ * Copies approved calamity/disaster eligibility into a distribution-specific
  * enrollment snapshot. The distribution snapshot is what QR validation uses.
+ * Supports pre-assessment: residents approved prior to distribution creation
+ * are automatically enrolled.
  */
 export async function enrollApprovedResidentsInDistribution(
   distribution: DistributionCoverage,
 ): Promise<EnrollmentSummary> {
-  if (!distribution.disasterEventId || !requiresBeneficiaryApproval(distribution)) {
+  if (!requiresBeneficiaryApproval(distribution)) {
     return { matchedResidents: 0, enrolledResidents: 0 };
   }
 
   const targetBarangays = getTargetBarangays(distribution.barangay, distribution.assignedBarangays);
-  const eventEligibilityRows = await BeneficiaryEligibility.find({
-    disasterEventId: distribution.disasterEventId,
+
+  const filter: Record<string, unknown> = {
     distributionId: null,
     status: 'Eligible',
     registrationStatus: 'Approved',
     proofStatus: 'Approved',
-  }).lean();
+  };
+
+  if (distribution.disasterEventId) {
+    filter.$or = [
+      { disasterEventId: distribution.disasterEventId },
+      { disasterEventId: null },
+    ];
+  }
+
+  const eventEligibilityRows = await BeneficiaryEligibility.find(filter).lean();
 
   if (eventEligibilityRows.length === 0) {
     return { matchedResidents: 0, enrolledResidents: 0 };
   }
 
-  const eligibleResidentIds = eventEligibilityRows.map((row) => row.residentId);
+  const eligibleResidentIds = [...new Set(eventEligibilityRows.map((row) => row.residentId.toString()))];
   const residents = await Resident.find({
-    _id: mongoose.trusted({ $in: eligibleResidentIds }),
+    _id: mongoose.trusted({ $in: eligibleResidentIds.map((id) => new mongoose.Types.ObjectId(id)) }),
     barangay: mongoose.trusted({ $in: targetBarangays }),
     status: 'Approved',
     qrStatus: 'ACTIVE',
   }).select('_id').lean();
   const allowedIds = new Set(residents.map((resident) => resident._id.toString()));
-  const matchingRows = eventEligibilityRows.filter((row) => allowedIds.has(row.residentId.toString()));
+
+  const residentRowMap = new Map<string, typeof eventEligibilityRows[0]>();
+  for (const row of eventEligibilityRows) {
+    const resIdStr = row.residentId.toString();
+    if (allowedIds.has(resIdStr) && !residentRowMap.has(resIdStr)) {
+      residentRowMap.set(resIdStr, row);
+    }
+  }
+
+  const matchingRows = Array.from(residentRowMap.values());
 
   if (matchingRows.length === 0) {
     return { matchedResidents: 0, enrolledResidents: 0 };
@@ -228,12 +262,48 @@ export async function enrollApprovedResidentsInDistribution(
 }
 
 /**
+ * Counts the number of approved beneficiary households waiting for targeted aid
+ * within the covered barangays.
+ */
+export async function countPreApprovedBeneficiariesForCoverage(
+  targetBarangays: string[],
+  disasterEventId?: string | null,
+): Promise<number> {
+  if (!Array.isArray(targetBarangays) || targetBarangays.length === 0) return 0;
+
+  const filter: Record<string, unknown> = {
+    distributionId: null,
+    status: 'Eligible',
+    registrationStatus: 'Approved',
+    proofStatus: 'Approved',
+  };
+
+  if (disasterEventId && mongoose.Types.ObjectId.isValid(disasterEventId)) {
+    filter.$or = [
+      { disasterEventId: new mongoose.Types.ObjectId(disasterEventId) },
+      { disasterEventId: null },
+    ];
+  }
+
+  const rows = await BeneficiaryEligibility.find(filter).select('residentId').lean();
+  if (rows.length === 0) return 0;
+
+  const residentIds = [...new Set(rows.map((r) => r.residentId.toString()))];
+  return Resident.countDocuments({
+    _id: mongoose.trusted({ $in: residentIds.map((id) => new mongoose.Types.ObjectId(id)) }),
+    barangay: mongoose.trusted({ $in: targetBarangays }),
+    status: 'Approved',
+    qrStatus: 'ACTIVE',
+  });
+}
+
+/**
  * Runs after proof review so approval is reflected in every open matching
  * distribution, including distributions created before the proof was reviewed.
  */
 export async function syncResidentEnrollmentsForEvent(params: {
   residentId: mongoose.Types.ObjectId;
-  disasterEventId: mongoose.Types.ObjectId;
+  disasterEventId?: mongoose.Types.ObjectId | null;
   proofSubmissionId: mongoose.Types.ObjectId;
   registrationStatus: RegistrationSnapshotStatus;
   proofStatus: ProofSubmissionStatus;
@@ -246,13 +316,21 @@ export async function syncResidentEnrollmentsForEvent(params: {
     .lean();
   if (!resident) return 0;
 
-  const candidates = await Distribution.find({
-    disasterEventId: params.disasterEventId,
+  const distFilter: Record<string, unknown> = {
     status: mongoose.trusted({ $ne: 'Claimed' }),
     requiresBeneficiaryApproval: true,
     archivedAt: null,
     endsAt: mongoose.trusted({ $gte: new Date() }),
-  });
+  };
+
+  if (params.disasterEventId) {
+    distFilter.$or = [
+      { disasterEventId: params.disasterEventId },
+      { disasterEventId: null },
+    ];
+  }
+
+  const candidates = await Distribution.find(distFilter);
   const matching = candidates.filter((distribution) =>
     isDistributionVisibleToResidents(distribution)
     && isResidentEligibleForDistribution(String(resident.barangay || ''), distribution));

@@ -639,18 +639,16 @@ export async function reviewResidentProof(params: ProofReviewInput): Promise<{
     reviewedAt: submission.reviewedAt,
   });
 
-  if (event) {
-    await syncResidentEnrollmentsForEvent({
-      residentId: resident._id,
-      disasterEventId: event._id,
-      proofSubmissionId: submission._id,
-      registrationStatus: resident.status,
-      proofStatus: submission.status,
-      rejectionReason: submission.rejectionReason,
-      reviewedBy: params.reviewerId,
-      reviewedAt: submission.reviewedAt,
-    });
-  }
+  await syncResidentEnrollmentsForEvent({
+    residentId: resident._id,
+    disasterEventId: event?._id || null,
+    proofSubmissionId: submission._id,
+    registrationStatus: resident.status,
+    proofStatus: submission.status,
+    rejectionReason: submission.rejectionReason,
+    reviewedBy: params.reviewerId,
+    reviewedAt: submission.reviewedAt,
+  });
 
   // One authoritative in-app notification is always created. SMS is
   // best-effort and never rolls back the completed review decision.

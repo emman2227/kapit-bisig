@@ -95,14 +95,22 @@ export async function broadcastDistributionSms(
   const sent = results.filter((result) => result.status === 'fulfilled').length;
 
   const configured = dependencies.configured ?? isSmsConfigured();
+  if (!configured) {
+    return {
+      status: 'provider_not_configured',
+      attempted,
+      sent: 0,
+      skipped,
+      failed: attempted,
+    };
+  }
+
   return {
-    status: !configured
+    status: sent === attempted
       ? 'sent_successfully'
-      : sent === attempted
-        ? 'sent_successfully'
-        : sent > 0
-          ? 'partially_delivered'
-          : 'provider_request_failed',
+      : sent > 0
+        ? 'partially_delivered'
+        : 'provider_request_failed',
     attempted,
     sent,
     skipped,
