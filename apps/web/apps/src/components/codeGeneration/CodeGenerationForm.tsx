@@ -186,17 +186,14 @@ export default function CodeGenerationForm({
     [expirationLabel]
   )
   const barangayDropdownOptions = useMemo(
-    () => [
-      { value: '', label: 'Select barangay' },
-      ...barangayOptions.map((option) => ({ value: option, label: option })),
-    ],
+    () => barangayOptions.map((option) => ({ value: option, label: option })),
     [barangayOptions]
   )
 
   return (
-    <section className="relative z-20 overflow-hidden rounded-[2rem] border border-slate-200/90 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-sm mb-8">
+    <section className="relative z-20 rounded-[2rem] border border-slate-200/90 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-sm mb-8">
       {/* Top Header Bar */}
-      <div className="border-b border-slate-200/80 bg-slate-50/90 px-6 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-8">
+      <div className="rounded-t-[calc(2rem-1px)] border-b border-slate-200/80 bg-slate-50/90 px-6 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-8">
         <SectionHeader
           eyebrow="Security & Token Dispatch"
           title="Municipal code generator"
@@ -215,15 +212,14 @@ export default function CodeGenerationForm({
             <label htmlFor="code-generation-barangay" className="mb-2 block text-[11px] font-bold tracking-widest text-gray-500 dark:text-gray-400 uppercase">
               Barangay
             </label>
-            <div className="dark:text-gray-900">
-              <SelectDropdown
-                id="code-generation-barangay"
-                value={barangay}
-                onChange={setBarangay}
-                options={barangayDropdownOptions}
-                ariaLabel="Select barangay"
-              />
-            </div>
+            <SelectDropdown
+              id="code-generation-barangay"
+              value={barangay}
+              onChange={setBarangay}
+              options={barangayDropdownOptions}
+              placeholder="Select barangay"
+              ariaLabel="Select barangay"
+            />
             <p className="mt-2.5 text-[11px] font-bold tracking-wider uppercase text-gray-400 dark:text-slate-500 h-4 truncate" title={activeUnusedLabel}>
               {activeUnusedLabel}
             </p>
