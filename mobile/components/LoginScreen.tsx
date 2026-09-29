@@ -293,7 +293,18 @@ export default function LoginScreen({ onLoginSuccess, onBack }: LoginScreenProps
         setMode('activation_password');
         setOtp('');
       } else {
-        setError(response.message || 'Invalid or expired activation code.');
+        const isExpired = response.code === 'OTP_EXPIRED' || response.message?.toLowerCase().includes('expired');
+        const isMaxAttempts = response.code === 'MAX_ATTEMPTS' || response.message?.toLowerCase().includes('too many');
+
+        if (isExpired) {
+          setOtp('');
+          setError('Verification code has expired. Please request a new code.');
+        } else if (isMaxAttempts) {
+          setOtp('');
+          setError('Too many incorrect attempts. Please request a new code.');
+        } else {
+          setError(response.message || 'Incorrect verification code. Please try again.');
+        }
       }
     } catch (err) {
       console.error('Activation OTP verification error:', err);

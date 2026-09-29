@@ -545,6 +545,20 @@ export default function ProfileScreen({
       });
 
       if (!result.success) {
+        const isExpired = result.message?.toLowerCase().includes('expired');
+        const isMaxAttempts = result.message?.toLowerCase().includes('too many');
+
+        if (isExpired) {
+          setChangePasswordOtpInput('');
+          Alert.alert('Code Expired', 'Verification code has expired. Please tap Resend OTP to request a new code.');
+          return;
+        }
+        if (isMaxAttempts) {
+          setChangePasswordOtpInput('');
+          Alert.alert('Too Many Attempts', 'Too many failed attempts. Please tap Resend OTP to request a new code.');
+          return;
+        }
+
         const errorDetail = result.errors && result.errors.length > 0 ? `\n\n• ${result.errors.join('\n• ')}` : '';
         Alert.alert('Verification failed', `${result.message || 'Unable to update password.'}${errorDetail}`);
         return;

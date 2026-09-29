@@ -71,7 +71,20 @@ export default function StaffForgotPasswordScreen({ initialEmail = '', onBack }:
       setLoading(true);
       const response = await mobileAuthService.verifyPasswordResetOtp(email, otp);
       setLoading(false);
-      if (!response.success || !response.resetToken) return setError(response.message || 'Invalid or expired code.');
+      if (!response.success || !response.resetToken) {
+        const isExpired = response.code === 'OTP_EXPIRED' || response.message?.toLowerCase().includes('expired');
+        const isMaxAttempts = response.code === 'MAX_ATTEMPTS' || response.message?.toLowerCase().includes('too many');
+
+        if (isExpired) {
+          setOtp('');
+          return setError('Verification code has expired. Please request a new code.');
+        }
+        if (isMaxAttempts) {
+          setOtp('');
+          return setError('Too many incorrect attempts. Please request a new code.');
+        }
+        return setError(response.message || 'Incorrect verification code. Please try again.');
+      }
       setResetToken(response.resetToken);
       setStep('password');
       return;
