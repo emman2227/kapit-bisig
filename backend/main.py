@@ -109,7 +109,7 @@ def require_admin_auth(
 # ============================================
 
 FACE_MATCH_THRESHOLD = float(os.getenv("FACE_MATCH_THRESHOLD", "0.65"))  # Similarity threshold for verification
-DUPLICATE_THRESHOLD = float(os.getenv("DUPLICATE_THRESHOLD", "0.70"))    # Threshold for duplicate detection during registration
+DUPLICATE_THRESHOLD = float(os.getenv("DUPLICATE_THRESHOLD", "0.85"))    # Threshold for duplicate detection during registration (FaceNet cosine similarity)
 MIN_FACE_SIZE = int(os.getenv("MIN_FACE_SIZE", "80"))                    # Minimum face size in pixels
 MODEL_NAME = os.getenv("MODEL_NAME", "Facenet-ONNX")                        # FaceNet ONNX embedding model (512-d)
 DETECTOR_BACKEND = os.getenv("DETECTOR_BACKEND", "opencv")               # Faster on CPU; Haar cascade
