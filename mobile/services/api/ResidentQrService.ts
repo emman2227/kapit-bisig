@@ -268,6 +268,24 @@ async function parseApiResponse<T>(response: Response): Promise<ApiResponse<T>> 
   }
 }
 
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 6000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: options.signal || controller.signal,
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function parseRetryAfterSeconds(response: Response, payload: ApiResponse<unknown>): number | undefined {
   const payloadValue = Number(payload.retryAfterSeconds ?? payload.retryAfter);
   if (Number.isFinite(payloadValue) && payloadValue > 0) return Math.ceil(payloadValue);
@@ -399,13 +417,13 @@ export async function fetchResidentQr(token: string): Promise<{
   retryAfter?: string;
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/household/qr/me`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/household/qr/me`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-    });
+    }, 6000);
 
     const payload = await parseApiResponse<ResidentQrData>(response);
 
@@ -466,13 +484,13 @@ export async function fetchResidentProfile(
   failureKind?: ApiFailureKind;
 }> {
   try {
-    const response = await fetch(`${API_BASE_URL}/household/auth/me`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/household/auth/me`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-    });
+    }, 6000);
 
     const payload = await parseApiResponse<ResidentProfile>(response);
     if (!response.ok || !payload.success || !payload.data) {
@@ -675,13 +693,13 @@ export async function fetchResidentDistributions(
   token: string
 ): Promise<ResidentDistributionFetchResult> {
   try {
-    const response = await fetch(`${API_BASE_URL}/household/distributions`, {
+    const response = await fetchWithTimeout(`${API_BASE_URL}/household/distributions`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
       },
-    });
+    }, 6000);
 
     const payload = await parseApiResponse<ResidentDistributionItem[]>(response);
     if (!response.ok || !payload.success || !payload.data) {

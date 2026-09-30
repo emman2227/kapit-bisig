@@ -20,6 +20,9 @@ import {
   isResidentClaimedLocally,
   addOfflineClaim,
   listOfflineClaims,
+  saveScannerAssignments,
+  loadScannerAssignments,
+  listDownloadedRosters,
   type OfflineRosterData,
 } from '../services/sync/ScannerOfflineStore';
 import {
@@ -273,6 +276,9 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
   }, []);
 
   const loadActiveDistributions = useCallback(async () => {
+    const user = await mobileAuthService.getCurrentUser();
+    const staffId = user?.id;
+
     const response = await mobileAuthService.authenticatedRequest<{
       success: boolean;
       data?: {
@@ -281,33 +287,75 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
       };
     }>('/distributions/scanner/active', { method: 'GET' });
 
-    if (!response.success || !response.data?.success || !response.data.data) {
-      setAssignmentMessage(response.error || 'Unable to load scanner assignments.');
-      return;
-    }
-
     const normalize = (item: ScannerDistribution & { _id?: string }): ScannerDistribution => ({
       ...item,
       id: item.id || item._id || '',
       assignedBarangays: item.assignedBarangays || [],
     });
-    const active = (response.data.data.active || []).map(normalize).filter((item) => item.id);
-    const upcoming = response.data.data.nearestUpcoming
-      ? normalize(response.data.data.nearestUpcoming)
-      : null;
 
-    setActiveDistributions(active);
-    setNearestUpcoming(upcoming);
-    setActiveDistribution(active.length === 1 ? active[0] : null);
-    setAssignmentMessage(
-      active.length > 1
-        ? 'Choose which active distribution this scanner should record claims against.'
-        : active.length === 0 && upcoming
-          ? `No active distribution. Your nearest assignment starts ${formatScheduleLabel(upcoming.scheduled)}.`
-          : active.length === 0
-            ? 'No active or upcoming distribution is explicitly assigned to this account.'
-            : null,
-    );
+    if (response.success && response.data?.success && response.data.data) {
+      const active = (response.data.data.active || []).map(normalize).filter((item) => item.id);
+      const upcoming = response.data.data.nearestUpcoming
+        ? normalize(response.data.data.nearestUpcoming)
+        : null;
+
+      if (staffId) {
+        await saveScannerAssignments(staffId, { active, nearestUpcoming: upcoming }).catch(() => undefined);
+      }
+
+      setActiveDistributions(active);
+      setNearestUpcoming(upcoming);
+      setActiveDistribution(active.length === 1 ? active[0] : null);
+      setAssignmentMessage(
+        active.length > 1
+          ? 'Choose which active distribution this scanner should record claims against.'
+          : active.length === 0 && upcoming
+            ? `No active distribution. Your nearest assignment starts ${formatScheduleLabel(upcoming.scheduled)}.`
+            : active.length === 0
+              ? 'No active or upcoming distribution is explicitly assigned to this account.'
+              : null,
+      );
+      return;
+    }
+
+    // Offline / Network Failure Fallback
+    if (staffId) {
+      const cached = await loadScannerAssignments(staffId).catch(() => null);
+      const downloadedRosters = await listDownloadedRosters(staffId).catch(() => []);
+
+      if (cached && (cached.active.length > 0 || cached.nearestUpcoming)) {
+        const active = (cached.active || []).map(normalize).filter((item) => item.id);
+        const upcoming = cached.nearestUpcoming ? normalize(cached.nearestUpcoming) : null;
+        setActiveDistributions(active);
+        setNearestUpcoming(upcoming);
+        setActiveDistribution(active.length === 1 ? active[0] : (active[0] || upcoming || null));
+        setAssignmentMessage(
+          active.length > 0
+            ? `Offline Mode: Using cached assignments (${active.length} active).`
+            : 'Offline Mode: Upcoming assignment cached.'
+        );
+        return;
+      }
+
+      if (downloadedRosters.length > 0) {
+        const offlineFromRosters: ScannerDistribution[] = downloadedRosters.map((r) => ({
+          id: r.distributionId,
+          barangay: r.barangay,
+          assignedBarangays: r.assignedBarangays,
+          status: 'Active',
+          lifecycleStatus: 'Active',
+          registeredHouseholds: r.totalCount,
+          claimedHouseholds: r.claimedCount,
+        }));
+        setActiveDistributions(offlineFromRosters);
+        setNearestUpcoming(null);
+        setActiveDistribution(offlineFromRosters[0] || null);
+        setAssignmentMessage(`Offline Mode: Loaded ${offlineFromRosters.length} downloaded roster distribution(s).`);
+        return;
+      }
+    }
+
+    setAssignmentMessage(response.error || 'Unable to load scanner assignments. Connect online once or download roster.');
   }, []);
 
   useEffect(() => {
@@ -344,30 +392,21 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
     setClaimStatusText(null);
     const startedAt = Date.now();
 
-    if (!syncSnapshot.online) {
-      // OFFLINE MODE SCANNING
-      const targetDistribution = activeDistribution || nearestUpcoming;
-      if (!targetDistribution?.id) {
-        setError('No distribution selected to record claims against.');
-        setResolveLatencyMs(Date.now() - startedAt);
-        setIsResolving(false);
-        return;
-      }
-
+    const resolveOfflineScan = async (targetDist: ScannerDistribution, isNetworkFallback = false): Promise<boolean> => {
       const user = await mobileAuthService.getCurrentUser();
       if (!user?.id) {
         setError('Session not found. Please log in.');
         setResolveLatencyMs(Date.now() - startedAt);
         setIsResolving(false);
-        return;
+        return false;
       }
 
-      const rosterData = await loadDistributionRoster(user.id, targetDistribution.id);
+      const rosterData = await loadDistributionRoster(user.id, targetDist.id);
       if (!rosterData || !rosterData.roster || rosterData.roster.length === 0) {
-        setError('Offline mode: No downloaded roster found for this distribution. Please connect to internet to download the roster first.');
-        setResolveLatencyMs(Date.now() - startedAt);
-        setIsResolving(false);
-        return;
+        if (!isNetworkFallback) {
+          setError('Offline mode: No downloaded roster found for this distribution. Please connect to internet to download the roster first.');
+        }
+        return false;
       }
 
       const parsed = parseQrToken(data);
@@ -375,7 +414,7 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
         setError('Invalid or unrecognized QR code format.');
         setResolveLatencyMs(Date.now() - startedAt);
         setIsResolving(false);
-        return;
+        return true;
       }
 
       const resident = rosterData.roster.find(
@@ -386,7 +425,7 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
         setError(`Resident (${parsed.residentCode}) is not in this distribution's eligible roster.`);
         setResolveLatencyMs(Date.now() - startedAt);
         setIsResolving(false);
-        return;
+        return true;
       }
 
       setResolvedResident({
@@ -397,25 +436,25 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
       });
 
       // Check if already claimed locally or in roster
-      const alreadyClaimedLocally = await isResidentClaimedLocally(user.id, targetDistribution.id, resident.residentId);
+      const alreadyClaimedLocally = await isResidentClaimedLocally(user.id, targetDist.id, resident.residentId);
       if (resident.alreadyClaimed || alreadyClaimedLocally) {
         setClaimStatusText('Resident already claimed for this distribution.');
         setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: true, justClaimed: false } : prev));
         await playSuccessFeedback();
         setResolveLatencyMs(Date.now() - startedAt);
         setIsResolving(false);
-        return;
+        return true;
       }
 
       if (!activeDistribution?.id) {
         // Upcoming distribution pre-check only
         setClaimStatusText(
-          `Pre-check verified for Barangay ${targetDistribution.barangay}. Distribution starts at ${formatScheduleLabel(targetDistribution.scheduled)}. Supplies cannot be claimed yet.`
+          `Pre-check verified for Barangay ${targetDist.barangay}. Distribution starts at ${formatScheduleLabel(targetDist.scheduled)}. Supplies cannot be claimed yet.`
         );
         await playSuccessFeedback();
         setResolveLatencyMs(Date.now() - startedAt);
         setIsResolving(false);
-        return;
+        return true;
       }
 
       // Record offline claim
@@ -434,27 +473,60 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
         prev.map((d) => (d.id === activeDistribution.id ? { ...d, claimedHouseholds: (d.claimedHouseholds || 0) + 1 } : d))
       );
 
-      setClaimStatusText('Claim recorded offline. Relief can now be released. (Will sync when reconnected)');
+      setClaimStatusText(
+        isNetworkFallback
+          ? 'Network unstable: Claim recorded offline in local roster. Relief can be released.'
+          : 'Claim recorded offline. Relief can now be released. (Will sync when reconnected)'
+      );
       setResolvedResident((prev) => (prev ? { ...prev, alreadyClaimed: false, justClaimed: true } : prev));
       await playSuccessFeedback();
       setResolveLatencyMs(Date.now() - startedAt);
       setIsResolving(false);
       refreshClaimSyncSnapshot().catch(() => undefined);
+      return true;
+    };
+
+    if (!syncSnapshot.online) {
+      // OFFLINE MODE SCANNING
+      const targetDistribution = activeDistribution || nearestUpcoming;
+      if (!targetDistribution?.id) {
+        setError('No distribution selected to record claims against.');
+        setResolveLatencyMs(Date.now() - startedAt);
+        setIsResolving(false);
+        return;
+      }
+
+      const resolved = await resolveOfflineScan(targetDistribution, false);
+      if (resolved) return;
+      setResolveLatencyMs(Date.now() - startedAt);
+      setIsResolving(false);
       return;
     }
 
-    const targetDistributionId = activeDistribution?.id || nearestUpcoming?.id;
+    const targetDistribution = activeDistribution || nearestUpcoming;
+    const targetDistributionId = targetDistribution?.id;
 
-    const response = await mobileAuthService.authenticatedRequest<ResolveQrPayload>('/household/qr/resolve', {
-      method: 'POST',
-      body: JSON.stringify({
-        qrData: data,
-        distributionId: targetDistributionId,
-      }),
-    });
+    let response;
+    try {
+      response = await mobileAuthService.authenticatedRequest<ResolveQrPayload>('/household/qr/resolve', {
+        method: 'POST',
+        body: JSON.stringify({
+          qrData: data,
+          distributionId: targetDistributionId,
+        }),
+      });
+    } catch {
+      response = null;
+    }
 
-    if (!response.success || !response.data) {
-      setError(response.error || 'Unable to resolve QR. Please try again.');
+    if (!response || !response.success || !response.data) {
+      // Network error occurred during online resolution — try falling back to local downloaded roster
+      if (targetDistribution?.id) {
+        const fellBack = await resolveOfflineScan(targetDistribution, true);
+        if (fellBack) return;
+      }
+
+      setError(response?.error || 'Network error resolving QR code. Please check connection or download roster.');
       setResolveLatencyMs(Date.now() - startedAt);
       setIsResolving(false);
       return;

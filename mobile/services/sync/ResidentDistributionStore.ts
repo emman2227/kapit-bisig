@@ -12,7 +12,7 @@ import {
 } from './ResidentOfflineStore';
 
 export const DISTRIBUTION_FRESH_MS = 60 * 1000;
-export const DISTRIBUTION_OFFLINE_FALLBACK_MS = 24 * 60 * 60 * 1000;
+export const DISTRIBUTION_OFFLINE_FALLBACK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface ResidentDistributionState {
   residentId: string | null;

@@ -558,11 +558,15 @@ class MobileAuthService {
   async validateToken(): Promise<boolean> {
     if (!this.token) return false;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
     try {
       const response = await fetch(`${API_CONFIG.baseUrl}/mobile-auth/me`, {
         headers: {
           'Authorization': `Bearer ${this.token}`,
         },
+        signal: controller.signal,
       });
 
       if (response.status === 401 || response.status === 403) {
@@ -584,9 +588,11 @@ class MobileAuthService {
 
       return true;
     } catch (error) {
-      console.warn('[MobileAuthService] Token validation network error (session preserved):', error);
+      console.warn('[MobileAuthService] Token validation network/timeout error (session preserved):', error);
       // Network failure / offline / Render cold-start: do not wipe session
       return true;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
@@ -680,9 +686,13 @@ class MobileAuthService {
       return { success: false, error: 'Not authenticated' };
     }
 
+    const controller = options.signal ? null : new AbortController();
+    const timeoutId = controller ? setTimeout(() => controller.abort(), 10000) : null;
+
     try {
       const response = await fetch(`${API_CONFIG.baseUrl}${endpoint}`, {
         ...options,
+        signal: options.signal || controller?.signal,
         headers: {
           ...this.getAuthHeaders(),
           ...options.headers,
@@ -705,6 +715,8 @@ class MobileAuthService {
     } catch (error) {
       console.error('[MobileAuthService] Request error:', error);
       return { success: false, error: 'Network error' };
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
     }
   }
 

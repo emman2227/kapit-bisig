@@ -75,8 +75,8 @@ describe('ResidentDistributionStore', () => {
     expect(getResidentDistributionSnapshot().items).toEqual([futureDistribution]);
   });
 
-  it('shows a 24-hour cached fallback and preserves it when refresh fails', async () => {
-    const fetchedAt = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  it('shows a multi-day cached fallback within 7 days and preserves it when refresh fails', async () => {
+    const fetchedAt = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
     offlineStore.loadResidentDistributionOfflineCache.mockResolvedValue({
       residentId: 'resident-a',
       items: [futureDistribution],
@@ -120,11 +120,11 @@ describe('ResidentDistributionStore', () => {
     expect(getResidentDistributionSnapshot().warning).toContain('wait');
   });
 
-  it('does not expose a persisted fallback older than 24 hours', async () => {
+  it('does not expose a persisted fallback older than 7 days', async () => {
     offlineStore.loadResidentDistributionOfflineCache.mockResolvedValue({
       residentId: 'resident-a',
       items: [futureDistribution],
-      fetchedAt: new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString(),
+      fetchedAt: new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString(),
     });
     api.fetchResidentDistributions.mockResolvedValue({
       success: false,

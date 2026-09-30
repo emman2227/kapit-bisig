@@ -37,6 +37,16 @@ export interface QueuedOfflineClaim {
 const ROOT = `${FileSystem.documentDirectory || ''}scanner-offline/`;
 const DEVICE_ID_KEY = 'kapitbisigscannerdeviceid';
 
+export interface OfflineScannerAssignments {
+  active: any[];
+  nearestUpcoming?: any | null;
+  cachedAt: string;
+}
+
+function assignmentsFile(staffId: string): string {
+  return `${staffDir(staffId)}assignments.json`;
+}
+
 function safeSegment(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, '_');
 }
@@ -282,3 +292,56 @@ export async function countTotalPendingClaims(staffId: string): Promise<number> 
     return 0;
   }
 }
+
+/**
+ * Save scanner assignments locally for offline retrieval.
+ */
+export async function saveScannerAssignments(
+  staffId: string,
+  data: { active: any[]; nearestUpcoming?: any | null },
+): Promise<void> {
+  await ensureDirectory(staffDir(staffId));
+  const payload: OfflineScannerAssignments = {
+    active: Array.isArray(data.active) ? data.active : [],
+    nearestUpcoming: data.nearestUpcoming || null,
+    cachedAt: new Date().toISOString(),
+  };
+  await writeJson(assignmentsFile(staffId), payload);
+}
+
+/**
+ * Load cached scanner assignments for offline retrieval.
+ */
+export async function loadScannerAssignments(
+  staffId: string,
+): Promise<OfflineScannerAssignments | null> {
+  return readJson<OfflineScannerAssignments>(assignmentsFile(staffId));
+}
+
+/**
+ * List all downloaded rosters currently on the device for this staff member.
+ */
+export async function listDownloadedRosters(
+  staffId: string,
+): Promise<OfflineRosterData[]> {
+  try {
+    const dir = staffDir(staffId);
+    const info = await FileSystem.getInfoAsync(dir);
+    if (!info.exists) return [];
+
+    const files = await FileSystem.readDirectoryAsync(dir);
+    const rosters: OfflineRosterData[] = [];
+    for (const file of files) {
+      if (file.startsWith('roster-') && file.endsWith('.json')) {
+        const roster = await readJson<OfflineRosterData>(`${dir}${file}`);
+        if (roster && roster.distributionId) {
+          rosters.push(roster);
+        }
+      }
+    }
+    return rosters;
+  } catch {
+    return [];
+  }
+}
+
