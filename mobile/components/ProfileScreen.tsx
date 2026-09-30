@@ -4,7 +4,6 @@ import {
   Alert,
   Image,
   Keyboard,
-  KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
@@ -13,6 +12,7 @@ import {
   TextInput,
   TouchableOpacity,
   TouchableWithoutFeedback,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -239,9 +239,37 @@ export default function ProfileScreen({
   onVolunteerProfileUpdated,
 }: ProfileScreenProps) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const isVolunteer = accountType === 'volunteer';
   const needsRevisionResident = !isVolunteer && residentStatus === 'Needs Revision';
   const isPendingResident = !isVolunteer && (residentStatus === 'Pending' || needsRevisionResident);
+
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (event) => {
+      setKeyboardHeight(event.endCoordinates.height || 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  const dynamicSheetMaxHeight = useMemo(() => {
+    if (keyboardHeight > 0) {
+      const availableHeight = windowHeight - keyboardHeight - insets.top - 16;
+      return Math.max(260, availableHeight);
+    }
+    return '90%';
+  }, [keyboardHeight, windowHeight, insets.top]);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
@@ -365,7 +393,17 @@ export default function ProfileScreen({
   };
 
   const closeEditModal = () => {
-    if (!isSaving) setIsEditOpen(false);
+    if (!isSaving) {
+      Keyboard.dismiss();
+      setIsEditOpen(false);
+    }
+  };
+
+  const closeChangePasswordModal = () => {
+    if (!isRequestingChangePasswordOtp && !isConfirmingChangePassword) {
+      Keyboard.dismiss();
+      setIsChangePasswordOpen(false);
+    }
   };
 
   const handleResidentAvatarPick = async () => {
@@ -476,6 +514,7 @@ export default function ProfileScreen({
       }
 
       onResidentProfileUpdated?.(result.data);
+      Keyboard.dismiss();
       setIsEditOpen(false);
       Alert.alert('Profile updated', 'Your changes were saved successfully.');
     } finally {
@@ -582,6 +621,7 @@ export default function ProfileScreen({
         return;
       }
 
+      Keyboard.dismiss();
       setIsChangePasswordOpen(false);
       setChangePasswordStep('input');
       setCurrentPasswordInput('');
@@ -798,14 +838,24 @@ export default function ProfileScreen({
         animationType="slide"
         onRequestClose={closeEditModal}
       >
-        <KeyboardAvoidingView
-          style={styles.sheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <View
+          style={[
+            styles.sheetOverlay,
+            keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
+          ]}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
-          <View style={[styles.editSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View
+            style={[
+              styles.editSheet,
+              {
+                maxHeight: dynamicSheetMaxHeight,
+                paddingBottom: keyboardHeight > 0 ? 16 : Math.max(insets.bottom, 16),
+              },
+            ]}
+          >
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <View>
@@ -830,6 +880,7 @@ export default function ProfileScreen({
               contentContainerStyle={styles.formContent}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
+              nestedScrollEnabled={true}
               showsVerticalScrollIndicator={true}
             >
               <Text style={styles.inputLabel}>First name</Text>
@@ -922,7 +973,7 @@ export default function ProfileScreen({
               </TouchableOpacity>
             </View>
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
 
       <Modal
@@ -962,20 +1013,26 @@ export default function ProfileScreen({
         visible={isChangePasswordOpen}
         transparent
         animationType="slide"
-        onRequestClose={() => {
-          if (!isRequestingChangePasswordOtp && !isConfirmingChangePassword) {
-            setIsChangePasswordOpen(false);
-          }
-        }}
+        onRequestClose={closeChangePasswordModal}
       >
-        <KeyboardAvoidingView
-          style={styles.sheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        <View
+          style={[
+            styles.sheetOverlay,
+            keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
+          ]}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <View style={StyleSheet.absoluteFill} />
           </TouchableWithoutFeedback>
-          <View style={[styles.editSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
+          <View
+            style={[
+              styles.editSheet,
+              {
+                maxHeight: dynamicSheetMaxHeight,
+                paddingBottom: keyboardHeight > 0 ? 16 : Math.max(insets.bottom, 16),
+              },
+            ]}
+          >
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
               <View style={styles.sheetHeaderCopy}>
@@ -990,11 +1047,7 @@ export default function ProfileScreen({
               </View>
               <TouchableOpacity
                 style={styles.closeButton}
-                onPress={() => {
-                  if (!isRequestingChangePasswordOtp && !isConfirmingChangePassword) {
-                    setIsChangePasswordOpen(false);
-                  }
-                }}
+                onPress={closeChangePasswordModal}
                 disabled={isRequestingChangePasswordOtp || isConfirmingChangePassword}
                 accessibilityRole="button"
                 accessibilityLabel="Close change password"
@@ -1010,6 +1063,7 @@ export default function ProfileScreen({
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
                   keyboardDismissMode="on-drag"
+                  nestedScrollEnabled={true}
                   showsVerticalScrollIndicator={true}
                 >
                   <Text style={styles.inputLabel}>Current password</Text>
@@ -1122,6 +1176,7 @@ export default function ProfileScreen({
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
                   keyboardDismissMode="on-drag"
+                  nestedScrollEnabled={true}
                   showsVerticalScrollIndicator={false}
                 >
                   <View style={styles.otpCardContainer}>
@@ -1180,7 +1235,7 @@ export default function ProfileScreen({
               </>
             )}
           </View>
-        </KeyboardAvoidingView>
+        </View>
       </Modal>
     </SafeAreaView>
   );
