@@ -265,11 +265,13 @@ export default function ProfileScreen({
 
   const dynamicSheetMaxHeight = useMemo(() => {
     if (keyboardHeight > 0) {
-      const availableHeight =
-        Platform.OS === 'ios'
-          ? windowHeight - keyboardHeight - insets.top - 16
-          : windowHeight - insets.top - 16;
-      return Math.max(260, availableHeight);
+      if (Platform.OS === 'ios') {
+        // iOS: windowHeight is full screen; subtract keyboard + status bar
+        return Math.max(260, windowHeight - keyboardHeight - insets.top - 16);
+      }
+      // Android adjustResize: windowHeight is already reduced by the keyboard,
+      // so just use most of it. No subtraction needed.
+      return Math.max(260, windowHeight - insets.top - 16);
     }
     return '90%';
   }, [keyboardHeight, windowHeight, insets.top]);
