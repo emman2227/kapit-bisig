@@ -176,7 +176,7 @@ export async function runResidentProfileUpdateIntegrationTests(): Promise<void> 
     assert.strictEqual(successfulUpdate.body.data.mobileNumber, '09192223344');
     assert.ok(successfulUpdate.body.data.lastProfileUpdateAt);
 
-    console.log('7. Testing 30-day cooldown enforcement');
+    console.log('7. Testing 24-hour cooldown enforcement');
     const cooldownAttempt = await request(app)
       .patch('/api/household/auth/me')
       .set('Authorization', `Bearer ${testToken}`)
@@ -185,10 +185,11 @@ export async function runResidentProfileUpdateIntegrationTests(): Promise<void> 
         password: 'SecurePassword#123',
       });
     assert.strictEqual(cooldownAttempt.status, 429);
-    assert.match(cooldownAttempt.body.message, /once every 30 days/i);
-    assert.ok(cooldownAttempt.body.remainingDays >= 1);
+    assert.match(cooldownAttempt.body.message, /once every 24 hours/i);
+    assert.ok(cooldownAttempt.body.remainingHours >= 1);
 
     console.log('✓ All secure profile editing integration tests passed successfully!');
+
   } finally {
     await mongoose.disconnect();
     await mongo.stop();

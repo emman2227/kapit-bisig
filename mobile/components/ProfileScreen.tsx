@@ -394,28 +394,29 @@ export default function ProfileScreen({
     setAvatarUri(isVolunteer ? null : residentProfile?.avatarUrl?.trim() || null);
   }, [isVolunteer, residentProfile?.avatarUrl]);
 
-  const cooldownDaysRemaining = useMemo(() => {
+  const cooldownHoursRemaining = useMemo(() => {
     if (!residentProfile?.lastProfileUpdateAt) return 0;
     const lastUpdate = new Date(residentProfile.lastProfileUpdateAt).getTime();
     if (isNaN(lastUpdate)) return 0;
     const elapsedMs = Date.now() - lastUpdate;
-    const cooldownMs = 30 * 24 * 60 * 60 * 1000;
+    const cooldownMs = 24 * 60 * 60 * 1000;
     if (elapsedMs < cooldownMs) {
-      return Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+      return Math.ceil((cooldownMs - elapsedMs) / (60 * 60 * 1000));
     }
     return 0;
   }, [residentProfile?.lastProfileUpdateAt]);
 
   const openEditModal = () => {
-    if (cooldownDaysRemaining > 0) {
+    if (cooldownHoursRemaining > 0) {
       Alert.alert(
         'Profile Edit Cooldown',
-        `Profile details can only be changed once every 30 days. You will be able to edit your profile again in ${cooldownDaysRemaining} day${cooldownDaysRemaining === 1 ? '' : 's'}.`,
+        `Profile details can only be changed once every 24 hours. You will be able to edit your profile again in ${cooldownHoursRemaining} hour${cooldownHoursRemaining === 1 ? '' : 's'}.`,
         [{ text: 'OK' }]
       );
       return;
     }
     setEditStep('form');
+
     setFirstNameInput(initialFields.firstName);
     setLastNameInput(initialFields.lastName);
     setMobileInput(initialFields.mobileNumber);
@@ -947,25 +948,26 @@ export default function ProfileScreen({
               style={[
                 styles.editProfileButton,
                 styles.residentEditProfileButton,
-                cooldownDaysRemaining > 0 && styles.cooldownEditButton,
+                cooldownHoursRemaining > 0 && styles.cooldownEditButton,
               ]}
               onPress={openEditModal}
               accessibilityRole="button"
               accessibilityLabel="Edit profile"
             >
               <Ionicons
-                name={cooldownDaysRemaining > 0 ? "lock-closed-outline" : "create-outline"}
+                name={cooldownHoursRemaining > 0 ? "lock-closed-outline" : "create-outline"}
                 size={17}
-                color={cooldownDaysRemaining > 0 ? "#B45309" : residentColors.icon}
+                color={cooldownHoursRemaining > 0 ? "#B45309" : residentColors.icon}
               />
               <Typography
                 variant="caption"
                 weight="semiBold"
-                color={cooldownDaysRemaining > 0 ? "#B45309" : residentColors.icon}
+                color={cooldownHoursRemaining > 0 ? "#B45309" : residentColors.icon}
               >
-                {cooldownDaysRemaining > 0 ? `Locked (${cooldownDaysRemaining}d)` : 'Edit profile'}
+                {cooldownHoursRemaining > 0 ? `Locked (${cooldownHoursRemaining}h)` : 'Edit profile'}
               </Typography>
             </TouchableOpacity>
+
 
           </View>
         </View>

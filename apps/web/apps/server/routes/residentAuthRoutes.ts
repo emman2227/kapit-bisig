@@ -297,20 +297,21 @@ router.post(
         return res.status(404).json({ success: false, message: 'Resident not found' });
       }
 
-      // Check 30-day cooldown before sending OTP
-      const COOLDOWN_DAYS = 30;
+      // Check 24-hour cooldown before sending OTP
+      const COOLDOWN_HOURS = 24;
       if (resident.lastProfileUpdateAt) {
         const elapsedMs = Date.now() - new Date(resident.lastProfileUpdateAt).getTime();
-        const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+        const cooldownMs = COOLDOWN_HOURS * 60 * 60 * 1000;
         if (elapsedMs < cooldownMs) {
-          const remainingDays = Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+          const remainingHours = Math.ceil((cooldownMs - elapsedMs) / (60 * 60 * 1000));
           return res.status(429).json({
             success: false,
-            message: `Profile details can only be changed once every ${COOLDOWN_DAYS} days. You can update your profile again in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`,
-            remainingDays,
+            message: `Profile details can only be changed once every 24 hours. You can update your profile again in ${remainingHours} hour${remainingHours === 1 ? '' : 's'}.`,
+            remainingHours,
           });
         }
       }
+
 
       let normalizedValue = '';
       if (target === 'mobileNumber') {
@@ -601,20 +602,21 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
       });
     }
 
-    // 2. Cooldown check (30 days)
-    const COOLDOWN_DAYS = 30;
+    // 2. Cooldown check (24 hours)
+    const COOLDOWN_HOURS = 24;
     if (resident.lastProfileUpdateAt) {
       const elapsedMs = Date.now() - new Date(resident.lastProfileUpdateAt).getTime();
-      const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      const cooldownMs = COOLDOWN_HOURS * 60 * 60 * 1000;
       if (elapsedMs < cooldownMs) {
-        const remainingDays = Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+        const remainingHours = Math.ceil((cooldownMs - elapsedMs) / (60 * 60 * 1000));
         return res.status(429).json({
           success: false,
-          message: `Profile details can only be changed once every ${COOLDOWN_DAYS} days. You can update your profile again in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`,
-          remainingDays,
+          message: `Profile details can only be changed once every 24 hours. You can update your profile again in ${remainingHours} hour${remainingHours === 1 ? '' : 's'}.`,
+          remainingHours,
         });
       }
     }
+
 
     // 3. Strict immutability checks: firstName, lastName, city, barangay CANNOT be modified
     if (payload.firstName !== undefined && payload.firstName.trim() !== resident.firstName) {
