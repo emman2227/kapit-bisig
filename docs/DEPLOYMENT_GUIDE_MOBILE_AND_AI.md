@@ -1,120 +1,258 @@
-# Deployment Guide: Mobile (EAS & OTA Updates) and AI Backend (Hugging Face Spaces)
+# Deployment Guide: Mobile App (EAS & OTA Updates) and AI Backend (Render Docker Container)
 
-This guide documents the exact steps to deploy both the **Mobile App** (via Expo EAS & OTA Updates) and the **Python AI Face Recognition Backend** (via Hugging Face Spaces for 100% free 16GB RAM hosting).
+This guide documents the production deployment architecture for both the **Mobile App** (via Expo EAS & Over-The-Air OTA Updates) and the **Python AI Face Recognition / ID OCR Backend** (containerized on Render via Docker alongside the Node.js Express server).
 
 ---
 
-## Part 1: Python AI Backend Deployment (Hugging Face Spaces)
+## Architecture Overview
 
-### Why Hugging Face Spaces?
-The Kapit-Bisig AI backend uses **DeepFace (Facenet)**, **TensorFlow**, **MediaPipe**, and **ONNXRuntime**, which require **~1GB to 2GB RAM** during inference. Most free cloud tiers (Render, Koyeb) only offer 512MB RAM and immediately crash with Out Of Memory (OOM). 
-Hugging Face Spaces provides **2 vCPUs and 16 GB RAM completely free forever**, with native HTTPS and private environment variables.
+```mermaid
+graph TD
+    subgraph Mobile Client ["Mobile Client (Android / iOS)"]
+        MobileApp["Kapit-Bisig Mobile App<br/>(Expo / React Native)"]
+        OTA["EAS OTA Updates<br/>(expo-updates)"]
+    end
 
-### Step 1: Create a Space on Hugging Face
-1. Log in or create a free account at [huggingface.co](https://huggingface.co).
-2. Go to **New Space**: [huggingface.co/new-space](https://huggingface.co/new-space).
-3. Fill in the details:
-   - **Space name**: `kapit-bisig-face-api`
-   - **License**: `mit`
-   - **Space SDK**: Select **Docker** (choose **Blank** template)
-   - **Space hardware**: Select **CPU basic • 2 vCPU • 16 GB RAM • Free**
-   - **Privacy**: `Public` (or `Private` if you want it unlisted)
-4. Click **Create Space**.
+    subgraph Vercel ["Vercel (Frontend)"]
+        WebNext["Next.js Web App<br/>(apps/web/apps)"]
+    end
 
-### Step 2: Configure Environment Variables (Secrets)
-In your newly created Space:
-1. Go to **Settings** > **Variables and secrets**.
-2. Under **Secrets**, add:
-   - `MONGODB_URI`: Your MongoDB Atlas connection string:
-     ```text
-     mongodb://emmandv_db_user:OdNGChGjS3uU1FQ5@ac-jm96xjz-shard-00-00.qdsctid.mongodb.net:27017,ac-jm96xjz-shard-00-01.qdsctid.mongodb.net:27017,ac-jm96xjz-shard-00-02.qdsctid.mongodb.net:27017/kapit-bisig?ssl=true&replicaSet=atlas-3983uk-shard-0&authSource=admin&retryWrites=true&w=majority
-     ```
-   - `MONGODB_DB_NAME`: `kapit-bisig`
-   - `FACE_API_ALLOWED_ORIGINS`: `*`
-   - `FACE_API_ADMIN_TOKEN`: Set a secure random string (e.g. `kapit-bisig-secret-admin-key-2026`)
+    subgraph Render ["Render.com (Unified Docker Container: Dockerfile.render)"]
+        Supervisor["Supervisor Process Manager"]
+        Express["Node.js Express Server<br/>Port 10000 (External Facing)"]
+        FastAPI["Python FastAPI AI Service<br/>Port 8000 (Internal Only)"]
+        Supervisor --> Express
+        Supervisor --> FastAPI
+        Express -- "Internal Proxy (/api/face/*, /api/id/*)" --> FastAPI
+    end
 
-### Step 3: Ensure MongoDB Atlas Accepts Cloud Connections
-Because cloud containers have dynamic IP addresses:
-1. Log in to [cloud.mongodb.com](https://cloud.mongodb.com).
-2. Navigate to **Network Access** (under Security).
-3. Click **Add IP Address**.
-4. Select **Allow Access from Anywhere** (`0.0.0.0/0`) and click **Confirm**.
+    subgraph Database ["MongoDB Atlas"]
+        Mongo[("Cloud Database<br/>kapit-bisig")]
+    end
 
-### Step 4: Push the Backend to Hugging Face
-In your terminal, you can push the `backend/` directory to the Space repository:
-```bash
-# In the backend directory:
-cd backend
-
-# Initialize git if needed or add remote:
-git remote add space https://huggingface.co/spaces/<YOUR_HF_USERNAME>/kapit-bisig-face-api
-
-# Push to Hugging Face
-git add .
-git commit -m "Deploy AI backend to Hugging Face Spaces"
-git push space main --force
+    MobileApp -->|"API & AI Requests<br/>https://kapit-bisig.onrender.com"| Express
+    OTA -.->|"OTA JS Bundles"| MobileApp
+    WebNext -->|"API Proxy (/api/*)"| Express
+    Express --> Mongo
+    FastAPI --> Mongo
 ```
 
-*(Note: Hugging Face provides your personal access token in Settings > Access Tokens if password prompt appears).*
+---
 
-Once built, your public HTTPS endpoint will be:
-`https://<YOUR_HF_USERNAME>-kapit-bisig-face-api.hf.space`
+## Part 1: AI Backend & Express Server Deployment on Render (Docker Container)
 
-You can verify it by opening:
-`https://<YOUR_HF_USERNAME>-kapit-bisig-face-api.hf.space/api/health`
+### 1.1 Why a Unified Docker Container on Render?
+In previous iterations, the AI backend required heavy frameworks (DeepFace, full TensorFlow) exceeding 1–2 GB RAM, which forced running separate cloud services (or Hugging Face Spaces / local Cloudflare tunnels).
+
+We redesigned and optimized the AI engine:
+1. **Lightweight FaceNet ONNX Runtime**: Replaced DeepFace/TensorFlow with a single ONNX model (`facenet512.onnx`), saving ~1.2 GB of memory while boosting inference speed.
+2. **Optimized RapidOCR & Lazy Loading**: ID OCR uses single-threaded PP-OCR models with automatic downscaling via Sharp, keeping peak memory under control.
+3. **Unified Supervisord Container**: Both the Node.js Express API server and the Python FastAPI AI backend run within a **single Docker container** (`Dockerfile.render`).
+4. **Zero Tunnels Needed**: The Express API acts as an internal reverse proxy (`/api/face/*`, `/api/id/*`) forwarding to `http://127.0.0.1:8000`. Only one public URL (`https://kapit-bisig.onrender.com`) is exposed to mobile and web clients.
+5. **Memory Footprint**: ~330 MB idle / ~380 MB peak — comfortably operating within Render's Free tier (512 MB RAM) with zero OOM crashes.
+
+---
+
+### 1.2 Render Service Configuration
+
+1. Log in to [Render Dashboard](https://dashboard.render.com/).
+2. Click **New +** → **Web Service**.
+3. Connect your GitHub repository (`kapit-bisig`).
+4. Configure the service settings:
+   - **Name**: `kapit-bisig` (or `kapitbisig-api`)
+   - **Region**: Singapore (`ap-southeast`) or nearest to your users
+   - **Branch**: `main`
+   - **Root Directory**: leave blank (repository root)
+   - **Runtime**: `Docker`
+   - **Dockerfile Path**: `Dockerfile.render`
+   - **Instance Type**: Free (512 MB RAM)
+
+---
+
+### 1.3 Required Environment Variables on Render
+
+In your Render Service Dashboard, navigate to the **Environment** tab and add:
+
+| Variable | Value / Format | Purpose |
+| :--- | :--- | :--- |
+| `NODE_ENV` | `production` | Enables production security & optimizations |
+| `PORT` | `10000` | Render default external port |
+| `MONGODB_URI` | `mongodb+srv://<user>:<password>@<cluster>.mongodb.net/kapit-bisig?...` | MongoDB Atlas connection string |
+| `MONGODB_REQUIRE_TLS` | `true` | Enforces TLS connection to MongoDB |
+| `JWT_SECRET` | *32+ character random secret* | Session & token signing key |
+| `CORS_ORIGIN` | `https://<your-vercel-app>.vercel.app` | Allow Vercel frontend requests |
+| `COOKIE_SECURE` | `true` | Enforces Secure flag on auth cookies |
+| `SMTP_HOST` | `smtp-relay.brevo.com` | Email delivery host |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_SECURE` | `false` | TLS on port 587 |
+| `SMTP_USER` | `<brevo-smtp-user>` | Brevo SMTP account |
+| `SMTP_PASS` | `<brevo-smtp-key>` | Brevo API key |
+| `SMTP_FROM` | `kapitbisig2026@gmail.com` | Verified sender email |
+| `APP_NAME` | `KapitBisig` | Sender display name |
+| `SMS_PROVIDER` | `unisms` | SMS provider identifier |
+| `SMS_API_KEY` | `<unisms-api-key>` | UniSMS API key |
+| `SMS_SENDER_NAME` | `Unisoft` | UniSMS sender name |
+| `SUPERADMIN_EMAIL` | `kapitbisig2026@gmail.com` | Primary Superadmin email identifier |
+
+> [!NOTE]
+> `PYTHON_BACKEND_URL` defaults to `http://127.0.0.1:8000` inside the container. You do **not** need to expose port 8000 or set an external AI URL.
+
+---
+
+### 1.4 Verifying the Backend & AI Deployment
+
+After Render finishes building and starts the container:
+
+1. **Express & Health Check**:
+   ```bash
+   curl https://kapit-bisig.onrender.com/api/health
+   ```
+   Expected response:
+   ```json
+   {
+     "status": "ok",
+     "timestamp": "2026-..."
+   }
+   ```
+
+2. **AI Face Recognition Proxy Check**:
+   ```bash
+   curl -X POST https://kapit-bisig.onrender.com/api/face/detect \
+     -H "Content-Type: application/json" \
+     -d '{"image": ""}'
+   ```
+   Expected response: HTTP 400 with `{"detail": "..."}` or `{"success": false}` (confirming the Express server successfully proxies to the Python FastAPI process inside the container).
 
 ---
 
 ## Part 2: Mobile App Deployment (Expo EAS & OTA Updates)
 
-The mobile project is configured and linked to EAS account **`mrprinceu`**:
-- **Project Name**: `@mrprinceu/kapit-bisig`
+The mobile application is managed through **Expo Application Services (EAS)** and configured under EAS account **`mrprinceu`**:
+- **Owner**: `mrprinceu`
+- **Slug / Project Name**: `kapit-bisig`
 - **Project ID**: `ce00ce67-ccf9-4868-9fff-bf67223dd80c`
 - **Updates URL**: `https://u.expo.dev/ce00ce67-ccf9-4868-9fff-bf67223dd80c`
-
-### Step 1: Create an Android Preview APK Build
-To generate a standalone APK that can be installed on Android devices:
-```bash
-cd mobile
-npx eas-cli build --profile preview --platform android
-```
-- EAS will build the `.apk` in the cloud.
-- Once finished, you will receive a QR code and download link to install the APK directly on Android phones.
-
-### Step 2: Push Over-The-Air (OTA) Updates
-Whenever you change JavaScript, React Native components, images, or offline sync logic (without adding new native Android/iOS native libraries):
-
-**To push an update to Preview APK users:**
-```bash
-cd mobile
-npx eas-cli update --branch preview --message "Description of changes"
-```
-
-**To push an update to Production users:**
-```bash
-cd mobile
-npx eas-cli update --branch production --message "Description of changes"
-```
-
-The app's built-in `useOTAUpdates()` hook will automatically detect the new update on startup, download it in the background, and prompt the user to restart or reload the latest version!
-
-### Step 3: Production Environment Variables in EAS
-When deploying your production mobile app, point it to your deployed cloud backend and face API:
-You can set them in EAS secrets so they are embedded during production builds:
-```bash
-cd mobile
-npx eas-cli secret:create --name EXPO_PUBLIC_API_URL --value "https://your-main-backend.com/api" --type string
-npx eas-cli secret:create --name EXPO_PUBLIC_FACE_API_URL --value "https://<YOUR_HF_USERNAME>-kapit-bisig-face-api.hf.space" --type string
-```
-Or define them directly under `"production": { "env": { ... } }` in `mobile/eas.json`.
+- **Android Package**: `com.kapitbisig.mobile`
 
 ---
 
-## Part 3: Safety & Verification Checklist
+### 2.1 EAS Build Profiles (`mobile/eas.json`)
 
-- [x] **EAS Ownership**: Linked to `@mrprinceu/kapit-bisig` (`ce00ce67-ccf9-4868-9fff-bf67223dd80c`).
-- [x] **OTA Updates**: `app.json` has `updates.url`, `checkAutomatically: "ON_LOAD"`, and runtime `useOTAUpdates()` hook.
-- [x] **URL Security Guard**: `apiSecurity.ts` supports explicit `EXPO_PUBLIC_ALLOW_INSECURE_HTTP` for preview APK LAN testing, while strictly enforcing HTTPS for production.
-- [x] **AI Docker Spec**: `backend/Dockerfile` configured with headless OpenCV, MediaPipe runtime libraries, non-root user (UID 1000), dynamic `$PORT`, and health check.
-- [x] **AI Deploy Dependencies**: `backend/requirements-deploy.txt` created with `tensorflow-cpu` and `opencv-python-headless` for fast cloud container builds.
-- [x] **TypeScript Validation**: `mobile` codebase passes `tsc --noEmit` with 0 errors.
+The `mobile/eas.json` configuration defines build profiles:
+
+```json
+{
+  "cli": {
+    "version": ">= 18.4.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "channel": "development"
+    },
+    "preview": {
+      "distribution": "internal",
+      "channel": "preview",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_ALLOW_INSECURE_HTTP": "true",
+        "EXPO_PUBLIC_API_URL": "https://kapit-bisig.onrender.com/api",
+        "EXPO_PUBLIC_FACE_API_URL": "https://kapit-bisig.onrender.com"
+      }
+    },
+    "production": {
+      "channel": "production",
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "NODE_ENV": "production",
+        "EXPO_PUBLIC_API_URL": "https://kapit-bisig.onrender.com/api",
+        "EXPO_PUBLIC_FACE_API_URL": "https://kapit-bisig.onrender.com"
+      }
+    }
+  }
+}
+```
+
+---
+
+### 2.2 Step 1: Building the Standalone APK (Preview Profile)
+
+To build a standalone installable `.apk` for testing and physical device distribution:
+
+```powershell
+cd mobile
+
+# Ensure dependencies and types pass
+npm run type-check
+
+# Trigger EAS cloud build for Android APK
+npx eas-cli build --profile preview --platform android
+```
+
+1. EAS will build the `.apk` in the Expo cloud.
+2. When completed, the CLI displays a direct download link and QR code to install the APK directly on Android phones.
+3. Because the `preview` profile has the live Render URLs embedded, users can test immediately over mobile data or any Wi-Fi without needing a local development server.
+
+---
+
+### 2.3 Step 2: Publishing Over-The-Air (OTA) Updates
+
+Over-The-Air (OTA) updates allow you to instantly publish bug fixes, screen adjustments, UI redesigns, and logic updates **without rebuilding or reinstalling the APK**, as long as native Android/iOS dependencies (like new gradle plugins) haven't changed.
+
+#### Publishing to the Preview Channel:
+```powershell
+cd mobile
+npx eas-cli update --branch preview --message "Fix profile modal keyboard offset and verify cooldown"
+```
+
+#### Publishing to the Production Channel:
+```powershell
+cd mobile
+npx eas-cli update --branch production --message "Release v1.0.1 hotfix"
+```
+
+---
+
+### 2.4 How the Mobile App Handles OTA Updates at Runtime
+
+The mobile application includes automatic update detection configured in `app.json`:
+- `runtimeVersion.policy: "appVersion"`: Guarantees updates only apply to matching app binaries.
+- `updates.checkAutomatically: "ON_LOAD"`: Checks for new bundles whenever the app opens.
+- `useOTAUpdates()` hook: Detects when a new bundle is downloaded in the background, displays a friendly prompt, and seamlessly reloads the new bundle.
+
+---
+
+### 2.5 Local Testing vs Cloud Testing (`mobile/.env`)
+
+For local emulator or physical LAN device testing with a local backend:
+```env
+EXPO_PUBLIC_API_URL=http://<YOUR_LOCAL_IP>:3001/api
+EXPO_PUBLIC_FACE_API_URL=http://<YOUR_LOCAL_IP>:8000
+```
+
+When building via EAS or running standalone builds, EAS injects the production URLs automatically:
+```env
+EXPO_PUBLIC_API_URL=https://kapit-bisig.onrender.com/api
+EXPO_PUBLIC_FACE_API_URL=https://kapit-bisig.onrender.com
+```
+
+All 9 mobile service connectors (`MobileAuthService`, `VerificationAPIService`, `FaceRecognitionService`, `IDValidationService`, etc.) have their production fallback explicitly set to `https://kapit-bisig.onrender.com/api` and `https://kapit-bisig.onrender.com`, eliminating network errors if `.env` is omitted.
+
+---
+
+## Part 3: Verification & Health Checklist
+
+| Component | Target / URL | Verification Action | Expected Result |
+| :--- | :--- | :--- | :--- |
+| **Backend API** | `https://kapit-bisig.onrender.com/api/health` | HTTP GET | `{"status": "ok"}` |
+| **AI Face Proxy** | `https://kapit-bisig.onrender.com/api/face/detect` | HTTP POST (empty JSON) | HTTP 400 validation error (proves proxy to Python AI is active) |
+| **ID OCR Proxy** | `https://kapit-bisig.onrender.com/api/id/verify-document` | HTTP POST (sample ID) | HTTP 200 with extracted ID fields & face bounding box |
+| **Mobile Standalone APK** | Device installation | Open installed APK on 4G/5G | Connects cleanly to Render backend without network errors |
+| **Mobile Face Scanner** | Resident Registration / Verification | Scan face in camera view | Detects face landmarks, performs active liveness, and registers embeddings |
+| **EAS OTA Update** | Device reload after `eas update` | Publish new OTA branch update | App detects update, reloads bundle, and displays latest changes |

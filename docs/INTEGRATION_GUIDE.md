@@ -57,11 +57,11 @@ const performVerificationAndSubmit = async () => {
       // ... existing fields ...
       
       // Include the face descriptor for storage
-      faceDescriptor: duplicateCheck.descriptor,
+      faceDescriptor: duplicateCheck.descriptor, // 512-float FaceNet vector
       faceDescriptorMetadata: {
         generatedAt: new Date().toISOString(),
-        modelVersion: 'face-api.js-ssd-mobilenetv1',
-        confidence: 0.95,
+        modelVersion: 'FaceNet-512-ONNX',
+        confidence: duplicateCheck.confidence ?? 0.95,
       },
     };
 
@@ -133,13 +133,10 @@ router.post('/register', async (req, res) => {
   "success": true,
   "isDuplicate": false,
   "message": "Face verified - no duplicate found",
-  "descriptor": [0.012, -0.045, ...],  // 128 floats
-  "closestMatch": {
-    "distance": 0.72,
-    "similarity": 28
-  },
+  "descriptor": [0.012, -0.045, ...],  // 512-float normalized FaceNet vector
+  "similarity": 0.28,
   "totalCompared": 150,
-  "processingTime": 1234
+  "processingTime": 124
 }
 ```
 
@@ -148,17 +145,14 @@ router.post('/register', async (req, res) => {
 {
   "success": false,
   "isDuplicate": true,
+  "similarity": 0.912,
   "message": "This face is already registered in the system",
   "existingResident": {
     "id": "507f1f77bcf86cd799439011",
     "name": "Juan Dela Cruz",
     "barangay": "San Jose",
     "registeredAt": "2024-01-15T08:30:00.000Z"
-  },
-  "similarity": 85,
-  "distance": 0.42,
-  "totalCompared": 150,
-  "processingTime": 890
+  }
 }
 ```
 
@@ -170,21 +164,21 @@ router.post('/register', async (req, res) => {
 
 ```bash
 # First registration (should succeed)
-curl -X POST http://localhost:3001/api/face/check-duplicate \
+curl -X POST https://kapit-bisig.onrender.com/api/face/check-duplicate \
   -H "Content-Type: application/json" \
   -d '{"image": "base64_encoded_face_1"}'
 
 # Second registration with same face (should fail with 409)
-curl -X POST http://localhost:3001/api/face/check-duplicate \
+curl -X POST https://kapit-bisig.onrender.com/api/face/check-duplicate \
   -H "Content-Type: application/json" \
   -d '{"image": "base64_encoded_face_1_different_photo"}'
 ```
 
 ### 2. Verify Threshold
 
-The default threshold is 0.6. You can adjust it in:
-- `server/services/duplicateFaceService.ts` - `DUPLICATE_THRESHOLD` constant
-- `server/services/faceRecognitionService.ts` - `FACE_MATCH_THRESHOLD` constant
+The default threshold for duplicate detection is **0.85** (FaceNet Cosine Similarity):
+- `backend/main.py`: `DUPLICATE_THRESHOLD = 0.85`
+- `backend/main.py`: `FACE_MATCH_THRESHOLD = 0.65` (1:N verification)
 
 ---
 

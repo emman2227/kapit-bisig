@@ -15,9 +15,9 @@ This project uses MongoDB (via Mongoose). Main application data is in the `kapit
   - `city`, `barangay`, `streetAddress`, `householdSize`
   - `vulnerableMembers[]`, `vulnerableCounts` (map)
   - `idType`, `idNumber` (unique), `frontIdImage`, `backIdImage`
-  - `faceImage`, `faceDescriptor[128]`, `faceDescriptorMetadata`
-  - `verification` (confidence/risk fields)
-  - `status` (`Pending|Approved|Rejected`), `rejectionReason`, `verifiedBy`, `verifiedAt`
+  - `faceImage`, `faceDescriptor[512]`, `faceDescriptorMetadata`
+  - `verification` (confidence, riskScore, isVerified, idCheckDecision, screeningConfidence, detectedIdType, typeMatch, idNumberMatch, ocrConfidence, qualityScore, warnings, riskFactors)
+  - `status` (`Pending|Approved|Needs Revision|Rejected`), `rejectionReason`, `verifiedBy`, `verifiedAt`
   - `qrVersion`, `qrIssuedAt`, `qrStatus` (`ACTIVE|REVOKED`)
   - `createdAt`, `updatedAt`
 - Indexes:
@@ -28,6 +28,21 @@ This project uses MongoDB (via Mongoose). Main application data is in the `kapit
   - `{ status: 1, createdAt: -1 }`
   - `{ faceDescriptor: 1 }`
   - `{ qrStatus: 1 }`
+
+### `face_registration_logs`
+- Source: MongoDB collection managed by Python AI Service (`backend/main.py`)
+- Primary fields:
+  - `timestamp` (ISODate)
+  - `client_ip` (string)
+  - `action` (`ALLOW|BLOCK|ERROR`)
+  - `reason` (string, e.g. "Duplicate face detected (similarity: 0.912)")
+  - `matched_resident_id` (ObjectId ref `Resident`)
+  - `device_info` (string)
+  - `similarity_score` (number)
+- Indexes:
+  - `{ timestamp: -1 }`
+  - `{ action: 1 }`
+  - `{ matched_resident_id: 1 }`
 
 ### `householdtokens`
 - Source model: `server/models/HouseholdToken.ts`

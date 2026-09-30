@@ -4,12 +4,13 @@ This index is the primary entry point for project documentation.
 
 ## Start Here
 
-- Project overview and quickstart: `README.md`
-- API reference: `docs/API_DOCUMENTATION.md`
-- Database schema: `docs/DATABASE_SCHEMA.md`
-- Target beneficiary feature: `docs/TARGET_BENEFICIARY_IMPLEMENTATION.md`
-- Staff Offline Scanner Mode: `docs/STAFF_OFFLINE_SCANNER_IMPLEMENTATION.md`
-- Maintenance and operations: `docs/MAINTENANCE_NOTES.md`
+- **Master System Documentation**: [`docs/SYSTEM_DOCUMENTATION.md`](SYSTEM_DOCUMENTATION.md) (Comprehensive Architecture, Roles, Data Flow & Modules)
+- Monorepo Overview & Quickstart: [`README.md`](../README.md)
+- API reference: [`docs/API_DOCUMENTATION.md`](API_DOCUMENTATION.md)
+- Database schema: [`docs/DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md)
+- Target beneficiary feature: [`docs/TARGET_BENEFICIARY_IMPLEMENTATION.md`](TARGET_BENEFICIARY_IMPLEMENTATION.md)
+- Staff Offline Scanner Mode: [`docs/STAFF_OFFLINE_SCANNER_IMPLEMENTATION.md`](STAFF_OFFLINE_SCANNER_IMPLEMENTATION.md)
+- Maintenance and operations: [`docs/MAINTENANCE_NOTES.md`](MAINTENANCE_NOTES.md)
 
 ## Setup and Integration
 
@@ -18,10 +19,17 @@ This index is the primary entry point for project documentation.
 - Mobile implementation guide: `docs/MOBILE_FACE_RECOGNITION_IMPLEMENTATION_GUIDE.md`
 - Wi-Fi/IP change checklist: `docs/WIFI_IP_CHANGE_CHECKLIST.md`
 
+## Deployment & Production
+
+- Master Full-Stack Deployment Guide (Vercel, Render Docker & EAS): `docs/DEPLOYMENT_GUIDE.md`
+- Mobile EAS OTA & AI Container Deployment Guide: `docs/DEPLOYMENT_GUIDE_MOBILE_AND_AI.md`
+- ID Verification & Mobile OTA Stabilization Notes: `docs/ID_VERIFICATION_AND_MOBILE_OTA_STABILIZATION.md`
+
 ## Identity and Face Verification Documentation
 
-- System documentation (thesis/capstone): `docs/FACE_RECOGNITION_SYSTEM_DOCUMENTATION.md`
-- ID & Face Scan Improvements (Active Liveness, Deep-Learning OCR, Anti-Spoofing): `docs/ID_AND_FACE_VERIFICATION_CHANGES.md`
+- Biometric Face Recognition System (FaceNet-512 ONNX, Active 3D Liveness, Thesis/Capstone): `docs/FACE_RECOGNITION_SYSTEM_DOCUMENTATION.md`
+- Deep-Learning ID Verification System (RapidOCR PP-OCRv4, Card Geometry, Portrait Detection): `docs/ID_SCAN_SYSTEM_DOCUMENTATION.md`
+- ID & Face Scan Architectural Upgrades & Improvements: `docs/ID_AND_FACE_VERIFICATION_CHANGES.md`
 - ID Verification & Mobile OTA Stabilization (Render 512MB RAM Tuning, Image Decoders, Network Architecture): `docs/ID_VERIFICATION_AND_MOBILE_OTA_STABILIZATION.md`
 
 ## Testing Assets

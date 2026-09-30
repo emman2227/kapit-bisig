@@ -1,436 +1,175 @@
 # Kapit-Bisig Backend Setup Guide
 
-Complete guide for running the Python Face Recognition backend and generating household registration tokens.
+Complete guide for running the Python AI Face Recognition & ID Verification service, managing dependencies, and configuring environment variables.
 
 ---
 
 ## Table of Contents
 
-1. [Python Backend Setup](#1-python-backend-setup)
-2. [Running the Face Recognition API](#2-running-the-face-recognition-api)
-3. [Generating Household Tokens](#3-generating-household-tokens)
-4. [Environment Variables](#4-environment-variables)
-5. [Changing IP Address for Different Wi-Fi](#5-changing-ip-address-for-different-wi-fi)
+1. [Python AI Backend Setup](#1-python-ai-backend-setup)
+2. [Running the AI Service (Local & Production)](#2-running-the-ai-service-local--production)
+3. [Environment Variables](#3-environment-variables)
+4. [Models & Architecture](#4-models--architecture)
+5. [Generating Household Tokens](#5-generating-household-tokens)
 6. [Troubleshooting](#6-troubleshooting)
-
-Quick reference: see `docs/WIFI_IP_CHANGE_CHECKLIST.md` for a short, copy-ready checklist.
 
 ---
 
-## 1. Python Backend Setup
+## 1. Python AI Backend Setup
 
 ### Prerequisites
 
-- Python 3.10 or higher
+- Python 3.10 or higher (Python 3.10 or 3.11 recommended)
 - pip (Python package manager)
 - MongoDB Atlas account (or local MongoDB)
 
 ### Installation Steps
 
 ```powershell
-# 1. Navigate to the backend folder
-cd d:\kapit-bisig\backend
+# 1. Navigate to the backend directory from project root
+cd backend
 
-# 2. Create a virtual environment (recommended)
+# 2. Create a virtual environment
 python -m venv venv
 
 # 3. Activate the virtual environment
+# Windows:
 .\venv\Scripts\Activate
+# macOS / Linux:
+# source venv/bin/activate
 
-# 4. Install dependencies
-pip install -r requirements.txt
+# 4. Upgrade pip and install production dependencies
+pip install --upgrade pip
+pip install -r requirements-deploy.txt
 ```
 
-### Dependencies Installed
+### Core Dependencies Installed
 
 | Package | Purpose |
 |---------|---------|
-| `fastapi` | REST API framework |
-| `uvicorn` | ASGI server |
-| `opencv-python` | Face detection (Haar Cascade) |
-| `deepface` | Face recognition & embeddings |
-| `numpy` | Numerical operations |
-| `onnxruntime` | CPU optimization for faster inference |
+| `fastapi` | High-performance asynchronous REST API framework |
+| `uvicorn[standard]` | ASGI web server |
+| `onnxruntime` | Pure CPU-optimized deep-learning inference engine |
+| `opencv-python-headless` | Image pre-processing, Haar Cascade face detection, Canny edge detection |
+| `rapidocr-onnxruntime` | PaddleOCR PP-OCRv4 deep-learning text detection and recognition |
+| `mediapipe` | 3D facial landmark mesh detection for active liveness |
+| `pymongo` | MongoDB driver for storing embeddings and audit logs |
+| `pillow` | Image format conversion and EXIF orientation normalization |
 
 ---
 
-## 2. Running the Face Recognition API
+## 2. Running the AI Service (Local & Production)
 
-### Option A: Direct Python Run
-
+### Option A: Local Run via Project Root Script
+From the monorepo root:
 ```powershell
-cd d:\kapit-bisig\backend
+npm run dev:face
+```
+
+### Option B: Direct Python Run
+```powershell
+cd backend
 .\venv\Scripts\Activate
 python main.py
 ```
 
-### Option B: Using Uvicorn (with hot reload for development)
-
+### Option C: Uvicorn with Hot Reload (Development)
 ```powershell
-cd d:\kapit-bisig\backend
+cd backend
 .\venv\Scripts\Activate
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Expected Output
+### Expected Startup Log
 
+```text
+INFO:main:Connecting to MongoDB Atlas...
+INFO:main:Connected to MongoDB database: kapit-bisig
+INFO:services.face_embedding_service:[FaceEmbedding] Model loaded from .../models/facenet/facenet.onnx (input: input, output: output)
+INFO:services.id_verification_service:[IDVerification] RapidOCR engine initialized
+INFO:uvicorn:Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
 ```
-INFO:     Pre-loading Facenet model...
-INFO:     Model pre-loaded successfully!
-INFO:     Database loaded with X users
-INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-```
 
-### Verify API is Running
+### Verify Service Health
 
-Open your browser and navigate to:
-- **Health Check:** http://localhost:8000/
-- **API Documentation:** http://localhost:8000/docs
+Open your browser or run curl:
+- **Health Check:** `http://localhost:8000/api/health`
+- **Swagger Documentation:** `http://localhost:8000/docs`
 
 ---
 
-## 3. Generating Household Tokens
+## 3. Environment Variables (`backend/.env`)
+
+```env
+# Server
+PORT=8000
+HOST=0.0.0.0
+
+# MongoDB Atlas
+MONGODB_URI=mongodb+srv://<username>:<password>@<cluster>.mongodb.net/kapit-bisig?retryWrites=true&w=majority
+MONGODB_DB_NAME=kapit-bisig
+
+# Biometric & Anti-Spoofing Thresholds
+MODEL_NAME=Facenet-ONNX
+DUPLICATE_THRESHOLD=0.85
+FACE_MATCH_THRESHOLD=0.65
+BLUR_THRESHOLD=18
+LOW_LIGHT_MEAN_THRESHOLD=75
+LOW_LIGHT_GAMMA=1.4
+
+# Face Capture Rate Limiting
+ENABLE_FACE_ATTEMPT_LIMIT=true
+FACE_ATTEMPT_LIMIT=10
+FACE_ATTEMPT_WINDOW_SECONDS=900
+FACE_ATTEMPT_LOCK_SECONDS=300
+
+# CORS & Admin Token
+FACE_API_ALLOWED_ORIGINS=*
+FACE_API_ADMIN_TOKEN=your-random-secure-admin-token
+```
+
+---
+
+## 4. Models & Architecture
+
+All pre-trained ONNX models are stored locally under `backend/models/`:
+
+```text
+backend/models/
+├── facenet/
+│   └── facenet.onnx           # FaceNet-512 embedding engine (~90 MB)
+├── minifasnet/
+│   └── minifasnet_v2.onnx     # Passive anti-spoofing classifier (~1.7 MB)
+└── rapidocr/                  # PP-OCRv4 detection and recognition ONNX models
+```
+
+### Memory Optimization Highlights
+- **Lazy Loading**: FaceNet is initialized on-demand on the first face request, saving ~130 MB at idle startup.
+- **Single Threading**: `intra_op_num_threads=1` and `inter_op_num_threads=1` prevent CPU thread storms from allocating excessive buffer memory.
+- **Unified Render Container**: Runs alongside the Node.js Express server inside Render's 512 MB Free tier via `Dockerfile.render` and `supervisord`.
+
+---
+
+## 5. Generating Household Tokens
 
 Tokens are required for household registration in the mobile app.
 
-### Navigate to Web App Server
-
+### Run Token Generation Script
 ```powershell
-cd d:\kapit-bisig\apps\web\apps
+cd apps/web/apps
+npm run generate:qr-sheet
 ```
+This generates cryptographic household QR tokens and registers them in MongoDB.
 
-### Option A: Generate Tokens (Simple JavaScript)
-
-```powershell
-# Generate 10 tokens (distributed across all barangays)
-node server/scripts/generateTestTokenSimple.js/
-# Generate specific number of tokens
-node server/scripts/generateTestTokenSimple.js 20
-
-# Generate tokens for a specific barangay
-node server/scripts/generateTestTokenSimple.js 5 "San Jose"
-```
-
-### Option B: Generate Tokens (TypeScript)
-
-```powershell
-npx ts-node server/scripts/generateTestToken.ts
-```
-
-### Option C: Generate Resident QR Payload (No Signature)
-
-```powershell
-# Generate QR for latest approved resident
-node server/scripts/generateResidentQr.js
-
-# Generate QR for a specific mobile number
-node server/scripts/generateResidentQr.js --mobile 09123456789
-
-# Generate QR for a specific resident code
-node server/scripts/generateResidentQr.js --code SJ-2026-000001
-```
-# Generate contract address for blockchain
-npx hardhat run scripts/deploy.js --network sepolia
-
-This outputs compact QR text that can be resolved by:
-- `POST /api/household/qr/resolve`
-
-### Available Barangays
-
-| # | Barangay |
-|---|----------|
-| 1 | Bolo |
-| 2 | Bongalon |
-| 3 | Dulig |
-| 4 | Laois |
-| 5 | Magsaysay |
-| 6 | Poblacion |
-| 7 | San Gonzalo |
-| 8 | San Jose |
-| 9 | Tobuan |
-| 10 | Uyong |
-
-### Sample Output
-
-```
-🎫 Household Token Generator
-
-============================================================
-📋 Generated Household Registration Tokens:
-
-   Token #1
-   🎫 CODE: A1B2-C3D4-E5F6
-   📍 Barangay: Bolo
-   📅 Expires: 3/11/2026
-
-   Token #2
-   🎫 CODE: G7H8-I9J0-K1L2
-   📍 Barangay: Bongalon
-   📅 Expires: 3/11/2026
-============================================================
-
-✅ Give these codes to households for registration!
-💡 Each code is ONE-TIME USE only - first to register wins.
-⚠️  Tokens must match the selected barangay during registration.
-```
-
-### Token Format
-
-- **Format:** `XXXX-XXXX-XXXX` (12 alphanumeric characters)
-- **Validity:** 30 days from generation
-- **Usage:** One-time use per household
-
----
-
-## 4. Environment Variables
-
-### Python Backend (`backend/.env`)
-
-```env
-# Face Recognition Settings
-FACE_MATCH_THRESHOLD=0.65      # Similarity threshold for verification
-DUPLICATE_THRESHOLD=0.70        # Threshold for duplicate detection
-MIN_FACE_SIZE=100               # Minimum face size in pixels
-MODEL_NAME=Facenet              # DeepFace model (Facenet, VGG-Face, ArcFace)
-DETECTOR_BACKEND=opencv         # Face detector (opencv, retinaface, mtcnn)
-BLUR_THRESHOLD=30               # Image sharpness threshold
-MAX_IMAGE_DIM=800               # Max image dimension (resize for speed)
-```
-
-### Web App Server (`apps/web/apps/.env.local`)
-
-```env
-# MongoDB Connection
-MONGODB_URI=mongodb+srv://cluster0.example.mongodb.net/kapit-bisig
-
-# Server Settings
-PORT=3001
-```
-
----
-
-## 5. Changing IP Address for Different Wi-Fi
-
-When you connect your laptop to a different Wi-Fi, your local IP usually changes.  
-Update these files so mobile and web can still reach the backend.
-
-### A. Mobile App (Required)
-
-File: `mobile/.env`
-
-Update both variables to your current laptop IP:
-
-```env
-EXPO_PUBLIC_API_URL=http://192.168.1.4:3001/api
-EXPO_PUBLIC_FACE_API_URL=http://192.168.1.4:8000
-```
-
-Example:
-
-```env
-EXPO_PUBLIC_API_URL=http://192.168.1.4:3001/api
-EXPO_PUBLIC_FACE_API_URL=http://192.168.1.4:8000
-```
-
-### B. Web App Frontend (Optional, if opening web app from another device)
-
-File: `apps/web/apps/.env.local`
-
-Update:
-
-```env
-NEXT_PUBLIC_API_URL=http://192.168.1.4:3001/api
-```
-
-If you only use web app on the same laptop browser, `http://localhost:3001/api` is fine.
-
-### C. Web App Backend CORS (Important for cross-device access)
-
-File: `apps/web/apps/.env.local`
-
-Set:
-
-```env
-CORS_ORIGIN=*
-```
-
-Or restrict to specific origin:
-
-```env
-CORS_ORIGIN=http://192.168.1.4:3000
-```
-
-### D. Backend Host Binding
-
-Python backend (`backend/main.py`) already runs on:
-
-```python
-uvicorn.run(app, host="0.0.0.0", port=8000)
-```
-
-This is correct for LAN access. No IP change needed here.
-
-### E. How to get your new IP (Windows)
-
-Run:
-
-```powershell
-ipconfig
-```
-
-Use the `IPv4 Address` of your active Wi-Fi adapter.
-
-### F. Restart after changing IP
-
-1. Restart Node backend (`apps/web/apps`).
-2. Restart Python backend (`backend`).
-3. Restart Expo (`mobile`), then reload app.
-   
 ---
 
 ## 6. Troubleshooting
 
-### Issue: `ModuleNotFoundError: No module named 'fastapi'`
+### Problem: "Model not found at models/facenet/facenet.onnx"
+- **Solution**: Ensure the ONNX file exists in `backend/models/facenet/facenet.onnx`.
 
-**Solution:** Activate virtual environment first
+### Problem: "RapidOCR failed to initialize"
+- **Solution**: Ensure `rapidocr-onnxruntime>=1.4.0` is installed. Run `pip install -r requirements-deploy.txt`.
 
-```powershell
-cd d:\kapit-bisig\backend  
-.\venv\Scripts\Activate
-pip install -r requirements.txt
-```
-
-### Issue: Face recognition is slow
-
-**Solution:** Enable CPU optimizations
-
-```powershell
-pip install onnxruntime
-```
-
-Set environment variables for smaller images:
-```env
-MAX_IMAGE_DIM=640
-DETECTOR_BACKEND=opencv
-```
-
-### Issue: MongoDB connection failed
-
-**Solution:** Check your `.env.local` file has correct MongoDB URI
-
-```powershell
-cd d:\kapit-bisig\apps\web\apps
-cat .env.local | Select-String "MONGODB"
-```
-
-### Issue: Token generation fails
-
-**Solution:** Ensure MongoDB is accessible
-
-```powershell
-# Test MongoDB connection
-node -e "const mongoose = require('mongoose'); mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/kapit-bisig').then(() => console.log('Connected!')).catch(e => console.error(e))"
-```
-
-### Issue: Expo QR code opens but Expo Go says `Failed to download`, or terminal shows `Networking has been disabled`
-
-**Likely cause:** Expo LAN mode is relying on a local Wi-Fi route or port that is not reachable from the phone.
-
-**Solution:** Start the mobile app with tunnel mode first, then fall back to LAN only when both devices are on the same Wi-Fi.
-
-```powershell
-cd d:\kapit-bisig\mobile
-
-# Recommended for phone testing
-npm start
-
-# Optional: use LAN only when laptop and phone are on the same Wi-Fi
-npm run start:lan
-```
-
-If Expo still fails to start cleanly:
-
-```powershell
-# Close old Metro / Expo Node processes
-Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
-
-# Clear Expo local state and restart
-Remove-Item .expo -Recurse -Force -ErrorAction SilentlyContinue
-npm start
-```
-
-Also verify:
-- Your phone and laptop are on the same Wi-Fi if using `npm run start:lan`
-- `mobile/.env` uses your laptop's current IPv4 address for `EXPO_PUBLIC_API_URL` and `EXPO_PUBLIC_FACE_API_URL`
-- Windows Firewall is not blocking `node.exe` on private networks
-
----
-
-## Quick Start Summary
-
-```powershell
-# Terminal 1: Run Python Backend
-cd d:\kapit-bisig\backend
-.\venv\Scripts\Activate
-python main.py
-
-# Terminal 2: Generate Tokens
-cd d:\kapit-bisig\apps\web\apps
-node server/scripts/generateTestTokenSimple.js 10
-```
-
----
-
-## API Endpoints Reference
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/` | GET | Health check |
-| `/api/health` | GET | Detailed health status |
-| `/api/face/detect` | POST | Detect face in image |
-| `/api/face/register` | POST | Register new face |
-| `/api/face/verify` | POST | Verify face against database |
-
----
-
-## Summary Commands: Running Mobile, Python AI & Node Backend
-
-```powershell
-# 1. Node.js / Express Backend (Port 3001)
-cd d:\kapit-bisig\apps\web\apps ; npm run server:dev
-
-# 2. Python AI & Face Recognition Backend (Port 8000)
-cd d:\kapit-bisig\backend ; .\venv\Scripts\Activate ; python main.py
-
-# 3. Mobile App (Expo / React Native)
-cd d:\kapit-bisig\mobile ; npm start
-
-cd d:\kapit-bisig\mobile
-npx expo start --clear
-
-```
-
- Token #1
-   🎫 CODE: 4REB-K2YK-T6AS
-   📍 Barangay: San Jose
-   📅 Expires: 8/29/2026
-
-   Token #2
-   🎫 CODE: 94YP-2KAU-XZN7
-   📍 Barangay: San Jose
-   📅 Expires: 8/29/2026
-
-   Token #3
-   🎫 CODE: 88Q8-FRG4-KBRX
-   📍 Barangay: San Jose
-   📅 Expires: 8/29/2026
-
-   Token #4
-   🎫 CODE: 0T2P-BKEV-81OL
-   📍 Barangay: San Jose
-   📅 Expires: 8/29/2026
-
-   Token #5
-   🎫 CODE: N4R3-QRIR-2TVV
-   📍 Barangay: San Jose
-   📅 Expires: 8/29/2026
+### Problem: "Container OOM / Process terminated on cloud"
+- **Solution**: Ensure `det_limit_side_len=720` and `use_cls=False` are configured in `id_verification_service.py`, and that the Express server downscales incoming images to 900 px via Sharp before forwarding.
