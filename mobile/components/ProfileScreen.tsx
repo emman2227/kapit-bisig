@@ -265,7 +265,10 @@ export default function ProfileScreen({
 
   const dynamicSheetMaxHeight = useMemo(() => {
     if (keyboardHeight > 0) {
-      const availableHeight = windowHeight - keyboardHeight - insets.top - 16;
+      const availableHeight =
+        Platform.OS === 'ios'
+          ? windowHeight - keyboardHeight - insets.top - 16
+          : windowHeight - insets.top - 16;
       return Math.max(260, availableHeight);
     }
     return '90%';
@@ -841,7 +844,7 @@ export default function ProfileScreen({
         <View
           style={[
             styles.sheetOverlay,
-            keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
+            Platform.OS === 'ios' && keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
           ]}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -852,7 +855,6 @@ export default function ProfileScreen({
               styles.editSheet,
               {
                 maxHeight: dynamicSheetMaxHeight,
-                height: keyboardHeight > 0 ? dynamicSheetMaxHeight : undefined,
                 paddingBottom: keyboardHeight > 0 ? 16 : Math.max(insets.bottom, 16),
               },
             ]}
@@ -877,7 +879,7 @@ export default function ProfileScreen({
             </View>
 
             <ScrollView
-              style={[styles.formScroll, keyboardHeight > 0 ? styles.formScrollKeyboard : null]}
+              style={styles.formScroll}
               contentContainerStyle={styles.formContent}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
@@ -1019,7 +1021,7 @@ export default function ProfileScreen({
         <View
           style={[
             styles.sheetOverlay,
-            keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
+            Platform.OS === 'ios' && keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
           ]}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -1030,7 +1032,6 @@ export default function ProfileScreen({
               styles.editSheet,
               {
                 maxHeight: dynamicSheetMaxHeight,
-                height: keyboardHeight > 0 ? dynamicSheetMaxHeight : undefined,
                 paddingBottom: keyboardHeight > 0 ? 16 : Math.max(insets.bottom, 16),
               },
             ]}
@@ -1061,7 +1062,7 @@ export default function ProfileScreen({
             {changePasswordStep === 'input' ? (
               <>
                 <ScrollView
-                  style={[styles.formScroll, keyboardHeight > 0 ? styles.formScrollKeyboard : null]}
+                  style={styles.formScroll}
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
                   keyboardDismissMode="on-drag"
@@ -1174,7 +1175,7 @@ export default function ProfileScreen({
             ) : (
               <>
                 <ScrollView
-                  style={[styles.formScroll, keyboardHeight > 0 ? styles.formScrollKeyboard : null]}
+                  style={styles.formScroll}
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
                   keyboardDismissMode="on-drag"
@@ -1568,10 +1569,6 @@ const styles = StyleSheet.create({
   },
   formScroll: {
     flexGrow: 0,
-    flexShrink: 1,
-  },
-  formScrollKeyboard: {
-    flex: 1,
     flexShrink: 1,
   },
   formContent: {
