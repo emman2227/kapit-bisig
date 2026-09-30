@@ -265,13 +265,9 @@ export default function ProfileScreen({
 
   const dynamicSheetMaxHeight = useMemo(() => {
     if (keyboardHeight > 0) {
-      if (Platform.OS === 'ios') {
-        // iOS: windowHeight is full screen; subtract keyboard + status bar
-        return Math.max(260, windowHeight - keyboardHeight - insets.top - 16);
-      }
-      // Android adjustResize: windowHeight is already reduced by the keyboard,
-      // so just use most of it. No subtraction needed.
-      return Math.max(260, windowHeight - insets.top - 16);
+      // Modal on both platforms does NOT auto-resize with the keyboard,
+      // so always subtract keyboardHeight from the full window height.
+      return Math.max(260, windowHeight - keyboardHeight - insets.top - 16);
     }
     return '90%';
   }, [keyboardHeight, windowHeight, insets.top]);
@@ -846,7 +842,7 @@ export default function ProfileScreen({
         <View
           style={[
             styles.sheetOverlay,
-            Platform.OS === 'ios' && keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
+            keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
           ]}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -1023,7 +1019,7 @@ export default function ProfileScreen({
         <View
           style={[
             styles.sheetOverlay,
-            Platform.OS === 'ios' && keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
+            keyboardHeight > 0 ? { paddingBottom: keyboardHeight } : null,
           ]}
         >
           <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
