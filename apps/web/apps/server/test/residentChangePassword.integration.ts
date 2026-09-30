@@ -147,7 +147,44 @@ export async function runResidentChangePasswordIntegrationTests(): Promise<void>
     assert.ok(notif);
     assert.match(notif.title, /Password Changed Successfully/i);
 
-    console.log('✓ All 2-step SMS OTP resident change password tests passed successfully!');
+    // 6. Test Email Channel OTP for Change Password
+    const emailOtpRes = await request(app)
+      .post('/api/household/auth/me/change-password/request-otp')
+      .set('Authorization', `Bearer ${testToken}`)
+      .send({
+        currentPassword: 'UpdatedPass#2026',
+        newPassword: 'FinalPass#2026',
+        channel: 'email',
+      });
+    assert.strictEqual(emailOtpRes.status, 200);
+    assert.strictEqual(emailOtpRes.body.success, true);
+    assert.match(emailOtpRes.body.message, /recovery email/i);
+
+    const emailOtpRecord = await ResidentPasswordResetOtp.findOne({ identifier });
+    assert.ok(emailOtpRecord);
+    assert.strictEqual(emailOtpRecord.emailLower, 'maria.santos@example.com');
+
+    // Confirm via the email-generated OTP
+    const testKnownEmailOtp = '654321';
+    emailOtpRecord.otpHash = await bcrypt.hash(testKnownEmailOtp, 10);
+    await emailOtpRecord.save();
+
+    const confirmEmailSuccess = await request(app)
+      .post('/api/household/auth/me/change-password/confirm')
+      .set('Authorization', `Bearer ${testToken}`)
+      .send({
+        otp: testKnownEmailOtp,
+        newPassword: 'FinalPass#2026',
+      });
+    assert.strictEqual(confirmEmailSuccess.status, 200);
+    assert.strictEqual(confirmEmailSuccess.body.success, true);
+
+    const finalResident = await Resident.findById(testResident._id).select('+password');
+    assert.ok(finalResident);
+    const finalMatch = await bcrypt.compare('FinalPass#2026', finalResident.password!);
+    assert.strictEqual(finalMatch, true);
+
+    console.log('✓ All SMS & Email OTP resident change password tests passed successfully!');
   } finally {
     await mongoose.disconnect();
     await mongo.stop();

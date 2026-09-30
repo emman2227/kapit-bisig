@@ -65,6 +65,7 @@ export const householdChangePasswordRequestOtpSchema = z
   .object({
     currentPassword: z.string().min(1, 'Current password is required').max(200),
     newPassword: z.string().min(1, 'New password is required').max(200),
+    channel: z.enum(['sms', 'email']).optional().default('sms'),
   })
   .strict();
 

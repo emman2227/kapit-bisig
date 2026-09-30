@@ -1375,7 +1375,7 @@ export async function residentForgotPasswordReset(
 
 export async function requestResidentChangePasswordOtp(
   token: string,
-  payload: { currentPassword: string; newPassword: string }
+  payload: { currentPassword: string; newPassword: string; channel?: 'sms' | 'email' }
 ): Promise<{ success: boolean; message?: string; errors?: string[] }> {
   try {
     const response = await fetch(`${API_BASE_URL}/household/auth/me/change-password/request-otp`, {
@@ -1398,7 +1398,7 @@ export async function requestResidentChangePasswordOtp(
 
     return {
       success: true,
-      message: data.message || 'Verification code sent to your registered mobile number.',
+      message: data.message || (payload.channel === 'email' ? 'Verification code sent to your registered recovery email.' : 'Verification code sent to your registered mobile number.'),
     };
   } catch {
     return {

@@ -24,6 +24,7 @@ export function setResetOtpSenderForTests(sender: ((to: string, otp: string) => 
 }
 
 export function isMailerConfigured(): boolean {
+  if (process.env.NODE_ENV === 'test') return true;
   if (process.env.BREVO_API_KEY?.trim()) return true;
   return Boolean(
     process.env.SMTP_HOST?.trim()
@@ -218,6 +219,10 @@ export async function sendPasswordChangeOtpEmail(
   to: string,
   otp: string,
 ): Promise<void> {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
   const subject = `${APP_NAME} Password Change Verification Code`;
 
   const html = `

@@ -287,6 +287,7 @@ export default function ProfileScreen({
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [changePasswordStep, setChangePasswordStep] = useState<'input' | 'otp'>('input');
+  const [changePasswordChannel, setChangePasswordChannel] = useState<'sms' | 'email'>('sms');
   const [currentPasswordInput, setCurrentPasswordInput] = useState('');
   const [newPasswordInput, setNewPasswordInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
@@ -444,6 +445,8 @@ export default function ProfileScreen({
     if (!isRequestingChangePasswordOtp && !isConfirmingChangePassword) {
       Keyboard.dismiss();
       setIsChangePasswordOpen(false);
+      setChangePasswordChannel('sms');
+      setChangePasswordStep('input');
     }
   };
 
@@ -808,6 +811,7 @@ export default function ProfileScreen({
       const result = await requestResidentChangePasswordOtp(token, {
         currentPassword,
         newPassword,
+        channel: changePasswordChannel,
       });
 
       if (!result.success) {
@@ -818,7 +822,12 @@ export default function ProfileScreen({
 
       setChangePasswordStep('otp');
       setChangePasswordOtpInput('');
-      Alert.alert('Verification code sent', 'A 6-digit verification code was sent via SMS to your registered mobile number.');
+      Alert.alert(
+        'Verification code sent',
+        changePasswordChannel === 'email'
+          ? 'A 6-digit verification code was sent to your registered recovery email.'
+          : 'A 6-digit verification code was sent via SMS to your registered mobile number.'
+      );
     } finally {
       setIsRequestingChangePasswordOtp(false);
     }
@@ -831,7 +840,10 @@ export default function ProfileScreen({
     const newPassword = newPasswordInput.trim();
 
     if (!otp || otp.length !== 6) {
-      Alert.alert('Invalid code', 'Please enter the 6-digit verification code sent via SMS.');
+      Alert.alert(
+        'Invalid code',
+        `Please enter the 6-digit verification code sent ${changePasswordChannel === 'email' ? 'to your recovery email' : 'via SMS'}.`
+      );
       return;
     }
 
@@ -1599,6 +1611,60 @@ export default function ProfileScreen({
                   nestedScrollEnabled={true}
                   showsVerticalScrollIndicator={true}
                 >
+                  {residentProfile?.email ? (
+                    <>
+                      <Text style={styles.inputLabel}>Verification Method</Text>
+                      <View style={styles.channelSelectorContainer}>
+                        <TouchableOpacity
+                          style={[
+                            styles.channelButton,
+                            changePasswordChannel === 'sms' && styles.channelButtonActive,
+                          ]}
+                          onPress={() => setChangePasswordChannel('sms')}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name="call-outline"
+                            size={15}
+                            color={changePasswordChannel === 'sms' ? residentColors.brand : '#6B7280'}
+                          />
+                          <Text
+                            style={[
+                              styles.channelButtonText,
+                              changePasswordChannel === 'sms' && styles.channelButtonTextActive,
+                            ]}
+                          >
+                            SMS OTP
+                          </Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                          style={[
+                            styles.channelButton,
+                            changePasswordChannel === 'email' && styles.channelButtonActive,
+                          ]}
+                          onPress={() => setChangePasswordChannel('email')}
+                          activeOpacity={0.8}
+                        >
+                          <Ionicons
+                            name="mail-outline"
+                            size={15}
+                            color={changePasswordChannel === 'email' ? residentColors.brand : '#6B7280'}
+                          />
+                          <Text
+                            style={[
+                              styles.channelButtonText,
+                              changePasswordChannel === 'email' && styles.channelButtonTextActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            Recovery Email
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : null}
+
                   <Text style={styles.inputLabel}>Current password</Text>
                   <View style={styles.passwordInputContainer}>
                     <TextInput
@@ -1714,13 +1780,24 @@ export default function ProfileScreen({
                 >
                   <View style={styles.otpCardContainer}>
                     <View style={styles.otpNoticeBox}>
-                      <Ionicons name="chatbox-ellipses-outline" size={24} color={residentColors.brand} style={styles.otpNoticeIcon} />
+                      <Ionicons
+                        name={changePasswordChannel === 'email' ? 'mail-outline' : 'chatbox-ellipses-outline'}
+                        size={24}
+                        color={residentColors.brand}
+                        style={styles.otpNoticeIcon}
+                      />
                       <Typography variant="body" color={residentColors.ink} style={styles.otpNoticeText}>
-                        Please check your SMS inbox for the 6-digit code.
+                        {changePasswordChannel === 'email'
+                          ? `Please check your recovery email (${residentProfile?.email || 'inbox'}) for the 6-digit code.`
+                          : 'Please check your SMS inbox for the 6-digit code.'}
                       </Typography>
                     </View>
 
-                    <Text style={styles.inputLabel}>6-Digit SMS Verification Code</Text>
+                    <Text style={styles.inputLabel}>
+                      {changePasswordChannel === 'email'
+                        ? '6-Digit Email Verification Code'
+                        : '6-Digit SMS Verification Code'}
+                    </Text>
                     <TextInput
                       style={[styles.input, styles.otpInputField]}
                       value={changePasswordOtpInput}
@@ -2144,6 +2221,39 @@ const styles = StyleSheet.create({
     padding: 6,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  channelSelectorContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: theme.borderRadius.md,
+    padding: 3,
+    marginBottom: 8,
+  },
+  channelButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 7,
+    gap: 6,
+  },
+  channelButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  channelButtonText: {
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily.medium,
+    color: '#6B7280',
+  },
+  channelButtonTextActive: {
+    color: residentColors.brand,
+    fontFamily: theme.typography.fontFamily.bold,
   },
   otpCardContainer: {
     paddingVertical: 12,

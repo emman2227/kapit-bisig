@@ -31,7 +31,7 @@ import { buildScreeningValidationIssues, buildVerificationPayload } from '../ser
 import { broadcastScopedNotification, createNotification } from '../utils/createNotification';
 import { validatePasswordStrength } from '../utils/passwordValidator';
 import { sendPasswordResetOtpSms, sendProfileUpdateOtpSms } from '../utils/smsService';
-import { sendProfileUpdateOtpEmail } from '../utils/mailer';
+import { sendProfileUpdateOtpEmail, sendPasswordChangeOtpEmail, isMailerConfigured } from '../utils/mailer';
 import ProfileUpdateOtp from '../models/ProfileUpdateOtp';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
@@ -828,9 +828,10 @@ router.post(
         });
       }
 
-      const { currentPassword, newPassword } = req.body as {
+      const { currentPassword, newPassword, channel = 'sms' } = req.body as {
         currentPassword: string;
         newPassword: string;
+        channel?: 'sms' | 'email';
       };
 
       const resident = await Resident.findById(userId).select('+password');
@@ -872,16 +873,62 @@ router.post(
         });
       }
 
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      const otpHash = await bcrypt.hash(otp, 10);
+      const identifier = `change_pw_${resident._id.toString()}`;
+
+      if (channel === 'email') {
+        const targetEmail = (resident.email || resident.emailLower || '').trim().toLowerCase();
+        if (!targetEmail) {
+          return res.status(400).json({
+            success: false,
+            message: 'No recovery email registered to receive verification code.',
+          });
+        }
+
+        if (!isMailerConfigured()) {
+          return res.status(503).json({
+            success: false,
+            code: 'CHANGE_PW_EMAIL_UNAVAILABLE',
+            message: 'Password-change email service is temporarily unavailable. Please try SMS or contact support.',
+          });
+        }
+
+        await ResidentPasswordResetOtp.deleteMany({ identifier });
+        await ResidentPasswordResetOtp.create({
+          residentId: resident._id,
+          identifier,
+          emailLower: targetEmail,
+          otpHash,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+          attemptsLeft: 5,
+          lastSentAt: new Date(),
+        });
+
+        try {
+          await sendPasswordChangeOtpEmail(targetEmail, otp);
+        } catch (mailErr) {
+          console.error('[HouseholdRoutes] Failed to send resident change-password OTP email:', (mailErr as Error).message);
+          return res.status(503).json({
+            success: false,
+            code: 'CHANGE_PW_EMAIL_UNAVAILABLE',
+            message: 'Password-change verification email could not be delivered. Please try SMS or try again later.',
+          });
+        }
+
+        return res.json({
+          success: true,
+          message: 'Verification code sent to your registered recovery email.',
+        });
+      }
+
+      // Default: SMS delivery
       if (!resident.mobileNumber) {
         return res.status(400).json({
           success: false,
           message: 'No mobile number registered to receive verification code.',
         });
       }
-
-      const otp = crypto.randomInt(100000, 1000000).toString();
-      const otpHash = await bcrypt.hash(otp, 10);
-      const identifier = `change_pw_${resident._id.toString()}`;
 
       await ResidentPasswordResetOtp.deleteMany({ identifier });
       await ResidentPasswordResetOtp.create({

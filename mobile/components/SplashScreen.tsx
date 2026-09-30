@@ -85,7 +85,9 @@ export default function SplashScreen({
   const [loginError, setLoginError] = useState('');
   const [showForgotPasswordScreen, setShowForgotPasswordScreen] = useState(false);
   const [forgotStep, setForgotStep] = useState<'mobile' | 'verification' | 'reset'>('mobile');
+  const [forgotMethod, setForgotMethod] = useState<'mobile' | 'email'>('mobile');
   const [forgotMobile, setForgotMobile] = useState('');
+  const [forgotEmail, setForgotEmail] = useState('');
   const [forgotVerificationCode, setForgotVerificationCode] = useState('');
   const [forgotResetToken, setForgotResetToken] = useState('');
   const [isSendingOtp, setIsSendingOtp] = useState(false);
@@ -222,15 +224,27 @@ export default function SplashScreen({
   };
 
   const handleSendResetCode = async () => {
-    const rawDigits = forgotMobile.replace(/\D/g, '');
-    if (!rawDigits || rawDigits.length < 10) {
-      Alert.alert('Invalid Mobile Number', 'Please enter a valid 11-digit mobile number (e.g. 09171234567).');
-      return;
+    let identifier = '';
+    if (forgotMethod === 'mobile') {
+      const rawDigits = forgotMobile.replace(/\D/g, '');
+      if (!rawDigits || rawDigits.length < 10) {
+        Alert.alert('Invalid Mobile Number', 'Please enter a valid 11-digit mobile number (e.g. 09171234567).');
+        return;
+      }
+      identifier = forgotMobile.trim();
+    } else {
+      const email = forgotEmail.trim().toLowerCase();
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!email || !emailRegex.test(email)) {
+        Alert.alert('Invalid Email', 'Please enter a valid recovery email address (e.g. name@example.com).');
+        return;
+      }
+      identifier = email;
     }
 
     setIsSendingOtp(true);
     try {
-      const result = await residentForgotPasswordSendOtp(forgotMobile.trim());
+      const result = await residentForgotPasswordSendOtp(identifier);
       if (!result.success) {
         Alert.alert('Send Failed', result.message || 'Failed to send verification code.');
         return;
@@ -239,7 +253,12 @@ export default function SplashScreen({
       setForgotVerificationCode('');
       setForgotResetToken('');
       setForgotStep('verification');
-      Alert.alert('Code Sent', 'If the mobile number is registered, a 6-digit verification code was sent via SMS.');
+      Alert.alert(
+        'Code Sent',
+        forgotMethod === 'mobile'
+          ? 'If the mobile number is registered, a 6-digit verification code was sent via SMS.'
+          : 'If the recovery email is registered, a 6-digit verification code was sent to your inbox.'
+      );
     } catch (error) {
       const messageText = error instanceof Error ? error.message : 'Failed to send verification code.';
       Alert.alert('Send Failed', messageText);
@@ -254,15 +273,19 @@ export default function SplashScreen({
       return;
     }
 
-    if (!forgotMobile.trim()) {
-      Alert.alert('Missing Mobile Number', 'Please go back and enter your mobile number.');
+    const identifier = forgotMethod === 'mobile' ? forgotMobile.trim() : forgotEmail.trim().toLowerCase();
+    if (!identifier) {
+      Alert.alert(
+        forgotMethod === 'mobile' ? 'Missing Mobile Number' : 'Missing Recovery Email',
+        `Please go back and enter your ${forgotMethod === 'mobile' ? 'mobile number' : 'recovery email'}.`
+      );
       return;
     }
 
     setIsVerifyingOtp(true);
     try {
       const result = await residentForgotPasswordVerifyOtp(
-        forgotMobile.trim(),
+        identifier,
         forgotVerificationCode.trim(),
       );
       if (!result.success || !result.resetToken) {
@@ -493,22 +516,73 @@ export default function SplashScreen({
                   </Text>
 
                   <Text style={styles.forgotSubtitle}>
-                    Enter your registered mobile number to receive a 6-digit verification code via SMS.
+                    {forgotMethod === 'mobile'
+                      ? 'Enter your registered mobile number to receive a 6-digit verification code via SMS.'
+                      : 'Enter your registered recovery email to receive a 6-digit verification code.'}
                   </Text>
 
-                  <View style={styles.forgotInputContainer}>
-                    <Ionicons name="call-outline" size={18} color="#888" style={styles.inputIcon} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="09XXXXXXXXX"
-                      placeholderTextColor="#888"
-                      value={forgotMobile}
-                      onChangeText={(text) => setForgotMobile(text.replace(/\D/g, '').slice(0, 11))}
-                      keyboardType="phone-pad"
-                      autoCapitalize="none"
-                      maxLength={11}
-                    />
+                  {/* Method Selector */}
+                  <View style={styles.forgotMethodContainer}>
+                    <TouchableOpacity
+                      style={[styles.forgotMethodButton, forgotMethod === 'mobile' && styles.forgotMethodButtonActive]}
+                      onPress={() => setForgotMethod('mobile')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="call-outline"
+                        size={15}
+                        color={forgotMethod === 'mobile' ? '#226538' : '#6B7280'}
+                      />
+                      <Text style={[styles.forgotMethodText, forgotMethod === 'mobile' && styles.forgotMethodTextActive]}>
+                        Mobile SMS
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.forgotMethodButton, forgotMethod === 'email' && styles.forgotMethodButtonActive]}
+                      onPress={() => setForgotMethod('email')}
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name="mail-outline"
+                        size={15}
+                        color={forgotMethod === 'email' ? '#226538' : '#6B7280'}
+                      />
+                      <Text style={[styles.forgotMethodText, forgotMethod === 'email' && styles.forgotMethodTextActive]}>
+                        Recovery Email
+                      </Text>
+                    </TouchableOpacity>
                   </View>
+
+                  {forgotMethod === 'mobile' ? (
+                    <View style={styles.forgotInputContainer}>
+                      <Ionicons name="call-outline" size={18} color="#888" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="09XXXXXXXXX"
+                        placeholderTextColor="#888"
+                        value={forgotMobile}
+                        onChangeText={(text) => setForgotMobile(text.replace(/\D/g, '').slice(0, 11))}
+                        keyboardType="phone-pad"
+                        autoCapitalize="none"
+                        maxLength={11}
+                      />
+                    </View>
+                  ) : (
+                    <View style={styles.forgotInputContainer}>
+                      <Ionicons name="mail-outline" size={18} color="#888" style={styles.inputIcon} />
+                      <TextInput
+                        style={styles.input}
+                        placeholder="name@example.com"
+                        placeholderTextColor="#888"
+                        value={forgotEmail}
+                        onChangeText={setForgotEmail}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        maxLength={100}
+                      />
+                    </View>
+                  )}
 
                   <TouchableOpacity
                     style={[styles.forgotSendButton, isSendingOtp && styles.forgotSendButtonDisabled]}
@@ -517,7 +591,9 @@ export default function SplashScreen({
                     activeOpacity={0.85}
                   >
                     <Text style={styles.forgotSendButtonText}>
-                      {isSendingOtp ? 'Sending SMS...' : 'Send OTP via SMS'}
+                      {isSendingOtp
+                        ? (forgotMethod === 'mobile' ? 'Sending SMS...' : 'Sending Email...')
+                        : (forgotMethod === 'mobile' ? 'Send OTP via SMS' : 'Send OTP via Email')}
                     </Text>
                   </TouchableOpacity>
 
@@ -547,7 +623,9 @@ export default function SplashScreen({
                   </Text>
 
                   <Text style={styles.forgotSubtitle}>
-                    Enter the 6-digit code sent via SMS to {forgotMobile}.
+                    {forgotMethod === 'mobile'
+                      ? `Enter the 6-digit code sent via SMS to ${forgotMobile}.`
+                      : `Enter the 6-digit code sent to your recovery email: ${forgotEmail}.`}
                   </Text>
 
                   <View style={styles.forgotInputContainer}>
@@ -1259,6 +1337,40 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#FFFFFF',
     marginBottom: 16,
+  },
+  forgotMethodContainer: {
+    flexDirection: 'row',
+    width: '100%',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 3,
+    marginBottom: 16,
+  },
+  forgotMethodButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    borderRadius: 7,
+    gap: 6,
+  },
+  forgotMethodButtonActive: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.12,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  forgotMethodText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#6B7280',
+  },
+  forgotMethodTextActive: {
+    color: '#226538',
+    fontWeight: '700',
   },
   forgotSendButton: {
     backgroundColor: '#226538',
