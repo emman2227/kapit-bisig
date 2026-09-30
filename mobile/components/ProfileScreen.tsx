@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -11,6 +12,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -798,8 +800,11 @@ export default function ProfileScreen({
       >
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
           <View style={[styles.editSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
@@ -824,7 +829,8 @@ export default function ProfileScreen({
               style={styles.formScroll}
               contentContainerStyle={styles.formContent}
               keyboardShouldPersistTaps="handled"
-              showsVerticalScrollIndicator={false}
+              keyboardDismissMode="on-drag"
+              showsVerticalScrollIndicator={true}
             >
               <Text style={styles.inputLabel}>First name</Text>
               <TextInput
@@ -964,8 +970,11 @@ export default function ProfileScreen({
       >
         <KeyboardAvoidingView
           style={styles.sheetOverlay}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <View style={StyleSheet.absoluteFill} />
+          </TouchableWithoutFeedback>
           <View style={[styles.editSheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
@@ -1000,7 +1009,8 @@ export default function ProfileScreen({
                   style={styles.formScroll}
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
-                  showsVerticalScrollIndicator={false}
+                  keyboardDismissMode="on-drag"
+                  showsVerticalScrollIndicator={true}
                 >
                   <Text style={styles.inputLabel}>Current password</Text>
                   <View style={styles.passwordInputContainer}>
@@ -1107,37 +1117,45 @@ export default function ProfileScreen({
               </>
             ) : (
               <>
-                <View style={styles.otpCardContainer}>
-                  <View style={styles.otpNoticeBox}>
-                    <Ionicons name="chatbox-ellipses-outline" size={24} color={residentColors.brand} style={styles.otpNoticeIcon} />
-                    <Typography variant="body" color={residentColors.ink} style={styles.otpNoticeText}>
-                      Please check your SMS inbox for the 6-digit code.
-                    </Typography>
+                <ScrollView
+                  style={styles.formScroll}
+                  contentContainerStyle={styles.formContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <View style={styles.otpCardContainer}>
+                    <View style={styles.otpNoticeBox}>
+                      <Ionicons name="chatbox-ellipses-outline" size={24} color={residentColors.brand} style={styles.otpNoticeIcon} />
+                      <Typography variant="body" color={residentColors.ink} style={styles.otpNoticeText}>
+                        Please check your SMS inbox for the 6-digit code.
+                      </Typography>
+                    </View>
+
+                    <Text style={styles.inputLabel}>6-Digit SMS Verification Code</Text>
+                    <TextInput
+                      style={[styles.input, styles.otpInputField]}
+                      value={changePasswordOtpInput}
+                      onChangeText={setChangePasswordOtpInput}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholder="123456"
+                      placeholderTextColor="#9CA3AF"
+                      autoFocus
+                      editable={!isConfirmingChangePassword}
+                    />
+
+                    <TouchableOpacity
+                      style={styles.resendOtpButton}
+                      onPress={handleRequestChangePasswordOtp}
+                      disabled={isRequestingChangePasswordOtp || isConfirmingChangePassword}
+                    >
+                      <Typography variant="caption" weight="semiBold" color={residentColors.brand}>
+                        {isRequestingChangePasswordOtp ? 'Resending code...' : "Didn't receive code? Resend OTP"}
+                      </Typography>
+                    </TouchableOpacity>
                   </View>
-
-                  <Text style={styles.inputLabel}>6-Digit SMS Verification Code</Text>
-                  <TextInput
-                    style={[styles.input, styles.otpInputField]}
-                    value={changePasswordOtpInput}
-                    onChangeText={setChangePasswordOtpInput}
-                    keyboardType="number-pad"
-                    maxLength={6}
-                    placeholder="123456"
-                    placeholderTextColor="#9CA3AF"
-                    autoFocus
-                    editable={!isConfirmingChangePassword}
-                  />
-
-                  <TouchableOpacity
-                    style={styles.resendOtpButton}
-                    onPress={handleRequestChangePasswordOtp}
-                    disabled={isRequestingChangePasswordOtp || isConfirmingChangePassword}
-                  >
-                    <Typography variant="caption" weight="semiBold" color={residentColors.brand}>
-                      {isRequestingChangePasswordOtp ? 'Resending code...' : "Didn't receive code? Resend OTP"}
-                    </Typography>
-                  </TouchableOpacity>
-                </View>
+                </ScrollView>
 
                 <View style={styles.formActions}>
                   <TouchableOpacity
@@ -1490,6 +1508,7 @@ const styles = StyleSheet.create({
   },
   formScroll: {
     flexGrow: 0,
+    flexShrink: 1,
   },
   formContent: {
     paddingBottom: 8,
