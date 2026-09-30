@@ -30,10 +30,24 @@ import { persistVerificationImage } from '../utils/imageStorage';
 import { buildScreeningValidationIssues, buildVerificationPayload } from '../services/householdRegistrationService';
 import { broadcastScopedNotification, createNotification } from '../utils/createNotification';
 import { validatePasswordStrength } from '../utils/passwordValidator';
-import { sendPasswordResetOtpSms } from '../utils/smsService';
+import { sendPasswordResetOtpSms, sendProfileUpdateOtpSms } from '../utils/smsService';
+import { sendProfileUpdateOtpEmail } from '../utils/mailer';
+import ProfileUpdateOtp from '../models/ProfileUpdateOtp';
+import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+
+function getJWTSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('FATAL: JWT_SECRET environment variable is not set in production');
+    }
+    return 'dev-jwt-secret-fallback-do-not-use-in-production-min32chars';
+  }
+  return secret;
+}
 
 const router = Router();
 
@@ -200,7 +214,7 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
     }
 
     const resident = await Resident.findById(userId).select(
-      'residentCode avatarUrl firstName lastName fullName mobileNumber email barangay city streetAddress householdSize status rejectionReason createdAt'
+      'residentCode avatarUrl firstName lastName fullName mobileNumber email barangay city streetAddress householdSize status rejectionReason lastProfileUpdateAt createdAt'
     );
 
     if (!resident) {
@@ -233,6 +247,7 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
         householdSize: resident.householdSize,
         status: resident.status,
         rejectionReason: resident.rejectionReason || '',
+        lastProfileUpdateAt: resident.lastProfileUpdateAt || null,
       },
     });
   } catch (error) {
@@ -245,11 +260,297 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
 });
 
 /**
+ * Request OTP to verify new mobile number or recovery email before saving profile update.
+ * POST /api/household/auth/me/profile-update/request-otp
+ */
+router.post(
+  '/auth/me/profile-update/request-otp',
+  authMiddleware,
+  authenticatedResidentReadRateLimiter,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (req.user?.role !== 'Resident') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only resident accounts can use this endpoint.',
+        });
+      }
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+        });
+      }
+
+      const { target, value } = req.body || {};
+      if (!target || !value || typeof value !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Target (mobileNumber or email) and value are required.',
+        });
+      }
+
+      const resident = await Resident.findById(userId);
+      if (!resident) {
+        return res.status(404).json({ success: false, message: 'Resident not found' });
+      }
+
+      // Check 30-day cooldown before sending OTP
+      const COOLDOWN_DAYS = 30;
+      if (resident.lastProfileUpdateAt) {
+        const elapsedMs = Date.now() - new Date(resident.lastProfileUpdateAt).getTime();
+        const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+        if (elapsedMs < cooldownMs) {
+          const remainingDays = Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+          return res.status(429).json({
+            success: false,
+            message: `Profile details can only be changed once every ${COOLDOWN_DAYS} days. You can update your profile again in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`,
+            remainingDays,
+          });
+        }
+      }
+
+      let normalizedValue = '';
+      if (target === 'mobileNumber') {
+        normalizedValue = normalizePhilippineMobileNumber(value.trim());
+        if (!isValidPhilippineMobileNumber(normalizedValue)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid mobile number format. Please use 09XXXXXXXXX format.',
+          });
+        }
+
+        if (normalizedValue === resident.mobileNumber) {
+          return res.status(400).json({
+            success: false,
+            message: 'This is already your current mobile number.',
+          });
+        }
+
+        const existingResident = await Resident.findOne({
+          _id: mongoose.trusted({ $ne: userId }),
+          mobileNumber: normalizedValue,
+        }).select('_id').lean();
+        if (existingResident) {
+          return res.status(409).json({
+            success: false,
+            message: 'Mobile number is already registered to another account.',
+          });
+        }
+      } else if (target === 'email') {
+        normalizedValue = value.trim().toLowerCase();
+        if (!/^\S+@\S+\.\S+$/.test(normalizedValue)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid email address format.',
+          });
+        }
+
+        if (normalizedValue === (resident.email || '').toLowerCase()) {
+          return res.status(400).json({
+            success: false,
+            message: 'This is already your current email address.',
+          });
+        }
+
+        const existingResident = await Resident.findOne({
+          _id: mongoose.trusted({ $ne: userId }),
+          emailLower: normalizedValue,
+        }).select('_id').lean();
+        if (existingResident) {
+          return res.status(409).json({
+            success: false,
+            message: 'Email is already registered to another account.',
+          });
+        }
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Unsupported verification target. Must be mobileNumber or email.',
+        });
+      }
+
+      // Check resend cooldown
+      const existingOtp = await ProfileUpdateOtp.findOne({
+        userId: resident._id,
+        target,
+        newValue: normalizedValue,
+      });
+
+      if (existingOtp && existingOtp.resendCooldownUntil && existingOtp.resendCooldownUntil > new Date()) {
+        const remainingSec = Math.ceil((existingOtp.resendCooldownUntil.getTime() - Date.now()) / 1000);
+        return res.status(429).json({
+          success: false,
+          message: `Please wait ${remainingSec} second${remainingSec === 1 ? '' : 's'} before requesting another code.`,
+        });
+      }
+
+      const otp = crypto.randomInt(100000, 1000000).toString();
+      const otpHash = await bcrypt.hash(otp, 10);
+
+      await ProfileUpdateOtp.deleteMany({
+        userId: resident._id,
+        target,
+      });
+
+      await ProfileUpdateOtp.create({
+        userId: resident._id,
+        role: 'Resident',
+        target,
+        newValue: normalizedValue,
+        otpHash,
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes
+        attemptsLeft: 5,
+        resendCooldownUntil: new Date(Date.now() + 60 * 1000), // 60s cooldown
+        lastSentAt: new Date(),
+      });
+
+      if (target === 'mobileNumber') {
+        await sendProfileUpdateOtpSms(normalizedValue, otp);
+      } else {
+        await sendProfileUpdateOtpEmail(normalizedValue, otp);
+      }
+
+      return res.json({
+        success: true,
+        message: target === 'mobileNumber'
+          ? 'Verification code sent to your new mobile number.'
+          : 'Verification code sent to your new email address.',
+      });
+    } catch (error) {
+      console.error('[HouseholdRoutes] request-otp error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to send verification code. Please try again.',
+      });
+    }
+  }
+);
+
+/**
+ * Confirm OTP for new mobile number or recovery email before saving profile update.
+ * POST /api/household/auth/me/profile-update/confirm-otp
+ */
+router.post(
+  '/auth/me/profile-update/confirm-otp',
+  authMiddleware,
+  authenticatedResidentReadRateLimiter,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (req.user?.role !== 'Resident') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only resident accounts can use this endpoint.',
+        });
+      }
+
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+        });
+      }
+
+      const { target, value, otp } = req.body || {};
+      if (!target || !value || !otp || typeof otp !== 'string') {
+        return res.status(400).json({
+          success: false,
+          message: 'Target, value, and OTP are required.',
+        });
+      }
+
+      let normalizedValue = '';
+      if (target === 'mobileNumber') {
+        normalizedValue = normalizePhilippineMobileNumber(value.trim());
+      } else if (target === 'email') {
+        normalizedValue = value.trim().toLowerCase();
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid target',
+        });
+      }
+
+      const otpRecord = await ProfileUpdateOtp.findOne({
+        userId: new mongoose.Types.ObjectId(userId),
+        target,
+        newValue: normalizedValue,
+      });
+
+      if (!otpRecord) {
+        return res.status(400).json({
+          success: false,
+          message: 'No active verification code found. Please request a new code.',
+        });
+      }
+
+      if (otpRecord.expiresAt < new Date()) {
+        await ProfileUpdateOtp.findByIdAndDelete(otpRecord._id);
+        return res.status(400).json({
+          success: false,
+          message: 'Verification code has expired. Please request a new code.',
+        });
+      }
+
+      if (otpRecord.attemptsLeft <= 0) {
+        await ProfileUpdateOtp.findByIdAndDelete(otpRecord._id);
+        return res.status(429).json({
+          success: false,
+          message: 'Too many incorrect attempts. Please request a new code.',
+        });
+      }
+
+      const isOtpValid = await bcrypt.compare(otp.trim(), otpRecord.otpHash);
+      if (!isOtpValid) {
+        otpRecord.attemptsLeft -= 1;
+        await otpRecord.save();
+        return res.status(400).json({
+          success: false,
+          message: `Incorrect verification code. ${otpRecord.attemptsLeft} attempt${otpRecord.attemptsLeft === 1 ? '' : 's'} remaining.`,
+        });
+      }
+
+      // Valid OTP! Generate signed verification token
+      const verificationToken = jwt.sign(
+        {
+          userId,
+          role: 'Resident',
+          target,
+          value: normalizedValue,
+          purpose: 'profile-update-verification',
+        },
+        getJWTSecret(),
+        { expiresIn: '15m' }
+      );
+
+      // Clean up the verified OTP record
+      await ProfileUpdateOtp.findByIdAndDelete(otpRecord._id);
+
+      return res.json({
+        success: true,
+        message: 'Verification successful.',
+        verificationToken,
+      });
+    } catch (error) {
+      console.error('[HouseholdRoutes] confirm-otp error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to verify code.',
+      });
+    }
+  }
+);
+
+/**
  * Resident Profile Update Endpoint
  *
  * PATCH /api/household/auth/me
  *
- * Allows authenticated resident to update selected profile fields.
+ * Allows authenticated resident to update selected profile fields with password confirmation,
+ * 30-day cooldown enforcement, and OTP verification for mobile/email changes.
  */
 router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, async (req: AuthenticatedRequest, res: Response) => {
   try {
@@ -268,101 +569,7 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
       });
     }
 
-    const payload = req.body || {};
-    const updates: Record<string, any> = {};
-
-    const maybeSetTrimmed = (field: string) => {
-      const value = payload[field];
-      if (value === undefined) return;
-      if (typeof value !== 'string') {
-        throw new Error(`${field} must be a string`);
-      }
-      const trimmed = value.trim();
-      if (!trimmed) {
-        throw new Error(`${field} cannot be empty`);
-      }
-      updates[field] = trimmed;
-    };
-
-    maybeSetTrimmed('firstName');
-    maybeSetTrimmed('lastName');
-    maybeSetTrimmed('streetAddress');
-    maybeSetTrimmed('city');
-
-    if (payload.email !== undefined) {
-      if (typeof payload.email !== 'string') {
-        return res.status(400).json({
-          success: false,
-          message: 'email must be a string',
-        });
-      }
-
-      const normalizedEmail = payload.email.trim().toLowerCase();
-      if (normalizedEmail.length > 0 && !/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid email format',
-        });
-      }
-
-      if (normalizedEmail) {
-        const existingEmailOwner = await Resident.findOne({
-          _id: mongoose.trusted({ $ne: userId }),
-          emailLower: normalizedEmail,
-        })
-          .select('_id')
-          .lean();
-        if (existingEmailOwner) {
-          return res.status(409).json({
-            success: false,
-            message: 'Email is already in use',
-          });
-        }
-      }
-
-      updates.email = normalizedEmail;
-    }
-
-    if (payload.mobileNumber !== undefined) {
-      if (typeof payload.mobileNumber !== 'string') {
-        return res.status(400).json({
-          success: false,
-          message: 'mobileNumber must be a string',
-        });
-      }
-      const normalizedMobile = normalizePhilippineMobileNumber(payload.mobileNumber.trim());
-      if (!isValidPhilippineMobileNumber(normalizedMobile)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid mobile number format',
-        });
-      }
-      const existing = await Resident.findOne({
-        _id: mongoose.trusted({ $ne: userId }),
-        mobileNumber: normalizedMobile,
-      })
-        .select('_id')
-        .lean();
-      if (existing) {
-        return res.status(409).json({
-          success: false,
-          message: 'Mobile number is already in use',
-        });
-      }
-      updates.mobileNumber = normalizedMobile;
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No valid fields to update',
-      });
-    }
-
-    const resident = await Resident.findById(userId).select(
-      'residentCode avatarUrl firstName lastName fullName mobileNumber email barangay city streetAddress householdSize status rejectionReason'
-    );
-
+    const resident = await Resident.findById(userId).select('+password');
     if (!resident) {
       return res.status(404).json({
         success: false,
@@ -370,11 +577,192 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
       });
     }
 
-    Object.assign(resident, updates);
-    if (updates.firstName !== undefined || updates.lastName !== undefined) {
-      resident.fullName = `${resident.firstName} ${resident.lastName}`.trim();
+    const payload = req.body || {};
+
+    // 1. Password Verification
+    if (!payload.password || typeof payload.password !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Password is required to confirm profile changes.',
+      });
     }
 
+    let isPasswordValid = false;
+    if (/^\$2[aby]\$\d{2}\$/.test(resident.password || '')) {
+      isPasswordValid = await bcrypt.compare(payload.password, resident.password || '');
+    } else {
+      isPasswordValid = payload.password === resident.password;
+    }
+
+    if (!isPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Incorrect password. Changes were not saved.',
+      });
+    }
+
+    // 2. Cooldown check (30 days)
+    const COOLDOWN_DAYS = 30;
+    if (resident.lastProfileUpdateAt) {
+      const elapsedMs = Date.now() - new Date(resident.lastProfileUpdateAt).getTime();
+      const cooldownMs = COOLDOWN_DAYS * 24 * 60 * 60 * 1000;
+      if (elapsedMs < cooldownMs) {
+        const remainingDays = Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+        return res.status(429).json({
+          success: false,
+          message: `Profile details can only be changed once every ${COOLDOWN_DAYS} days. You can update your profile again in ${remainingDays} day${remainingDays === 1 ? '' : 's'}.`,
+          remainingDays,
+        });
+      }
+    }
+
+    // 3. Strict immutability checks: firstName, lastName, city, barangay CANNOT be modified
+    if (payload.firstName !== undefined && payload.firstName.trim() !== resident.firstName) {
+      return res.status(400).json({
+        success: false,
+        message: 'First name cannot be changed directly. Please submit an official revision request.',
+      });
+    }
+    if (payload.lastName !== undefined && payload.lastName.trim() !== resident.lastName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Last name cannot be changed directly. Please submit an official revision request.',
+      });
+    }
+    if (payload.city !== undefined && payload.city.trim() !== (resident.city || '').trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'City/Municipality cannot be changed. It is assigned by your LGU.',
+      });
+    }
+
+    const updates: Record<string, any> = {};
+
+    // 4. Street Address update
+    if (payload.streetAddress !== undefined) {
+      if (typeof payload.streetAddress !== 'string') {
+        return res.status(400).json({ success: false, message: 'Street address must be a string.' });
+      }
+      const trimmedAddress = payload.streetAddress.trim();
+      if (!trimmedAddress) {
+        return res.status(400).json({ success: false, message: 'Street address cannot be empty.' });
+      }
+      if (trimmedAddress !== resident.streetAddress) {
+        updates.streetAddress = trimmedAddress;
+      }
+    }
+
+    // 5. Mobile Number update (requires OTP verificationToken)
+    if (payload.mobileNumber !== undefined) {
+      if (typeof payload.mobileNumber !== 'string') {
+        return res.status(400).json({ success: false, message: 'mobileNumber must be a string' });
+      }
+      const normalizedMobile = normalizePhilippineMobileNumber(payload.mobileNumber.trim());
+      if (!isValidPhilippineMobileNumber(normalizedMobile)) {
+        return res.status(400).json({ success: false, message: 'Invalid mobile number format' });
+      }
+
+      if (normalizedMobile !== resident.mobileNumber) {
+        if (!payload.mobileVerificationToken || typeof payload.mobileVerificationToken !== 'string') {
+          return res.status(400).json({
+            success: false,
+            message: 'Mobile number change requires OTP verification.',
+          });
+        }
+
+        try {
+          const decoded = jwt.verify(payload.mobileVerificationToken, getJWTSecret()) as any;
+          if (
+            decoded.userId !== userId ||
+            decoded.target !== 'mobileNumber' ||
+            decoded.value !== normalizedMobile ||
+            decoded.purpose !== 'profile-update-verification'
+          ) {
+            return res.status(400).json({
+              success: false,
+              message: 'Invalid or expired mobile verification token.',
+            });
+          }
+        } catch {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid or expired mobile verification token. Please verify again.',
+          });
+        }
+
+        const existing = await Resident.findOne({
+          _id: mongoose.trusted({ $ne: userId }),
+          mobileNumber: normalizedMobile,
+        }).select('_id').lean();
+        if (existing) {
+          return res.status(409).json({ success: false, message: 'Mobile number is already in use.' });
+        }
+
+        updates.mobileNumber = normalizedMobile;
+      }
+    }
+
+    // 6. Email update (requires OTP verificationToken)
+    if (payload.email !== undefined) {
+      if (typeof payload.email !== 'string') {
+        return res.status(400).json({ success: false, message: 'email must be a string' });
+      }
+      const normalizedEmail = payload.email.trim().toLowerCase();
+      if (normalizedEmail.length > 0 && !/^\S+@\S+\.\S+$/.test(normalizedEmail)) {
+        return res.status(400).json({ success: false, message: 'Invalid email format' });
+      }
+
+      if (normalizedEmail !== (resident.email || '').toLowerCase()) {
+        if (normalizedEmail.length > 0) {
+          if (!payload.emailVerificationToken || typeof payload.emailVerificationToken !== 'string') {
+            return res.status(400).json({
+              success: false,
+              message: 'Email change requires OTP verification.',
+            });
+          }
+
+          try {
+            const decoded = jwt.verify(payload.emailVerificationToken, getJWTSecret()) as any;
+            if (
+              decoded.userId !== userId ||
+              decoded.target !== 'email' ||
+              decoded.value !== normalizedEmail ||
+              decoded.purpose !== 'profile-update-verification'
+            ) {
+              return res.status(400).json({
+                success: false,
+                message: 'Invalid or expired email verification token.',
+              });
+            }
+          } catch {
+            return res.status(400).json({
+              success: false,
+              message: 'Invalid or expired email verification token. Please verify again.',
+            });
+          }
+
+          const existing = await Resident.findOne({
+            _id: mongoose.trusted({ $ne: userId }),
+            emailLower: normalizedEmail,
+          }).select('_id').lean();
+          if (existing) {
+            return res.status(409).json({ success: false, message: 'Email is already in use.' });
+          }
+        }
+
+        updates.email = normalizedEmail;
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No changes detected to save.',
+      });
+    }
+
+    Object.assign(resident, updates);
+    resident.lastProfileUpdateAt = new Date();
     await resident.save();
 
     return res.json({
@@ -395,16 +783,10 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
         householdSize: resident.householdSize,
         status: resident.status,
         rejectionReason: resident.rejectionReason || '',
+        lastProfileUpdateAt: resident.lastProfileUpdateAt,
       },
     });
   } catch (error) {
-    const message = (error as Error).message || '';
-    if (message.includes('must be a string') || message.includes('cannot be empty')) {
-      return res.status(400).json({
-        success: false,
-        message,
-      });
-    }
     console.error('[HouseholdRoutes] Resident PATCH /auth/me error:', error);
     return res.status(500).json({
       success: false,
@@ -412,6 +794,7 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
     });
   }
 });
+
 
 /**
  * Resident Change Password — Step 1: Request OTP

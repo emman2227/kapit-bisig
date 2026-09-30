@@ -142,6 +142,7 @@ export interface IResident extends Document {
   // Timestamps
   createdAt: Date;
   updatedAt: Date;
+  lastProfileUpdateAt?: Date | null;
   
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
@@ -230,6 +231,10 @@ const ResidentSchema: Schema = new Schema(
     },
     
     // Household Info
+    lastProfileUpdateAt: {
+      type: Date,
+      default: null,
+    },
     city: {
       type: String,
       trim: true,

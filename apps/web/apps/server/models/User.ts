@@ -103,6 +103,7 @@ export interface IUser extends Document {
   barangay?: string;
   phoneNumber?: string;
   lastLogin?: Date;
+  lastProfileUpdateAt?: Date | null;
   createdBy?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -174,6 +175,10 @@ const UserSchema: Schema = new Schema(
     },
     lastLogin: {
       type: Date,
+    },
+    lastProfileUpdateAt: {
+      type: Date,
+      default: null,
     },
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,

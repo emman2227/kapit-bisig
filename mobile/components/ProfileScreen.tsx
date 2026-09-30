@@ -20,8 +20,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   changeResidentPassword,
+  confirmProfileUpdateOtp,
   confirmResidentChangePassword,
   getResidentToken,
+  requestProfileUpdateOtp,
   requestResidentChangePasswordOtp,
   ResidentProfile,
   updateResidentProfile,
@@ -273,6 +275,15 @@ export default function ProfileScreen({
   }, [keyboardHeight, windowHeight, insets.top]);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editStep, setEditStep] = useState<'form' | 'otp_mobile' | 'otp_email' | 'password'>('form');
+  const [profilePasswordInput, setProfilePasswordInput] = useState('');
+  const [showProfilePassword, setShowProfilePassword] = useState(false);
+  const [mobileOtpInput, setMobileOtpInput] = useState('');
+  const [emailOtpInput, setEmailOtpInput] = useState('');
+  const [mobileVerificationToken, setMobileVerificationToken] = useState('');
+  const [emailVerificationToken, setEmailVerificationToken] = useState('');
+  const [isSendingOtp, setIsSendingOtp] = useState(false);
+  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
   const [changePasswordStep, setChangePasswordStep] = useState<'input' | 'otp'>('input');
@@ -383,20 +394,48 @@ export default function ProfileScreen({
     setAvatarUri(isVolunteer ? null : residentProfile?.avatarUrl?.trim() || null);
   }, [isVolunteer, residentProfile?.avatarUrl]);
 
+  const cooldownDaysRemaining = useMemo(() => {
+    if (!residentProfile?.lastProfileUpdateAt) return 0;
+    const lastUpdate = new Date(residentProfile.lastProfileUpdateAt).getTime();
+    if (isNaN(lastUpdate)) return 0;
+    const elapsedMs = Date.now() - lastUpdate;
+    const cooldownMs = 30 * 24 * 60 * 60 * 1000;
+    if (elapsedMs < cooldownMs) {
+      return Math.ceil((cooldownMs - elapsedMs) / (24 * 60 * 60 * 1000));
+    }
+    return 0;
+  }, [residentProfile?.lastProfileUpdateAt]);
+
   const openEditModal = () => {
+    if (cooldownDaysRemaining > 0) {
+      Alert.alert(
+        'Profile Edit Cooldown',
+        `Profile details can only be changed once every 30 days. You will be able to edit your profile again in ${cooldownDaysRemaining} day${cooldownDaysRemaining === 1 ? '' : 's'}.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+    setEditStep('form');
     setFirstNameInput(initialFields.firstName);
     setLastNameInput(initialFields.lastName);
     setMobileInput(initialFields.mobileNumber);
     setEmailInput(initialFields.email);
     setStreetAddressInput(initialFields.streetAddress);
     setCityInput(initialFields.city);
+    setProfilePasswordInput('');
+    setShowProfilePassword(false);
+    setMobileOtpInput('');
+    setEmailOtpInput('');
+    setMobileVerificationToken('');
+    setEmailVerificationToken('');
     setIsEditOpen(true);
   };
 
   const closeEditModal = () => {
-    if (!isSaving) {
+    if (!isSaving && !isSendingOtp && !isVerifyingOtp) {
       Keyboard.dismiss();
       setIsEditOpen(false);
+      setEditStep('form');
     }
   };
 
@@ -455,17 +494,22 @@ export default function ProfileScreen({
     }
   };
 
-  const handleSaveProfile = async () => {
-    if (isSaving) return;
+  const handleProceedFromForm = async () => {
+    if (isSaving || isSendingOtp) return;
 
-    const firstName = firstNameInput.trim();
-    const lastName = lastNameInput.trim();
-    if (!firstName || !lastName) {
-      Alert.alert('Missing fields', 'First name and last name are required.');
+    const trimmedAddress = streetAddressInput.trim();
+    if (!trimmedAddress && !isVolunteer) {
+      Alert.alert('Missing field', 'Street address cannot be empty.');
       return;
     }
 
-    const trimmedEmail = emailInput.trim();
+    const trimmedMobile = mobileInput.trim();
+    if (!trimmedMobile) {
+      Alert.alert('Missing field', 'Mobile number cannot be empty.');
+      return;
+    }
+
+    const trimmedEmail = cleanEmailInput(emailInput).trim();
     if (!isVolunteer && trimmedEmail) {
       const emailCheck = validateEmail(trimmedEmail);
       if (!emailCheck.isValid) {
@@ -474,12 +518,203 @@ export default function ProfileScreen({
       }
     }
 
+    const isMobileChanged = trimmedMobile !== initialFields.mobileNumber.trim();
+    const isEmailChanged = !isVolunteer && (trimmedEmail.toLowerCase() !== initialFields.email.trim().toLowerCase());
+    const isAddressChanged = !isVolunteer && (trimmedAddress !== initialFields.streetAddress.trim());
+
+    if (!isMobileChanged && !isEmailChanged && !isAddressChanged) {
+      Alert.alert('No changes', 'You have not made any changes to your profile details.');
+      return;
+    }
+
+    if (isVolunteer) {
+      setProfilePasswordInput('');
+      setEditStep('password');
+      return;
+    }
+
+    // If mobile changed, request OTP first
+    if (isMobileChanged) {
+      setIsSendingOtp(true);
+      try {
+        const token = await getResidentToken();
+        if (!token) {
+          Alert.alert('Session expired', 'Please log in again.');
+          return;
+        }
+        const result = await requestProfileUpdateOtp(token, 'mobileNumber', trimmedMobile);
+        if (!result.success) {
+          Alert.alert('Unable to send code', result.message || 'Failed to send OTP to new mobile number.');
+          return;
+        }
+        setMobileOtpInput('');
+        setEditStep('otp_mobile');
+      } finally {
+        setIsSendingOtp(false);
+      }
+      return;
+    }
+
+    // If only email changed, request Email OTP
+    if (isEmailChanged && trimmedEmail) {
+      setIsSendingOtp(true);
+      try {
+        const token = await getResidentToken();
+        if (!token) {
+          Alert.alert('Session expired', 'Please log in again.');
+          return;
+        }
+        const result = await requestProfileUpdateOtp(token, 'email', trimmedEmail.toLowerCase());
+        if (!result.success) {
+          Alert.alert('Unable to send code', result.message || 'Failed to send OTP to new email address.');
+          return;
+        }
+        setEmailOtpInput('');
+        setEditStep('otp_email');
+      } finally {
+        setIsSendingOtp(false);
+      }
+      return;
+    }
+
+    // Otherwise (e.g. only address changed), proceed directly to password confirmation
+    setProfilePasswordInput('');
+    setEditStep('password');
+  };
+
+  const handleVerifyMobileOtp = async () => {
+    if (isVerifyingOtp) return;
+    const otp = mobileOtpInput.trim();
+    if (otp.length !== 6) {
+      Alert.alert('Invalid code', 'Please enter the 6-digit verification code.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      const token = await getResidentToken();
+      if (!token) {
+        Alert.alert('Session expired', 'Please log in again.');
+        return;
+      }
+
+      const result = await confirmProfileUpdateOtp(token, 'mobileNumber', mobileInput.trim(), otp);
+      if (!result.success || !result.verificationToken) {
+        Alert.alert('Verification failed', result.message || 'Incorrect or expired code.');
+        return;
+      }
+
+      setMobileVerificationToken(result.verificationToken);
+
+      // Check if email also changed
+      const trimmedEmail = cleanEmailInput(emailInput).trim();
+      const isEmailChanged = !isVolunteer && (trimmedEmail.toLowerCase() !== initialFields.email.trim().toLowerCase());
+      if (isEmailChanged && trimmedEmail) {
+        setIsSendingOtp(true);
+        const emailResult = await requestProfileUpdateOtp(token, 'email', trimmedEmail.toLowerCase());
+        setIsSendingOtp(false);
+        if (!emailResult.success) {
+          Alert.alert('Unable to send code', emailResult.message || 'Failed to send OTP to new email address.');
+          return;
+        }
+        setEmailOtpInput('');
+        setEditStep('otp_email');
+        return;
+      }
+
+      setProfilePasswordInput('');
+      setEditStep('password');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    if (isVerifyingOtp) return;
+    const otp = emailOtpInput.trim();
+    if (otp.length !== 6) {
+      Alert.alert('Invalid code', 'Please enter the 6-digit verification code.');
+      return;
+    }
+
+    setIsVerifyingOtp(true);
+    try {
+      const token = await getResidentToken();
+      if (!token) {
+        Alert.alert('Session expired', 'Please log in again.');
+        return;
+      }
+
+      const trimmedEmail = cleanEmailInput(emailInput).trim().toLowerCase();
+      const result = await confirmProfileUpdateOtp(token, 'email', trimmedEmail, otp);
+      if (!result.success || !result.verificationToken) {
+        Alert.alert('Verification failed', result.message || 'Incorrect or expired code.');
+        return;
+      }
+
+      setEmailVerificationToken(result.verificationToken);
+      setProfilePasswordInput('');
+      setEditStep('password');
+    } finally {
+      setIsVerifyingOtp(false);
+    }
+  };
+
+  const handleResendMobileOtp = async () => {
+    if (isSendingOtp || isVerifyingOtp) return;
+    setIsSendingOtp(true);
+    try {
+      const token = await getResidentToken();
+      if (!token) {
+        Alert.alert('Session expired', 'Please log in again.');
+        return;
+      }
+      const result = await requestProfileUpdateOtp(token, 'mobileNumber', mobileInput.trim());
+      if (!result.success) {
+        Alert.alert('Unable to resend code', result.message || 'Failed to resend code.');
+        return;
+      }
+      Alert.alert('Code resent', 'A new verification code has been sent via SMS.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleResendEmailOtp = async () => {
+    if (isSendingOtp || isVerifyingOtp) return;
+    setIsSendingOtp(true);
+    try {
+      const token = await getResidentToken();
+      if (!token) {
+        Alert.alert('Session expired', 'Please log in again.');
+        return;
+      }
+      const cleanEmail = cleanEmailInput(emailInput).trim().toLowerCase();
+      const result = await requestProfileUpdateOtp(token, 'email', cleanEmail);
+      if (!result.success) {
+        Alert.alert('Unable to resend code', result.message || 'Failed to resend code.');
+        return;
+      }
+      Alert.alert('Code resent', 'A new verification code has been sent to your email.');
+    } finally {
+      setIsSendingOtp(false);
+    }
+  };
+
+  const handleFinalSaveProfile = async () => {
+    if (isSaving) return;
+    const password = profilePasswordInput.trim();
+    if (!password) {
+      Alert.alert('Password required', 'Please enter your password to save changes.');
+      return;
+    }
+
     setIsSaving(true);
     try {
       if (isVolunteer) {
         const result = await mobileAuthService.updateProfile({
-          firstName,
-          lastName,
+          firstName: initialFields.firstName,
+          lastName: initialFields.lastName,
           phoneNumber: mobileInput.trim(),
         });
 
@@ -490,6 +725,7 @@ export default function ProfileScreen({
 
         onVolunteerProfileUpdated?.(result.data);
         setIsEditOpen(false);
+        setEditStep('form');
         Alert.alert('Profile updated', 'Your changes were saved successfully.');
         return;
       }
@@ -500,13 +736,20 @@ export default function ProfileScreen({
         return;
       }
 
+      const trimmedMobile = mobileInput.trim();
+      const trimmedEmail = cleanEmailInput(emailInput).trim().toLowerCase();
+      const trimmedAddress = streetAddressInput.trim();
+
+      const isMobileChanged = trimmedMobile !== initialFields.mobileNumber.trim();
+      const isEmailChanged = trimmedEmail !== initialFields.email.trim().toLowerCase();
+
       const result = await updateResidentProfile(token, {
-        firstName,
-        lastName,
-        mobileNumber: mobileInput.trim() || undefined,
-        email: trimmedEmail ? trimmedEmail.toLowerCase() : '',
-        streetAddress: streetAddressInput.trim() || undefined,
-        city: cityInput.trim() || undefined,
+        streetAddress: trimmedAddress || undefined,
+        mobileNumber: isMobileChanged ? trimmedMobile : undefined,
+        email: isEmailChanged ? trimmedEmail : undefined,
+        password,
+        mobileVerificationToken: isMobileChanged ? mobileVerificationToken : undefined,
+        emailVerificationToken: isEmailChanged ? emailVerificationToken : undefined,
       });
 
       if (!result.success || !result.data) {
@@ -517,11 +760,13 @@ export default function ProfileScreen({
       onResidentProfileUpdated?.(result.data);
       Keyboard.dismiss();
       setIsEditOpen(false);
+      setEditStep('form');
       Alert.alert('Profile updated', 'Your changes were saved successfully.');
     } finally {
       setIsSaving(false);
     }
   };
+
 
   const handleRequestChangePasswordOtp = async () => {
     if (isRequestingChangePasswordOtp) return;
@@ -699,16 +944,29 @@ export default function ProfileScreen({
               </Typography>
             </View>
             <TouchableOpacity
-              style={[styles.editProfileButton, styles.residentEditProfileButton]}
+              style={[
+                styles.editProfileButton,
+                styles.residentEditProfileButton,
+                cooldownDaysRemaining > 0 && styles.cooldownEditButton,
+              ]}
               onPress={openEditModal}
               accessibilityRole="button"
               accessibilityLabel="Edit profile"
             >
-              <Ionicons name="create-outline" size={17} color={residentColors.icon} />
-              <Typography variant="caption" weight="semiBold" color={residentColors.icon}>
-                Edit profile
+              <Ionicons
+                name={cooldownDaysRemaining > 0 ? "lock-closed-outline" : "create-outline"}
+                size={17}
+                color={cooldownDaysRemaining > 0 ? "#B45309" : residentColors.icon}
+              />
+              <Typography
+                variant="caption"
+                weight="semiBold"
+                color={cooldownDaysRemaining > 0 ? "#B45309" : residentColors.icon}
+              >
+                {cooldownDaysRemaining > 0 ? `Locked (${cooldownDaysRemaining}d)` : 'Edit profile'}
               </Typography>
             </TouchableOpacity>
+
           </View>
         </View>
 
@@ -859,16 +1117,24 @@ export default function ProfileScreen({
           >
             <View style={styles.sheetHandle} />
             <View style={styles.sheetHeader}>
-              <View>
-                <Typography variant="h3" weight="semiBold">Edit profile</Typography>
+              <View style={styles.sheetHeaderCopy}>
+                <Typography variant="h3" weight="semiBold">
+                  {editStep === 'form' && 'Edit profile'}
+                  {editStep === 'otp_mobile' && 'Verify mobile number'}
+                  {editStep === 'otp_email' && 'Verify recovery email'}
+                  {editStep === 'password' && 'Confirm with password'}
+                </Typography>
                 <Typography variant="caption" color={theme.colors.textSecondary}>
-                  Keep your account information up to date.
+                  {editStep === 'form' && 'Keep your contact and address information up to date.'}
+                  {editStep === 'otp_mobile' && `Enter the 6-digit verification code sent to ${mobileInput.trim()}`}
+                  {editStep === 'otp_email' && `Enter the 6-digit verification code sent to ${cleanEmailInput(emailInput).trim()}`}
+                  {editStep === 'password' && 'Enter your password to authorize and apply profile changes.'}
                 </Typography>
               </View>
               <TouchableOpacity
                 style={styles.closeButton}
                 onPress={closeEditModal}
-                disabled={isSaving}
+                disabled={isSaving || isSendingOtp || isVerifyingOtp}
                 accessibilityRole="button"
                 accessibilityLabel="Close edit profile"
               >
@@ -876,106 +1142,370 @@ export default function ProfileScreen({
               </TouchableOpacity>
             </View>
 
-            <ScrollView
-              style={styles.formScroll}
-              contentContainerStyle={styles.formContent}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
-              nestedScrollEnabled={true}
-              showsVerticalScrollIndicator={true}
-            >
-              <Text style={styles.inputLabel}>First name</Text>
-              <TextInput
-                style={styles.input}
-                value={firstNameInput}
-                onChangeText={setFirstNameInput}
-                editable={!isSaving}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
+            {editStep === 'form' && (
+              <>
+                <ScrollView
+                  style={styles.formScroll}
+                  contentContainerStyle={styles.formContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                >
+                  <View style={styles.inputHeaderRow}>
+                    <Text style={styles.inputLabelNoMargin}>First name</Text>
+                    <View style={styles.lockedTag}>
+                      <Ionicons name="lock-closed" size={11} color="#6B7280" />
+                      <Text style={styles.lockedTagText}>Locked</Text>
+                    </View>
+                  </View>
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    value={firstNameInput}
+                    editable={false}
+                  />
+                  <Text style={styles.fieldHelperText}>Legal name cannot be changed directly.</Text>
 
-              <Text style={styles.inputLabel}>Last name</Text>
-              <TextInput
-                style={styles.input}
-                value={lastNameInput}
-                onChangeText={setLastNameInput}
-                editable={!isSaving}
-                autoCapitalize="words"
-                returnKeyType="next"
-              />
+                  <View style={styles.inputHeaderRow}>
+                    <Text style={styles.inputLabelNoMargin}>Last name</Text>
+                    <View style={styles.lockedTag}>
+                      <Ionicons name="lock-closed" size={11} color="#6B7280" />
+                      <Text style={styles.lockedTagText}>Locked</Text>
+                    </View>
+                  </View>
+                  <TextInput
+                    style={[styles.input, styles.disabledInput]}
+                    value={lastNameInput}
+                    editable={false}
+                  />
+                  <Text style={styles.fieldHelperText}>Legal name cannot be changed directly.</Text>
 
-              <Text style={styles.inputLabel}>{isVolunteer ? 'Phone number' : 'Mobile number'}</Text>
-              <TextInput
-                style={styles.input}
-                value={mobileInput}
-                onChangeText={setMobileInput}
-                keyboardType="phone-pad"
-                editable={!isSaving}
-                returnKeyType="next"
-              />
+                  {!isVolunteer ? (
+                    <>
+                      <Text style={styles.inputLabel}>Street address</Text>
+                      <TextInput
+                        style={styles.input}
+                        value={streetAddressInput}
+                        onChangeText={setStreetAddressInput}
+                        editable={!isSaving && !isSendingOtp}
+                        autoCapitalize="words"
+                        returnKeyType="next"
+                        placeholder="House/Unit #, Street name"
+                        placeholderTextColor="#9CA3AF"
+                      />
 
-              {!isVolunteer ? (
-                <>
-                  <Text style={styles.inputLabel}>Recovery email (optional)</Text>
+                      <View style={styles.inputHeaderRow}>
+                        <Text style={styles.inputLabelNoMargin}>City / Municipality</Text>
+                        <View style={styles.lockedTag}>
+                          <Ionicons name="lock-closed" size={11} color="#6B7280" />
+                          <Text style={styles.lockedTagText}>Locked</Text>
+                        </View>
+                      </View>
+                      <TextInput
+                        style={[styles.input, styles.disabledInput]}
+                        value={cityInput}
+                        editable={false}
+                      />
+                      <Text style={styles.fieldHelperText}>Assigned by your Local Government Unit.</Text>
+                    </>
+                  ) : null}
+
+                  <View style={styles.inputHeaderRow}>
+                    <Text style={styles.inputLabelNoMargin}>{isVolunteer ? 'Phone number' : 'Mobile number'}</Text>
+                    {mobileInput.trim() !== initialFields.mobileNumber.trim() && (
+                      <View style={styles.verifyTag}>
+                        <Ionicons name="shield-checkmark" size={11} color="#047857" />
+                        <Text style={styles.verifyTagText}>OTP required</Text>
+                      </View>
+                    )}
+                  </View>
                   <TextInput
                     style={styles.input}
-                    value={emailInput}
-                    onChangeText={(text) => setEmailInput(cleanEmailInput(text))}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    placeholder="e.g. name@example.com"
-                    placeholderTextColor="#9CA3AF"
-                    editable={!isSaving}
+                    value={mobileInput}
+                    onChangeText={setMobileInput}
+                    keyboardType="phone-pad"
+                    editable={!isSaving && !isSendingOtp}
                     returnKeyType="next"
                   />
 
-                  <Text style={styles.inputLabel}>Street address</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={streetAddressInput}
-                    onChangeText={setStreetAddressInput}
-                    editable={!isSaving}
-                    autoCapitalize="words"
-                    returnKeyType="next"
-                  />
+                  {!isVolunteer ? (
+                    <>
+                      <View style={styles.inputHeaderRow}>
+                        <Text style={styles.inputLabelNoMargin}>Recovery email (optional)</Text>
+                        {cleanEmailInput(emailInput).trim().toLowerCase() !== initialFields.email.trim().toLowerCase() && (
+                          <View style={styles.verifyTag}>
+                            <Ionicons name="shield-checkmark" size={11} color="#047857" />
+                            <Text style={styles.verifyTagText}>OTP required</Text>
+                          </View>
+                        )}
+                      </View>
+                      <TextInput
+                        style={styles.input}
+                        value={emailInput}
+                        onChangeText={(text) => setEmailInput(cleanEmailInput(text))}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        placeholder="e.g. name@example.com"
+                        placeholderTextColor="#9CA3AF"
+                        editable={!isSaving && !isSendingOtp}
+                        returnKeyType="done"
+                      />
+                    </>
+                  ) : null}
+                </ScrollView>
 
-                  <Text style={styles.inputLabel}>City / Municipality</Text>
-                  <TextInput
-                    style={styles.input}
-                    value={cityInput}
-                    onChangeText={setCityInput}
-                    editable={!isSaving}
-                    autoCapitalize="words"
-                    returnKeyType="done"
-                  />
-                </>
-              ) : null}
-            </ScrollView>
+                <View style={styles.formActions}>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.cancelButton]}
+                    onPress={closeEditModal}
+                    disabled={isSaving || isSendingOtp}
+                  >
+                    <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Cancel</Typography>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.saveButton, styles.residentSaveButton, (isSaving || isSendingOtp) && styles.disabledButton]}
+                    onPress={handleProceedFromForm}
+                    disabled={isSaving || isSendingOtp}
+                  >
+                    {isSendingOtp ? (
+                      <ActivityIndicator size="small" color={theme.colors.textInverse} />
+                    ) : (
+                      <Typography variant="body" weight="bold" color={theme.colors.textInverse}>
+                        {mobileInput.trim() !== initialFields.mobileNumber.trim() ||
+                        cleanEmailInput(emailInput).trim().toLowerCase() !== initialFields.email.trim().toLowerCase()
+                          ? 'Verify & continue'
+                          : 'Continue'}
+                      </Typography>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
 
-            <View style={styles.formActions}>
-              <TouchableOpacity
-                style={[styles.formButton, styles.cancelButton]}
-                onPress={closeEditModal}
-                disabled={isSaving}
-              >
-                <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Cancel</Typography>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.formButton, styles.saveButton, styles.residentSaveButton, isSaving && styles.disabledButton]}
-                onPress={handleSaveProfile}
-                disabled={isSaving}
-              >
-                {isSaving ? (
-                  <ActivityIndicator size="small" color={theme.colors.textInverse} />
-                ) : (
-                  <Typography variant="body" weight="bold" color={theme.colors.textInverse}>Save changes</Typography>
-                )}
-              </TouchableOpacity>
-            </View>
+            {editStep === 'otp_mobile' && (
+              <>
+                <ScrollView
+                  style={styles.formScroll}
+                  contentContainerStyle={styles.formContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                >
+                  <View style={styles.otpCardContainer}>
+                    <View style={styles.otpNoticeBox}>
+                      <Ionicons name="phone-portrait-outline" size={20} color={residentColors.brand} style={styles.otpNoticeIcon} />
+                      <Typography variant="caption" color={theme.colors.textSecondary} style={styles.otpNoticeText}>
+                        We sent a 6-digit code via SMS to{' '}
+                        <Typography variant="caption" weight="bold" color={theme.colors.textPrimary}>
+                          {mobileInput.trim()}
+                        </Typography>
+                        . Enter it below to verify.
+                      </Typography>
+                    </View>
+
+                    <Text style={styles.inputLabel}>Verification code</Text>
+                    <TextInput
+                      style={[styles.input, styles.otpInputField]}
+                      value={mobileOtpInput}
+                      onChangeText={(val) => setMobileOtpInput(val.replace(/\D/g, '').slice(0, 6))}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholder="000000"
+                      placeholderTextColor="#CBD5E1"
+                      autoFocus
+                      editable={!isVerifyingOtp}
+                    />
+
+                    <TouchableOpacity
+                      style={styles.resendOtpButton}
+                      onPress={handleResendMobileOtp}
+                      disabled={isSendingOtp || isVerifyingOtp}
+                    >
+                      <Typography variant="caption" weight="semiBold" color={residentColors.brand}>
+                        {isSendingOtp ? 'Sending code...' : "Didn't receive code? Resend OTP"}
+                      </Typography>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+
+                <View style={styles.formActions}>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.cancelButton]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setEditStep('form');
+                    }}
+                    disabled={isVerifyingOtp}
+                  >
+                    <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Back</Typography>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.saveButton, styles.residentSaveButton, isVerifyingOtp && styles.disabledButton]}
+                    onPress={handleVerifyMobileOtp}
+                    disabled={isVerifyingOtp}
+                  >
+                    {isVerifyingOtp ? (
+                      <ActivityIndicator size="small" color={theme.colors.textInverse} />
+                    ) : (
+                      <Typography variant="body" weight="bold" color={theme.colors.textInverse}>Verify code</Typography>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {editStep === 'otp_email' && (
+              <>
+                <ScrollView
+                  style={styles.formScroll}
+                  contentContainerStyle={styles.formContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                >
+                  <View style={styles.otpCardContainer}>
+                    <View style={styles.otpNoticeBox}>
+                      <Ionicons name="mail-outline" size={20} color={residentColors.brand} style={styles.otpNoticeIcon} />
+                      <Typography variant="caption" color={theme.colors.textSecondary} style={styles.otpNoticeText}>
+                        We sent a 6-digit code to{' '}
+                        <Typography variant="caption" weight="bold" color={theme.colors.textPrimary}>
+                          {cleanEmailInput(emailInput).trim()}
+                        </Typography>
+                        . Enter it below to verify.
+                      </Typography>
+                    </View>
+
+                    <Text style={styles.inputLabel}>Verification code</Text>
+                    <TextInput
+                      style={[styles.input, styles.otpInputField]}
+                      value={emailOtpInput}
+                      onChangeText={(val) => setEmailOtpInput(val.replace(/\D/g, '').slice(0, 6))}
+                      keyboardType="number-pad"
+                      maxLength={6}
+                      placeholder="000000"
+                      placeholderTextColor="#CBD5E1"
+                      autoFocus
+                      editable={!isVerifyingOtp}
+                    />
+
+                    <TouchableOpacity
+                      style={styles.resendOtpButton}
+                      onPress={handleResendEmailOtp}
+                      disabled={isSendingOtp || isVerifyingOtp}
+                    >
+                      <Typography variant="caption" weight="semiBold" color={residentColors.brand}>
+                        {isSendingOtp ? 'Sending code...' : "Didn't receive code? Resend OTP"}
+                      </Typography>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
+
+                <View style={styles.formActions}>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.cancelButton]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setEditStep('form');
+                    }}
+                    disabled={isVerifyingOtp}
+                  >
+                    <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Back</Typography>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.saveButton, styles.residentSaveButton, isVerifyingOtp && styles.disabledButton]}
+                    onPress={handleVerifyEmailOtp}
+                    disabled={isVerifyingOtp}
+                  >
+                    {isVerifyingOtp ? (
+                      <ActivityIndicator size="small" color={theme.colors.textInverse} />
+                    ) : (
+                      <Typography variant="body" weight="bold" color={theme.colors.textInverse}>Verify code</Typography>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+
+            {editStep === 'password' && (
+              <>
+                <ScrollView
+                  style={styles.formScroll}
+                  contentContainerStyle={styles.formContent}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="on-drag"
+                  nestedScrollEnabled={true}
+                  showsVerticalScrollIndicator={true}
+                >
+                  <View style={styles.otpCardContainer}>
+                    <View style={styles.otpNoticeBox}>
+                      <Ionicons name="lock-closed-outline" size={20} color={residentColors.brand} style={styles.otpNoticeIcon} />
+                      <Typography variant="caption" color={theme.colors.textSecondary} style={styles.otpNoticeText}>
+                        For your security, enter your current account password to authorize and apply profile updates.
+                      </Typography>
+                    </View>
+
+                    <Text style={styles.inputLabel}>Current account password</Text>
+                    <View style={styles.passwordInputContainer}>
+                      <TextInput
+                        style={styles.passwordInput}
+                        value={profilePasswordInput}
+                        onChangeText={setProfilePasswordInput}
+                        secureTextEntry={!showProfilePassword}
+                        autoCapitalize="none"
+                        autoFocus
+                        editable={!isSaving}
+                        placeholder="Enter your password"
+                        placeholderTextColor="#9CA3AF"
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowProfilePassword(!showProfilePassword)}
+                        style={styles.passwordEyeButton}
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        accessibilityRole="button"
+                        accessibilityLabel={showProfilePassword ? 'Hide password' : 'Show password'}
+                      >
+                        <Ionicons
+                          name={showProfilePassword ? 'eye-outline' : 'eye-off-outline'}
+                          size={19}
+                          color={residentColors.icon}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                </ScrollView>
+
+                <View style={styles.formActions}>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.cancelButton]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setEditStep('form');
+                    }}
+                    disabled={isSaving}
+                  >
+                    <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Back</Typography>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.formButton, styles.saveButton, styles.residentSaveButton, isSaving && styles.disabledButton]}
+                    onPress={handleFinalSaveProfile}
+                    disabled={isSaving}
+                  >
+                    {isSaving ? (
+                      <ActivityIndicator size="small" color={theme.colors.textInverse} />
+                    ) : (
+                      <Typography variant="body" weight="bold" color={theme.colors.textInverse}>Save changes</Typography>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
+
 
       <Modal
         visible={isLogoutConfirmOpen}
@@ -1710,4 +2240,65 @@ const styles = StyleSheet.create({
   confirmLogoutButton: {
     backgroundColor: '#B91C1C',
   },
+  disabledInput: {
+    backgroundColor: '#F3F4F6',
+    borderColor: '#E5E7EB',
+    color: '#6B7280',
+  },
+  inputHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  inputLabelNoMargin: {
+    color: theme.colors.textSecondary,
+    fontFamily: theme.typography.fontFamily.medium,
+    fontSize: 13,
+  },
+  lockedTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#F3F4F6',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  lockedTagText: {
+    fontSize: 11,
+    color: '#6B7280',
+    fontFamily: theme.typography.fontFamily.medium,
+  },
+  verifyTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+  },
+  verifyTagText: {
+    fontSize: 11,
+    color: '#047857',
+    fontFamily: theme.typography.fontFamily.semiBold,
+  },
+  fieldHelperText: {
+    marginTop: 3,
+    marginBottom: 8,
+    fontSize: 11,
+    color: '#9CA3AF',
+    fontFamily: theme.typography.fontFamily.regular,
+  },
+  cooldownEditButton: {
+    borderColor: '#FCD34D',
+    backgroundColor: '#FFFBEB',
+  },
 });
+

@@ -317,3 +317,15 @@ export async function sendPasswordResetOtpSms(
   return sendSms(mobileNumber, message);
 }
 
+/**
+ * Send a profile update verification OTP SMS.
+ */
+export async function sendProfileUpdateOtpSms(
+  mobileNumber: string,
+  otp: string,
+): Promise<void> {
+  const message = `[${APP_NAME}] Your profile update verification code is: ${otp}. This code expires in 10 minutes. Do not share this code with anyone.`;
+  return sendSms(mobileNumber, message);
+}
+
+

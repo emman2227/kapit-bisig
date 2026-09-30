@@ -292,3 +292,53 @@ export async function sendFirstLoginOtpEmail(
 
   await sendEmail({ to, subject, html, text });
 }
+
+/* ------------------------------------------------------------------ */
+/*  Send profile-update OTP email                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Send a profile update verification OTP to the given email address.
+ * The OTP is included in the email body; it is NOT logged.
+ */
+export async function sendProfileUpdateOtpEmail(
+  to: string,
+  otp: string,
+): Promise<void> {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  const subject = `${APP_NAME} Profile Verification Code`;
+
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 12px;">
+      <h2 style="color: #0F533A; margin-bottom: 8px;">${APP_NAME}</h2>
+      <p style="color: #374151; font-size: 14px;">You requested to update your email address. Enter the verification code below to verify your email:</p>
+
+      <div style="text-align: center; margin: 24px 0;">
+        <span style="display: inline-block; font-size: 32px; letter-spacing: 8px; font-weight: bold; color: #0F533A; background: #f0fdf4; padding: 16px 32px; border-radius: 8px; border: 2px dashed #0F533A;">
+          ${otp}
+        </span>
+      </div>
+
+      <p style="color: #6b7280; font-size: 13px;">This code expires in <strong>10 minutes</strong>.</p>
+      <p style="color: #6b7280; font-size: 13px;">If you did not request this change, please check your account immediately.</p>
+
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+      <p style="color: #9ca3af; font-size: 11px; text-align: center;">&copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p>
+    </div>
+  `;
+
+  const text = [
+    `${APP_NAME} — Profile Verification Code`,
+    '',
+    `Your verification code: ${otp}`,
+    '',
+    'This code expires in 10 minutes.',
+    'If you did not request this change, please check your account immediately.',
+  ].join('\n');
+
+  await sendEmail({ to, subject, html, text });
+}
+

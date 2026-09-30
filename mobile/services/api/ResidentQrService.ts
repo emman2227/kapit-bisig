@@ -66,6 +66,7 @@ export interface ResidentProfile {
   householdSize: number;
   status: string;
   rejectionReason?: string;
+  lastProfileUpdateAt?: string | null;
 }
 
 export interface ResidentProfileUpdatePayload {
@@ -75,7 +76,11 @@ export interface ResidentProfileUpdatePayload {
   email?: string;
   streetAddress?: string;
   city?: string;
+  password?: string;
+  mobileVerificationToken?: string;
+  emailVerificationToken?: string;
 }
+
 
 export interface ResidentDistributionItem {
   id: string;
@@ -548,6 +553,80 @@ export async function updateResidentProfile(
     };
   }
 }
+
+export async function requestProfileUpdateOtp(
+  token: string,
+  target: 'mobileNumber' | 'email',
+  value: string
+): Promise<{ success: boolean; message?: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/household/auth/me/profile-update/request-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ target, value }),
+    });
+
+    const parsed = await parseApiResponse<{ message?: string }>(response);
+    if (!response.ok || !parsed.success) {
+      return {
+        success: false,
+        message: parsed.message || 'Failed to send verification code.',
+      };
+    }
+
+    return {
+      success: true,
+      message: parsed.message || 'Verification code sent.',
+    };
+  } catch {
+    return {
+      success: false,
+      message: 'Network error while requesting verification code.',
+    };
+  }
+}
+
+export async function confirmProfileUpdateOtp(
+  token: string,
+  target: 'mobileNumber' | 'email',
+  value: string,
+  otp: string
+): Promise<{ success: boolean; message?: string; verificationToken?: string }> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/household/auth/me/profile-update/confirm-otp`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ target, value, otp }),
+    });
+
+    const parsed = await parseApiResponse<{ message?: string; verificationToken?: string }>(response);
+    const data = parsed.data || (parsed as any);
+    if (!response.ok || !parsed.success || (!data?.verificationToken && !(parsed as any).verificationToken)) {
+      return {
+        success: false,
+        message: parsed.message || 'Verification failed.',
+      };
+    }
+
+    return {
+      success: true,
+      message: parsed.message || 'Verification successful.',
+      verificationToken: data?.verificationToken || (parsed as any).verificationToken,
+    };
+  } catch {
+    return {
+      success: false,
+      message: 'Network error while confirming verification code.',
+    };
+  }
+}
+
 
 export async function uploadResidentAvatar(
   token: string,
