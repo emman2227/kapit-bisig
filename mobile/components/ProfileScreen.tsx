@@ -852,6 +852,7 @@ export default function ProfileScreen({
               styles.editSheet,
               {
                 maxHeight: dynamicSheetMaxHeight,
+                height: keyboardHeight > 0 ? dynamicSheetMaxHeight : undefined,
                 paddingBottom: keyboardHeight > 0 ? 16 : Math.max(insets.bottom, 16),
               },
             ]}
@@ -876,7 +877,7 @@ export default function ProfileScreen({
             </View>
 
             <ScrollView
-              style={styles.formScroll}
+              style={[styles.formScroll, keyboardHeight > 0 ? styles.formScrollKeyboard : null]}
               contentContainerStyle={styles.formContent}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
@@ -1029,6 +1030,7 @@ export default function ProfileScreen({
               styles.editSheet,
               {
                 maxHeight: dynamicSheetMaxHeight,
+                height: keyboardHeight > 0 ? dynamicSheetMaxHeight : undefined,
                 paddingBottom: keyboardHeight > 0 ? 16 : Math.max(insets.bottom, 16),
               },
             ]}
@@ -1059,7 +1061,7 @@ export default function ProfileScreen({
             {changePasswordStep === 'input' ? (
               <>
                 <ScrollView
-                  style={styles.formScroll}
+                  style={[styles.formScroll, keyboardHeight > 0 ? styles.formScrollKeyboard : null]}
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
                   keyboardDismissMode="on-drag"
@@ -1151,7 +1153,7 @@ export default function ProfileScreen({
                 <View style={styles.formActions}>
                   <TouchableOpacity
                     style={[styles.formButton, styles.cancelButton]}
-                    onPress={() => setIsChangePasswordOpen(false)}
+                    onPress={closeChangePasswordModal}
                     disabled={isRequestingChangePasswordOtp}
                   >
                     <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Cancel</Typography>
@@ -1172,7 +1174,7 @@ export default function ProfileScreen({
             ) : (
               <>
                 <ScrollView
-                  style={styles.formScroll}
+                  style={[styles.formScroll, keyboardHeight > 0 ? styles.formScrollKeyboard : null]}
                   contentContainerStyle={styles.formContent}
                   keyboardShouldPersistTaps="handled"
                   keyboardDismissMode="on-drag"
@@ -1215,7 +1217,10 @@ export default function ProfileScreen({
                 <View style={styles.formActions}>
                   <TouchableOpacity
                     style={[styles.formButton, styles.cancelButton]}
-                    onPress={() => setChangePasswordStep('input')}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setChangePasswordStep('input');
+                    }}
                     disabled={isConfirmingChangePassword}
                   >
                     <Typography variant="body" weight="semiBold" color={theme.colors.textSecondary}>Back</Typography>
@@ -1565,6 +1570,10 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 1,
   },
+  formScrollKeyboard: {
+    flex: 1,
+    flexShrink: 1,
+  },
   formContent: {
     paddingBottom: 8,
   },
@@ -1645,7 +1654,7 @@ const styles = StyleSheet.create({
     paddingRight: 12,
   },
   formActions: {
-    paddingTop: 16,
+    paddingTop: 12,
     flexDirection: 'row',
     gap: 10,
   },
