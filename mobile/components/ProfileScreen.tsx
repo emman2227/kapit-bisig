@@ -31,6 +31,7 @@ import {
 } from '../services/auth/MobileAuthService';
 import { residentTheme, theme } from '../theme';
 import { formatResidentFullName } from '../utils/residentName';
+import { validateEmail, cleanEmailInput } from '../utils/emailValidation';
 import PendingAccessBanner from './PendingAccessBanner';
 import BottomNavigation from './ui/BottomNavigation';
 import { Typography } from './ui/Typography';
@@ -258,6 +259,7 @@ export default function ProfileScreen({
   const [firstNameInput, setFirstNameInput] = useState('');
   const [lastNameInput, setLastNameInput] = useState('');
   const [mobileInput, setMobileInput] = useState('');
+  const [emailInput, setEmailInput] = useState('');
   const [streetAddressInput, setStreetAddressInput] = useState('');
   const [cityInput, setCityInput] = useState('');
   const [avatarUri, setAvatarUri] = useState<string | null>(
@@ -311,6 +313,7 @@ export default function ProfileScreen({
     const residentItems: DetailItem[] = [
       { icon: 'home-outline', label: 'Full address', value: residentAddress || 'Not provided' },
       { icon: 'call-outline', label: 'Mobile number', value: residentProfile?.mobileNumber?.trim() || 'Not provided' },
+      { icon: 'mail-outline', label: 'Recovery email', value: residentProfile?.email?.trim() || 'Not linked' },
       {
         icon: 'people-outline',
         label: 'Household size',
@@ -329,6 +332,7 @@ export default function ProfileScreen({
         firstName: volunteerUser?.firstName || '',
         lastName: volunteerUser?.lastName || '',
         mobileNumber: volunteerUser?.phoneNumber || '',
+        email: volunteerUser?.email || '',
         streetAddress: '',
         city: '',
       };
@@ -338,6 +342,7 @@ export default function ProfileScreen({
       firstName: residentProfile?.firstName || '',
       lastName: residentProfile?.lastName || '',
       mobileNumber: residentProfile?.mobileNumber || '',
+      email: residentProfile?.email || '',
       streetAddress: residentProfile?.streetAddress || '',
       city: residentProfile?.city || '',
     };
@@ -351,6 +356,7 @@ export default function ProfileScreen({
     setFirstNameInput(initialFields.firstName);
     setLastNameInput(initialFields.lastName);
     setMobileInput(initialFields.mobileNumber);
+    setEmailInput(initialFields.email);
     setStreetAddressInput(initialFields.streetAddress);
     setCityInput(initialFields.city);
     setIsEditOpen(true);
@@ -418,6 +424,15 @@ export default function ProfileScreen({
       return;
     }
 
+    const trimmedEmail = emailInput.trim();
+    if (!isVolunteer && trimmedEmail) {
+      const emailCheck = validateEmail(trimmedEmail);
+      if (!emailCheck.isValid) {
+        Alert.alert('Invalid email', emailCheck.error || 'Please enter a valid email address.');
+        return;
+      }
+    }
+
     setIsSaving(true);
     try {
       if (isVolunteer) {
@@ -448,6 +463,7 @@ export default function ProfileScreen({
         firstName,
         lastName,
         mobileNumber: mobileInput.trim() || undefined,
+        email: trimmedEmail ? trimmedEmail.toLowerCase() : '',
         streetAddress: streetAddressInput.trim() || undefined,
         city: cityInput.trim() || undefined,
       });
@@ -842,6 +858,20 @@ export default function ProfileScreen({
 
               {!isVolunteer ? (
                 <>
+                  <Text style={styles.inputLabel}>Recovery email (optional)</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={emailInput}
+                    onChangeText={(text) => setEmailInput(cleanEmailInput(text))}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    placeholder="e.g. name@example.com"
+                    placeholderTextColor="#9CA3AF"
+                    editable={!isSaving}
+                    returnKeyType="next"
+                  />
+
                   <Text style={styles.inputLabel}>Street address</Text>
                   <TextInput
                     style={styles.input}

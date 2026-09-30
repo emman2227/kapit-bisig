@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { Router, Request, Response } from 'express';
+import mongoose from 'mongoose';
 import bcrypt from 'bcrypt';
 import Resident from '../models/Resident';
 import ResidentPasswordResetOtp from '../models/ResidentPasswordResetOtp';
@@ -306,7 +307,7 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
 
       if (normalizedEmail) {
         const existingEmailOwner = await Resident.findOne({
-          _id: { $ne: userId },
+          _id: mongoose.trusted({ $ne: userId }),
           emailLower: normalizedEmail,
         })
           .select('_id')
@@ -337,7 +338,7 @@ router.patch('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, a
         });
       }
       const existing = await Resident.findOne({
-        _id: { $ne: userId },
+        _id: mongoose.trusted({ $ne: userId }),
         mobileNumber: normalizedMobile,
       })
         .select('_id')

@@ -1085,7 +1085,7 @@ router.post('/auth/forgot-password/send-otp', passwordResetSendRateLimiter, vali
       const normalizedMobile = normalizePhilippineMobileNumber(rawMobile);
       const resident = await Resident.findOne({
         mobileNumber: normalizedMobile,
-        status: { $ne: 'Rejected' },
+        status: mongoose.trusted({ $ne: 'Rejected' }),
       }).select('_id mobileNumber fullName firstName lastName');
 
       if (resident) {
@@ -1137,7 +1137,7 @@ router.post('/auth/forgot-password/send-otp', passwordResetSendRateLimiter, vali
 
     const resident = await Resident.findOne({
       emailLower,
-      status: { $ne: 'Rejected' },
+      status: mongoose.trusted({ $ne: 'Rejected' }),
     }).select('_id email emailLower');
 
     if (resident) {
