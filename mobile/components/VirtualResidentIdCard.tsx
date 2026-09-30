@@ -18,6 +18,7 @@ import { residentTheme } from '../theme';
 import { formatResidentFullName } from '../utils/residentName';
 import { saveViewToMediaLibrary } from '../utils/saveViewToMediaLibrary';
 import ResidentBrandLockup from './ui/ResidentBrandLockup';
+import { VirtualIdCardSkeleton } from './ui/Skeleton';
 
 const residentColors = residentTheme.colors;
 
@@ -119,18 +120,7 @@ export default function VirtualResidentIdCard({
       </View>
 
       {isLoading && !idData ? (
-        <View style={styles.stateCard} accessibilityLabel="Loading virtual ID">
-          <View style={styles.skeletonHeader} />
-          <View style={styles.skeletonBody}>
-            <View style={styles.skeletonPhoto} />
-            <View style={styles.skeletonCopy}>
-              <View style={styles.skeletonLineWide} />
-              <View style={styles.skeletonLineShort} />
-            </View>
-            <ActivityIndicator color={residentColors.icon} />
-          </View>
-          <Text style={styles.stateText}>Preparing your verified ID...</Text>
-        </View>
+        <VirtualIdCardSkeleton />
       ) : !idData && error ? (
         <View style={styles.stateCard}>
           <View style={styles.errorIcon}>

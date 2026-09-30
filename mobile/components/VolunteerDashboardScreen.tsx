@@ -23,6 +23,7 @@ import {
 import { staffTheme } from '../theme';
 import BottomNavigation from './ui/BottomNavigation';
 import ResidentBrandLockup from './ui/ResidentBrandLockup';
+import { DistributionCardSkeleton, VolunteerDashboardSkeleton } from './ui/Skeleton';
 
 const sc = staffTheme.colors;
 
@@ -412,66 +413,73 @@ export default function VolunteerDashboardScreen({
         </View>
 
         {/* ── Progress Card ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionLabelRow}>
-            <View>
-              <Text style={styles.sectionEyebrow}>CURRENT OBJECTIVE</Text>
-              <Text style={styles.sectionTitle}>Relief Goods Phase 1</Text>
-            </View>
-            <View style={styles.activePill}>
-              <View style={styles.activeDot} />
-              <Text style={styles.activeText}>ACTIVE</Text>
-            </View>
-          </View>
-          <View style={styles.progressCard}>
-            <View style={styles.cardGoldAccent} />
-            <View style={styles.progressWatermark} pointerEvents="none">
-              <Ionicons name="people" size={92} color="rgba(15, 46, 34, 0.035)" />
-            </View>
-            <View style={styles.progressRow}>
-              <Text style={styles.progressLabel}>
-                <Text style={styles.progressBold}>{stats.verifiedHouseholds}</Text>
-                {' / '}{stats.totalHouseholds} Households Verified
-              </Text>
-              <Text style={styles.progressPercent}>{progressPercentage}%</Text>
-            </View>
-            <View style={styles.progressBarOuter}>
-              <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
-            </View>
-          </View>
-        </View>
-
-        {/* ── Stats Row ── */}
-        <View style={styles.statsRow}>
-          <View style={styles.statsCard}>
-            <View style={styles.cardGoldAccent} />
-            <View style={styles.statsHeader}>
-              <View style={styles.pendingDot} />
-              <Text style={styles.statsLabel}>PENDING</Text>
-            </View>
-            <Text style={styles.statsValue}>{stats.pendingQueue}</Text>
-            <Text style={styles.statsSubtext}>Verification Queue</Text>
-          </View>
-
-          <View style={styles.statsCard}>
-            <View style={styles.cardGoldAccent} />
-            <View style={styles.statsHeader}>
-              <Text style={styles.statsLabel}>SCANS TODAY</Text>
-              <View style={styles.trendBadge}>
-                <Ionicons
-                  name={stats.scansTrend >= 0 ? 'arrow-up' : 'arrow-down'}
-                  size={12}
-                  color={stats.scansTrend >= 0 ? sc.brand : '#EF4444'}
-                />
-                <Text style={[styles.trendText, stats.scansTrend < 0 && styles.trendTextNeg]}>
-                  {stats.scansTrend}
-                </Text>
+        {loading && stats.totalHouseholds === 0 ? (
+          <VolunteerDashboardSkeleton />
+        ) : (
+          <>
+            {/* ── Progress Card ── */}
+            <View style={styles.section}>
+              <View style={styles.sectionLabelRow}>
+                <View>
+                  <Text style={styles.sectionEyebrow}>CURRENT OBJECTIVE</Text>
+                  <Text style={styles.sectionTitle}>Relief Goods Phase 1</Text>
+                </View>
+                <View style={styles.activePill}>
+                  <View style={styles.activeDot} />
+                  <Text style={styles.activeText}>ACTIVE</Text>
+                </View>
+              </View>
+              <View style={styles.progressCard}>
+                <View style={styles.cardGoldAccent} />
+                <View style={styles.progressWatermark} pointerEvents="none">
+                  <Ionicons name="people" size={92} color="rgba(15, 46, 34, 0.035)" />
+                </View>
+                <View style={styles.progressRow}>
+                  <Text style={styles.progressLabel}>
+                    <Text style={styles.progressBold}>{stats.verifiedHouseholds}</Text>
+                    {' / '}{stats.totalHouseholds} Households Verified
+                  </Text>
+                  <Text style={styles.progressPercent}>{progressPercentage}%</Text>
+                </View>
+                <View style={styles.progressBarOuter}>
+                  <View style={[styles.progressBarFill, { width: `${progressPercentage}%` }]} />
+                </View>
               </View>
             </View>
-            <Text style={styles.statsValue}>{stats.scansToday}</Text>
-            <Text style={styles.statsSubtext}>Processed Scans</Text>
-          </View>
-        </View>
+
+            {/* ── Stats Row ── */}
+            <View style={styles.statsRow}>
+              <View style={styles.statsCard}>
+                <View style={styles.cardGoldAccent} />
+                <View style={styles.statsHeader}>
+                  <View style={styles.pendingDot} />
+                  <Text style={styles.statsLabel}>PENDING</Text>
+                </View>
+                <Text style={styles.statsValue}>{stats.pendingQueue}</Text>
+                <Text style={styles.statsSubtext}>Verification Queue</Text>
+              </View>
+
+              <View style={styles.statsCard}>
+                <View style={styles.cardGoldAccent} />
+                <View style={styles.statsHeader}>
+                  <Text style={styles.statsLabel}>SCANS TODAY</Text>
+                  <View style={styles.trendBadge}>
+                    <Ionicons
+                      name={stats.scansTrend >= 0 ? 'arrow-up' : 'arrow-down'}
+                      size={12}
+                      color={stats.scansTrend >= 0 ? sc.brand : '#EF4444'}
+                    />
+                    <Text style={[styles.trendText, stats.scansTrend < 0 && styles.trendTextNeg]}>
+                      {stats.scansTrend}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.statsValue}>{stats.scansToday}</Text>
+                <Text style={styles.statsSubtext}>Processed Scans</Text>
+              </View>
+            </View>
+          </>
+        )}
 
         {/* ── Operational Status ── */}
         <View style={styles.statusStrip}>
@@ -498,18 +506,8 @@ export default function VolunteerDashboardScreen({
             </View>
           </View>
 
-          {loading ? (
-            <LinearGradient colors={[sc.surface, sc.surfaceMuted]} style={styles.distributionCard}>
-              <View style={styles.cardGoldAccent} />
-              <View style={styles.calendarIcon}>
-                <ActivityIndicator color={sc.accentDark} />
-              </View>
-              <View style={styles.premiumCardCopy}>
-                <Text style={styles.lightCardEyebrow}>LOADING</Text>
-                <Text style={styles.lightCardTitle}>Checking distributions</Text>
-                <Text style={styles.lightCardDescription}>Getting the latest data…</Text>
-              </View>
-            </LinearGradient>
+          {loading && !featuredDistribution ? (
+            <DistributionCardSkeleton />
           ) : featuredDistribution ? (
             <TouchableOpacity
               style={styles.premiumCardShadow}

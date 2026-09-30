@@ -38,6 +38,7 @@ import { residentTheme } from '../theme';
 import BottomNavigation from './ui/BottomNavigation';
 import ResidentBrandLockup from './ui/ResidentBrandLockup';
 import VirtualResidentIdCard from './VirtualResidentIdCard';
+import { DistributionCardSkeleton } from './ui/Skeleton';
 
 const residentColors = residentTheme.colors;
 
@@ -439,18 +440,8 @@ export default function ResidentHomeDashboardScreen({
                 </View>
               ) : null}
 
-              {isDistributionLoading ? (
-                <LinearGradient colors={[residentColors.surface, residentColors.surfaceMuted]} style={styles.distributionCard}>
-                  <View style={styles.cardGoldAccent} />
-                  <View style={styles.calendarIcon}>
-                    <ActivityIndicator color={residentColors.accentDark} />
-                  </View>
-                  <View style={styles.premiumCardCopy}>
-                    <Text style={styles.lightCardEyebrow}>SCHEDULE</Text>
-                    <Text style={styles.lightCardTitle}>Checking the next schedule</Text>
-                    <Text style={styles.lightCardDescription}>Getting the latest distribution details…</Text>
-                  </View>
-                </LinearGradient>
+              {isDistributionLoading && !nextDistribution ? (
+                <DistributionCardSkeleton />
               ) : nextDistribution ? (
                 <TouchableOpacity style={styles.premiumCardShadow} activeOpacity={0.86} onPress={() => onNavigate?.('distributions')}>
                   <LinearGradient colors={[residentColors.surface, residentColors.surfaceMuted]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.distributionCard}>

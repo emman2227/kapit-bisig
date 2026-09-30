@@ -15,6 +15,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { type ResidentDistributionItem } from '../services/api/ResidentQrService';
 import { residentTheme } from '../theme';
 import BottomNavigation from './ui/BottomNavigation';
+import { DistributionListSkeleton } from './ui/Skeleton';
 
 const residentColors = residentTheme.colors;
 
@@ -154,12 +155,9 @@ export default function DistributionScreen({
           </View>
         ) : null}
 
-        {isDistributionLoading ? (
-          <View style={styles.stateCard}>
-            <ActivityIndicator color={residentColors.icon} />
-            <Text style={styles.stateText}>Loading schedules…</Text>
-          </View>
-        ) : distributionError ? (
+        {isDistributionLoading && items.length === 0 ? (
+          <DistributionListSkeleton count={3} />
+        ) : isDistributionLoading && items.length > 0 ? null : distributionError ? (
           <View style={styles.stateCard}>
             <View style={styles.stateIcon}>
               <Ionicons name="cloud-offline-outline" size={24} color={residentColors.icon} />
