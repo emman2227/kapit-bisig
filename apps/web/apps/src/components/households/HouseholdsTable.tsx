@@ -3,6 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import HouseholdProfileModal from './HouseholdProfileModal'
 import DistributionCycleModal from './DistributionCycleModal'
+import Pagination from '@/components/ui/Pagination'
 import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
 import type { HouseholdRow } from '@/app/households/page'
 
@@ -404,35 +405,14 @@ export default function HouseholdsTable({
         </div>
 
         {!loading && !error && rows.length > 0 && (
-          <div className="flex flex-col gap-3 border-t border-gray-100 bg-white px-4 py-4 dark:border-slate-700 dark:bg-slate-900 sm:flex-row sm:items-center sm:justify-between sm:px-6">
-            <p className="text-xs font-medium text-gray-500 dark:text-slate-400">
-              Showing {rangeStart}-{rangeEnd} of {rows.length}
-            </p>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                disabled={currentPage <= 1}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                Previous
-              </button>
-
-              <span className="min-w-[88px] text-center text-xs font-semibold text-gray-600 dark:text-slate-300">
-                Page {currentPage} of {totalPages}
-              </span>
-
-              <button
-                type="button"
-                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                disabled={currentPage >= totalPages}
-                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-              >
-                Next
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            totalItems={rows.length}
+            pageSize={ROWS_PER_PAGE}
+            onPageChange={setPage}
+            itemLabel="households"
+          />
         )}
       </div>
 

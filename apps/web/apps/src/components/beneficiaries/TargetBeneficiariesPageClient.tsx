@@ -13,6 +13,7 @@ import { showToast } from '@/lib/toast'
 import SummaryMetricCard from '@/components/ui/SummaryMetricCard'
 import SectionHeader from '@/components/ui/SectionHeader'
 import FilterDropdown from '@/components/ui/FilterDropdown'
+import Pagination from '@/components/ui/Pagination'
 import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
 import BeneficiaryProofReviewModal from './BeneficiaryProofReviewModal'
 import {
@@ -123,6 +124,7 @@ export default function TargetBeneficiariesPageClient() {
   const [proofLoading, setProofLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [totalDocs, setTotalDocs] = useState<number | undefined>(undefined)
   const [selectedStatus, setSelectedStatus] = useState<string>(PENDING_STATUS)
   const [selectedBarangay, setSelectedBarangay] = useState<string>(ALL_BARANGAYS)
   const [searchInput, setSearchInput] = useState('')
@@ -153,12 +155,14 @@ export default function TargetBeneficiariesPageClient() {
       setProofRows(rawRows)
       setProofSummary(response.summary || INITIAL_PROOF_SUMMARY)
       setTotalPages(response.pagination?.totalPages || 1)
+      setTotalDocs(response.pagination?.totalDocs)
     } catch (err: any) {
       console.error('Failed to load beneficiary proofs:', err)
       setError(err?.message || 'Failed to load proof submissions.')
       setProofRows([])
       setProofSummary(INITIAL_PROOF_SUMMARY)
       setTotalPages(1)
+      setTotalDocs(undefined)
     } finally {
       setProofLoading(false)
     }
@@ -537,32 +541,15 @@ export default function TargetBeneficiariesPageClient() {
         </div>
 
         {/* Pagination Footer */}
-        {!proofLoading && proofRows.length > 0 && totalPages > 1 && (
-          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50/50 px-6 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-            <span className="text-xs text-slate-500 dark:text-slate-400">
-              Page {page} of {totalPages}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                disabled={page <= 1}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-              >
-                <ChevronLeft className="h-3.5 w-3.5" />
-                Previous
-              </button>
-              <button
-                type="button"
-                onClick={() => setPage((prev) => Math.min(totalPages, prev + 1))}
-                disabled={page >= totalPages}
-                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-40 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300"
-              >
-                Next
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+        {!proofLoading && proofRows.length > 0 && (
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={totalDocs}
+            pageSize={PAGE_SIZE}
+            onPageChange={setPage}
+            itemLabel="submissions"
+          />
         )}
       </section>
 

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { api, DistributionHouseholdsData } from '../../lib/api'
 import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '../../lib/inputValidation'
+import Pagination from '@/components/ui/Pagination'
 import type { DistributionRow } from './DistributionsTable'
 
 const HOUSEHOLDS_PER_PAGE = 8
@@ -421,13 +422,14 @@ export default function ViewHouseholdsModal({
 
                 {/* Pagination */}
                 {activeItemsCount > 0 && (
-                  <PaginationControls
+                  <Pagination
                     currentPage={currentPage}
                     totalPages={totalPages}
                     pageSize={HOUSEHOLDS_PER_PAGE}
                     totalItems={activeItemsCount}
-                    onPrev={() => setPage((prev) => Math.max(1, prev - 1))}
-                    onNext={() => setPage((prev) => Math.min(totalPages, prev + 1))}
+                    onPageChange={setPage}
+                    variant="modal"
+                    itemLabel="households"
                   />
                 )}
               </div>
@@ -526,54 +528,6 @@ function EmptyList({ message }: { message: string }) {
   )
 }
 
-function PaginationControls({
-  currentPage,
-  totalPages,
-  pageSize,
-  totalItems,
-  onPrev,
-  onNext,
-}: {
-  currentPage: number
-  totalPages: number
-  pageSize: number
-  totalItems: number
-  onPrev: () => void
-  onNext: () => void
-}) {
-  const start = totalItems === 0 ? 0 : (currentPage - 1) * pageSize + 1
-  const end = Math.min(currentPage * pageSize, totalItems)
-
-  return (
-    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40 px-4 py-3">
-      <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-        Showing <span className="font-bold text-slate-700 dark:text-slate-300">{start}–{end}</span> of <span className="font-bold text-slate-700 dark:text-slate-300">{totalItems}</span>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onPrev}
-          disabled={currentPage <= 1}
-          className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-xs"
-        >
-          Previous
-        </button>
-        <span className="text-xs font-bold text-slate-600 dark:text-slate-300 px-1">
-          {currentPage} / {totalPages}
-        </span>
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={currentPage >= totalPages}
-          className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors hover:bg-slate-100 dark:hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40 shadow-xs"
-        >
-          Next
-        </button>
-      </div>
-    </div>
-  )
-}
 
 /* ----- Icons ----- */
 

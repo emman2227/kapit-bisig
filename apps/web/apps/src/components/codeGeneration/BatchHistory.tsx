@@ -1,20 +1,100 @@
 'use client'
 
-import React from 'react'
+import React, { useMemo, useState } from 'react'
 import type { BatchHistoryItem } from './types'
+import Pagination from '@/components/ui/Pagination'
+import SelectDropdown from '@/components/ui/SelectDropdown'
+import { BARANGAY_OPTIONS } from '@/lib/api'
 
 type Props = {
   history: BatchHistoryItem[]
   onView: (batchId: string) => void
 }
 
+const PAGE_SIZE = 5
+
 export default function BatchHistory({ history, onView }: Props) {
+  const [barangayFilter, setBarangayFilter] = useState('ALL')
+  const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+
+  // Dynamically combine predefined barangay options with any from history
+  const barangayOptions = useMemo(() => {
+    const set = new Set<string>()
+    BARANGAY_OPTIONS.forEach((b) => set.add(b))
+    history.forEach((h) => {
+      if (h.barangay) set.add(h.barangay)
+    })
+    return [
+      { value: 'ALL', label: 'All Barangays' },
+      ...Array.from(set)
+        .sort()
+        .map((b) => ({ value: b, label: b })),
+    ]
+  }, [history])
+
+  // Filter history by barangay and search term
+  const filteredHistory = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    return history.filter((item) => {
+      const matchesBarangay =
+        barangayFilter === 'ALL' ||
+        item.barangay.toLowerCase() === barangayFilter.toLowerCase()
+
+      const matchesSearch =
+        !q ||
+        item.batchId.toLowerCase().includes(q) ||
+        item.generatedBy.toLowerCase().includes(q) ||
+        item.barangay.toLowerCase().includes(q)
+
+      return matchesBarangay && matchesSearch
+    })
+  }, [history, barangayFilter, search])
+
+  const totalPages = Math.max(1, Math.ceil(filteredHistory.length / PAGE_SIZE))
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages)
+
+  const pagedHistory = useMemo(() => {
+    const start = (safeCurrentPage - 1) * PAGE_SIZE
+    return filteredHistory.slice(start, start + PAGE_SIZE)
+  }, [filteredHistory, safeCurrentPage])
+
+  const handleBarangayChange = (value: string) => {
+    setBarangayFilter(value)
+    setCurrentPage(1)
+  }
+
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearch(e.target.value)
+    setCurrentPage(1)
+  }
+
   return (
     <section className="rounded-[2rem] border border-white/80 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl flex flex-col overflow-hidden shadow-[0_8px_32px_-8px_rgba(0,0,0,0.08)] transition-colors mb-8">
-      <div className="p-5 border-b border-gray-100 dark:border-slate-800 bg-white/40 dark:bg-slate-800/40 flex flex-col sm:flex-row justify-between sm:items-center">
+      {/* Header with Title and Filters */}
+      <div className="p-5 border-b border-gray-100 dark:border-slate-800 bg-white/40 dark:bg-slate-800/40 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
         <div>
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100 tracking-wide uppercase">Batch History</h3>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Persistent record of generated code batches and current redemption status.</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={search}
+            onChange={handleSearchChange}
+            placeholder="Search batch or user..."
+            aria-label="Search batch history"
+            className="h-10 w-44 rounded-xl border border-gray-300 dark:border-slate-700 px-3 text-xs text-gray-900 dark:text-white bg-white/80 dark:bg-slate-800/80 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 shadow-inner transition-all"
+          />
+          <SelectDropdown
+            value={barangayFilter}
+            onChange={handleBarangayChange}
+            options={barangayOptions}
+            ariaLabel="Filter batch history by barangay"
+            className="min-w-[170px]"
+            buttonClassName="h-10 text-xs"
+          />
         </div>
       </div>
 
@@ -31,8 +111,8 @@ export default function BatchHistory({ history, onView }: Props) {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100 dark:divide-slate-800/50 text-sm">
-            {history.length ? (
-              history.map((item) => (
+            {pagedHistory.length ? (
+              pagedHistory.map((item) => (
                 <tr key={item.batchId} className="hover:bg-white/60 dark:hover:bg-slate-800/60 transition-colors group">
                   <td className="px-6 py-4 font-mono font-bold text-gray-900 dark:text-gray-100 tracking-wider text-[12px] whitespace-normal break-words">{item.batchId}</td>
                   <td className="px-6 py-4 font-medium text-gray-700 dark:text-gray-300">{item.barangay}</td>
@@ -70,14 +150,27 @@ export default function BatchHistory({ history, onView }: Props) {
             ) : (
               <tr>
                 <td colSpan={6} className="px-6 py-12 text-center text-sm text-gray-500 dark:text-gray-400 font-medium">
-                  No batch history found. Generate codes above to create the first batch.
+                  {history.length === 0
+                    ? 'No batch history found. Generate codes above to create the first batch.'
+                    : 'No batches matching the selected filter.'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
       </div>
+
+      {/* Uniform Pagination Footer */}
+      {filteredHistory.length > 0 && (
+        <Pagination
+          currentPage={safeCurrentPage}
+          totalPages={totalPages}
+          totalItems={filteredHistory.length}
+          pageSize={PAGE_SIZE}
+          onPageChange={setCurrentPage}
+          itemLabel="batches"
+        />
+      )}
     </section>
   )
 }
-

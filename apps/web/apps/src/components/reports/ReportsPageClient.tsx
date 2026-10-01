@@ -569,6 +569,7 @@ export default function ReportsPageClient() {
                   setPageSize(newSize)
                   setCurrentPage(1)
                 }}
+                itemLabel="distributions"
               />
 
               {/* High-density summary strip */}
@@ -649,6 +650,7 @@ export default function ReportsPageClient() {
                   setBrgyPageSize(newSize)
                   setBrgyCurrentPage(1)
                 }}
+                itemLabel="barangay records"
               />
             </>
           )}

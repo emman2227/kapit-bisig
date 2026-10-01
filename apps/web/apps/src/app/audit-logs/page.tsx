@@ -10,6 +10,7 @@ import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
 import SelectDropdown from '@/components/ui/SelectDropdown'
 import SectionHeader from '@/components/ui/SectionHeader'
 import SummaryMetricCard from '@/components/ui/SummaryMetricCard'
+import Pagination from '@/components/ui/Pagination'
 
 const ACTION_OPTIONS = [
   { value: '', label: 'All Actions' },
@@ -436,27 +437,14 @@ export default function AuditLogsPage() {
 
         {/* Pagination */}
         {!loading && logs.length > 0 && (
-          <div className="px-6 py-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <span className="text-sm text-slate-500">
-              Page {page} of {totalPages}
-            </span>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="p-2 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 transition-colors"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages}
+            totalItems={total}
+            pageSize={50}
+            onPageChange={setPage}
+            itemLabel="audit logs"
+          />
         )}
       </div>
     </DashboardLayout>
