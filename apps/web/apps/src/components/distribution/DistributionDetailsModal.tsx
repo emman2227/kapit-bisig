@@ -18,8 +18,11 @@ export default function DistributionDetailsModal({
 }) {
   const [staffNames, setStaffNames] = React.useState<string[]>([])
 
+  const distributionId = distribution?.id
+  const staffIdsKey = (distribution?.assignedStaffIds || []).join(',')
+
   React.useEffect(() => {
-    if (!open || !distribution || !distribution.assignedStaffIds?.length) {
+    if (!open || !distributionId || !staffIdsKey) {
       setStaffNames([])
       return
     }
@@ -29,7 +32,7 @@ export default function DistributionDetailsModal({
       try {
         const res = await api.getStaffUsers({ status: 'active' })
         if (!cancelled && res.success && res.data) {
-          const idSet = new Set(distribution.assignedStaffIds)
+          const idSet = new Set(distribution?.assignedStaffIds || [])
           const matched = res.data
             .filter((s) => idSet.has(s.id))
             .map((s) => `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.fullName || 'Staff')
@@ -44,7 +47,7 @@ export default function DistributionDetailsModal({
     return () => {
       cancelled = true
     }
-  }, [open, distribution])
+  }, [open, distributionId, staffIdsKey])
 
   if (!open || !distribution) return null
 

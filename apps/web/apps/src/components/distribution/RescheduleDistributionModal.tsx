@@ -41,9 +41,11 @@ export default function RescheduleDistributionModal({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const distributionId = distribution?.id
+
   // Initialize date/time defaults when modal opens
   useEffect(() => {
-    if (!open || !distribution) return
+    if (!open || !distributionId) return
     setError(null)
     setReason('')
 
@@ -54,7 +56,7 @@ export default function RescheduleDistributionModal({
     const dd = String(tomorrow.getDate()).padStart(2, '0')
     setScheduledDate(`${yyyy}-${mm}-${dd}`)
     setScheduledTime('09:00')
-  }, [open, distribution])
+  }, [open, distributionId])
 
   if (!open || !distribution) return null
 

@@ -39,9 +39,14 @@ export default function EditDistributionStaffModal({
     return () => clearTimeout(timer)
   }, [staffQuery])
 
+  const distributionId = distribution?.id
+  const distributionBarangay = distribution?.barangay
+  const distributionScheduled = distribution?.scheduled
+  const assignedBarangaysKey = (distribution?.assignedBarangays || []).join(',')
+
   // Initialize state when modal opens or distribution changes
   useEffect(() => {
-    if (!open || !distribution) {
+    if (!open || !distributionId) {
       setAssignedStaffIds([])
       setStaffQuery('')
       setDebouncedStaffQuery('')
@@ -50,7 +55,7 @@ export default function EditDistributionStaffModal({
       return
     }
 
-    const initialIds = (distribution.assignedStaffIds || []).map((id) => String(id))
+    const initialIds = (distribution?.assignedStaffIds || []).map((id) => String(id))
     setAssignedStaffIds(initialIds)
     setStaffQuery('')
     setDebouncedStaffQuery('')
@@ -74,11 +79,11 @@ export default function EditDistributionStaffModal({
     }
 
     void loadStaffMeta()
-  }, [open, distribution])
+  }, [open, distributionId])
 
   // Load eligible staff for this distribution's scope and date
   useEffect(() => {
-    if (!open || !distribution) return
+    if (!open || !distributionId || !distributionBarangay) return
 
     let cancelled = false
     setIsLoading(true)
@@ -87,9 +92,9 @@ export default function EditDistributionStaffModal({
     const fetchEligible = async () => {
       try {
         const response = await api.getScanEligibleUsers({
-          barangay: distribution.barangay,
-          assignedBarangayIds: distribution.assignedBarangays,
-          scheduled: distribution.scheduled,
+          barangay: distributionBarangay,
+          assignedBarangayIds: distribution?.assignedBarangays || [],
+          scheduled: distributionScheduled,
           q: debouncedStaffQuery || undefined,
           limit: 30,
         })
@@ -114,7 +119,7 @@ export default function EditDistributionStaffModal({
     return () => {
       cancelled = true
     }
-  }, [open, distribution, debouncedStaffQuery])
+  }, [open, distributionId, distributionBarangay, distributionScheduled, assignedBarangaysKey, debouncedStaffQuery])
 
   if (!open || !distribution) return null
 

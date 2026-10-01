@@ -61,8 +61,10 @@ export default function ViewHouseholdsModal({
     }
   }, [])
 
+  const distributionId = distribution?.id
+
   useEffect(() => {
-    if (open && distribution) {
+    if (open && distributionId) {
       setSearch('')
       setActiveTab('notYetClaimed')
       setPage(1)
@@ -71,26 +73,26 @@ export default function ViewHouseholdsModal({
       setLastUpdated(null)
       knownClaimIdsRef.current = new Set()
       hasLoadedRef.current = false
-      fetchData(distribution.id)
+      fetchData(distributionId)
     }
-  }, [open, distribution, fetchData])
+  }, [open, distributionId, fetchData])
 
   useEffect(() => {
     setPage(1)
   }, [activeTab, search])
 
   useEffect(() => {
-    if (!open || !distribution) return
+    if (!open || !distributionId) return
     const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible') fetchData(distribution.id, true)
+      if (document.visibilityState === 'visible') fetchData(distributionId, true)
     }
-    const intervalId = window.setInterval(refreshIfVisible, 3000)
+    const intervalId = window.setInterval(refreshIfVisible, 4000)
     document.addEventListener('visibilitychange', refreshIfVisible)
     return () => {
       window.clearInterval(intervalId)
       document.removeEventListener('visibilitychange', refreshIfVisible)
     }
-  }, [open, distribution, fetchData])
+  }, [open, distributionId, fetchData])
 
   if (!open || !distribution) return null
 
