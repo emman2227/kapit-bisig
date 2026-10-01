@@ -15,6 +15,7 @@ export type DistributionLifecycleStatus = 'Upcoming' | 'Active' | 'Completed' | 
 export type DistributionRow = {
   id: string
   barangay: string
+  location?: string
   assignedBarangays: string[]
   assignedStaffIds?: string[]
   scheduled: string
@@ -423,6 +424,11 @@ export default function DistributionsTable({
                         </div>
                         <div>
                           <div className="font-bold text-slate-900 dark:text-slate-100">{row.barangay}</div>
+                          {row.location ? (
+                            <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate max-w-[200px]" title={row.location}>
+                              📍 {row.location}
+                            </div>
+                          ) : null}
                           <div className="mt-0.5">
                             {row.requiresBeneficiaryApproval ? (
                               <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:text-amber-400">

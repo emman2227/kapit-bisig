@@ -127,6 +127,7 @@ export interface DistributionData {
   disasterEventId?: string | null;
   barangay: string;
   assignedBarangays?: string[];
+  location?: string;
   assignedStaffIds?: string[];
   scheduled: string;
   endsAt: string | null;
@@ -630,6 +631,7 @@ export const api = {
     disasterEventId?: string;
     barangay: string;
     assignedBarangays?: string[];
+    location?: string;
     assignedStaffIds: string[];
     scheduled: string;
     endsAt: string;

@@ -71,7 +71,7 @@ function formatDistribution(item: ResidentDistributionItem, index: number): Dist
     timeLabel,
     monthLabel: validDate ? validDate.toLocaleDateString('en-PH', { month: 'short' }).toUpperCase() : 'DATE',
     dayLabel: validDate ? String(validDate.getDate()) : '—',
-    location: `${item.barangay} Covered Court`,
+    location: item.location?.trim() || `${item.barangay} Covered Court`,
     coverage: coverageList.join(', '),
   };
 }

@@ -6,11 +6,20 @@ import { z } from 'zod';
 import { barangayEnum, objectId } from './shared';
 import { manilaDateParts } from '../utils/distributionLifecycle';
 
+export const LOCATION_REGEX = /^[a-zA-Z0-9\s\-,\.\/:#()ñÑ']*$/;
+
 /* POST /api/distributions — create */
 export const createDistributionBody = z.object({
   disasterEventId: objectId.optional(),
   barangay: barangayEnum,
   assignedBarangays: z.array(barangayEnum).optional().default([]),
+  location: z
+    .string()
+    .trim()
+    .max(60, 'Location must be 60 characters or fewer')
+    .refine((v) => !v || LOCATION_REGEX.test(v), 'Location contains invalid characters')
+    .optional()
+    .default(''),
   scheduled: z.string().min(1, 'Scheduled date is required').max(50),
   endsAt: z.string().min(1, 'Distribution end time is required').max(50),
   assignedStaffIds: z.array(objectId)

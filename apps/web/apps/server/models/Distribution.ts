@@ -40,6 +40,7 @@ export interface IDistribution extends Document {
   scheduled: string;
   endsAt: Date | null;
   households: number;
+  location?: string;
   notes?: string;
   requiresBeneficiaryApproval: boolean;
   status: DistributionStatus;
@@ -88,6 +89,13 @@ const distributionSchema = new Schema<IDistribution>(
       required: [true, 'Households count is required'],
       min: [0, 'Households must be at least 0'],
       default: 0,
+    },
+    location: {
+      type: String,
+      trim: true,
+      maxlength: [60, 'Location must be 60 characters or fewer'],
+      match: [/^[a-zA-Z0-9\s\-,\.\/:#()ñÑ']*$/, 'Location contains invalid characters'],
+      default: '',
     },
     notes: {
       type: String,

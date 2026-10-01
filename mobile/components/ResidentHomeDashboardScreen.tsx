@@ -489,7 +489,7 @@ export default function ResidentHomeDashboardScreen({
                       <Text style={styles.lightCardDescription} numberOfLines={1}>{scheduleText(nextDistribution.scheduled)}</Text>
                       <View style={styles.metaRow}>
                         <Ionicons name="location-outline" size={14} color={residentColors.brandDark} />
-                        <Text style={styles.metaText} numberOfLines={1}>{nextDistribution.barangay} Covered Court</Text>
+                        <Text style={styles.metaText} numberOfLines={1}>{nextDistribution.location?.trim() || `${nextDistribution.barangay} Covered Court`}</Text>
                       </View>
                     </View>
                     <View style={styles.lightArrowButton}>

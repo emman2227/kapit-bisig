@@ -138,6 +138,7 @@ export default function DistributionPageClient() {
         disasterEventId: payload.disasterEventId,
         barangay: payload.barangay,
         assignedBarangays: payload.assignedBarangays,
+        location: payload.location,
         assignedStaffIds: payload.assignedStaffIds,
         scheduled: payload.scheduled,
         endsAt: payload.endsAt,

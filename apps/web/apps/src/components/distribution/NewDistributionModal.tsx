@@ -9,6 +9,7 @@ import { useAuth } from '@/lib/AuthContext'
 export type CreateDistributionPayload = {
   barangay: string
   assignedBarangays?: string[]
+  location?: string
   assignedStaffIds: string[]
   scheduled: string
   endsAt: string
@@ -19,6 +20,7 @@ export type CreateDistributionPayload = {
 
 type StepFieldErrors = {
   barangay?: string
+  location?: string
   scheduled?: string
   endsAt?: string
   notes?: string
@@ -33,6 +35,8 @@ type ScanEligibleData = {
 
 const DEBOUNCE_MS = 300
 const NOTES_MAX = 2000
+const LOCATION_MAX = 60
+const LOCATION_REGEX = /^[a-zA-Z0-9\s\-,\.\/:#()ñÑ']*$/
 const SCHEDULE_MIN_LEAD_MINUTES = 5
 const DISTRIBUTION_START_HOUR = 6
 const DISTRIBUTION_END_HOUR = 20
@@ -92,6 +96,7 @@ export default function NewDistributionModal({
 
   const [step, setStep] = useState(1)
   const [barangay, setBarangay] = useState('')
+  const [location, setLocation] = useState('')
   const [assignedStaffIds, setAssignedStaffIds] = useState<string[]>([])
   const [isCreating, setIsCreating] = useState(false)
 
@@ -117,6 +122,7 @@ export default function NewDistributionModal({
     if (!open) return
     setStep(1)
     setBarangay('')
+    setLocation('')
     setAssignedStaffIds([])
     setScheduled('')
     setEndsAt('')
@@ -192,6 +198,12 @@ export default function NewDistributionModal({
     const out: StepFieldErrors = {}
     if (!barangay.trim()) {
       out.barangay = 'Please select a barangay for this distribution.'
+    }
+    const trimmedLoc = location.trim()
+    if (trimmedLoc.length > LOCATION_MAX) {
+      out.location = `Location must be ${LOCATION_MAX} characters or fewer.`
+    } else if (trimmedLoc && !LOCATION_REGEX.test(trimmedLoc)) {
+      out.location = 'Location contains invalid characters. Only letters, numbers, spaces, and standard address punctuation (-, ,, ., /, #, \', (, ), ñ, Ñ) are allowed.'
     }
     return out
   }
@@ -450,6 +462,10 @@ export default function NewDistributionModal({
         nextErrors.barangay = issue.message || 'Barangay is required.'
         setStep(1)
       }
+      if (path.includes('location')) {
+        nextErrors.location = issue.message || 'Location is invalid.'
+        setStep(1)
+      }
       if (path.includes('scheduled')) {
         nextErrors.scheduled = issue.message || 'Scheduled date/time is invalid.'
         setStep(2)
@@ -495,6 +511,7 @@ export default function NewDistributionModal({
     try {
       await onCreate({
         barangay,
+        location: location.trim() ? location.trim() : (barangay ? `${barangay} Covered Court` : undefined),
         assignedStaffIds,
         scheduled: new Date(scheduled).toISOString(),
         endsAt: new Date(endsAt).toISOString(),
@@ -678,6 +695,7 @@ export default function NewDistributionModal({
                           setBarangay(b)
                           setAssignedStaffIds([])
                           setErrors({})
+                          setLocation((prev) => (!prev || prev.endsWith('Covered Court') ? `${b} Covered Court` : prev))
                         }}
                         className={[
                           'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left text-sm font-medium transition-colors',
@@ -699,6 +717,41 @@ export default function NewDistributionModal({
                   Selected: <strong className="text-gray-900 dark:text-slate-100">{barangay || 'None'}</strong>
                 </div>
                 {errors.barangay && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{errors.barangay}</p>}
+
+                {/* Specific Distribution Venue / Location */}
+                <div className="mt-4">
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700 dark:text-slate-200">
+                    Distribution Venue / Location
+                  </label>
+                  <p className="mb-2 text-xs text-gray-500 dark:text-slate-400">
+                    Specify the distribution site (e.g. Covered Court, Elementary School, or Barangay Hall).
+                  </p>
+                  <input
+                    type="text"
+                    value={location}
+                    onChange={(e) => {
+                      const next = e.target.value
+                      setLocation(next)
+                      if (next && !LOCATION_REGEX.test(next)) {
+                        setErrors((prev) => ({
+                          ...prev,
+                          location: 'Location contains invalid characters. Disallowed symbols like <, >, {, }, $, ;, ", etc. are not allowed.',
+                        }))
+                      } else {
+                        setErrors((prev) => ({ ...prev, location: undefined }))
+                      }
+                    }}
+                    maxLength={LOCATION_MAX}
+                    placeholder={barangay ? `e.g., ${barangay} Covered Court` : 'e.g., Poblacion Covered Court'}
+                    className={`w-full rounded-xl border bg-white dark:bg-slate-800 px-4 py-2.5 text-sm text-gray-700 dark:text-slate-200 shadow-sm outline-none transition-colors ${
+                      errors.location
+                        ? 'border-red-400 focus:border-red-500'
+                        : 'border-gray-200 dark:border-slate-700 focus:border-gray-400 dark:focus:border-slate-500'
+                    }`}
+                  />
+                  <div className="mt-1.5 text-xs text-gray-500 dark:text-slate-400">{location.length}/{LOCATION_MAX}</div>
+                  {errors.location && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{errors.location}</p>}
+                </div>
 
                 {/* Distribution Eligibility Mode */}
                 <div className="mt-5 rounded-2xl border border-gray-200 dark:border-slate-800 bg-gray-50/70 dark:bg-slate-800/40 p-4 sm:p-5">
@@ -865,7 +918,7 @@ export default function NewDistributionModal({
                   <div>
                     <span className="text-slate-500 dark:text-slate-400 font-medium">Target Location:</span>
                     <p className="font-bold text-slate-900 dark:text-slate-100 mt-0.5 flex items-center gap-1.5">
-                      📍 {barangay}
+                      📍 {barangay}{location ? ` • ${location}` : ''}
                       <button
                         type="button"
                         onClick={() => setStep(1)}

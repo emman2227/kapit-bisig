@@ -86,6 +86,7 @@ export interface ResidentDistributionItem {
   id: string;
   barangay: string;
   assignedBarangays?: string[];
+  location?: string;
   scheduled?: string;
   endsAt?: string;
   notes?: string;

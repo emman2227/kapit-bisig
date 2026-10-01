@@ -178,6 +178,7 @@ router.post(
         disasterEventId,
         barangay,
         assignedBarangays = [],
+        location,
         assignedStaffIds,
         scheduled,
         endsAt,
@@ -373,6 +374,7 @@ router.post(
         disasterEventId: disasterEvent ? disasterEvent._id : null,
         barangay,
         assignedBarangays,
+        location: location?.trim() || `${barangay} Covered Court`,
         assignedStaffIds: uniqueStaffIds,
         scheduled,
         endsAt: new Date(endsAt),
@@ -391,6 +393,7 @@ router.post(
 
       await logAudit(req, 'DISTRIBUTION_CREATED', 'Distribution', distribution._id.toString(), {
         barangay,
+        location: distribution.location,
         disasterEventId: disasterEvent ? disasterEvent._id.toString() : null,
         disasterEventName: disasterEvent ? disasterEvent.name : null,
         assignedBarangays,

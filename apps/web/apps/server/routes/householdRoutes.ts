@@ -751,7 +751,7 @@ router.get('/distributions', authMiddleware, authenticatedResidentReadRateLimite
       ],
     })
       .setOptions({ sanitizeFilter: false })
-      .select('barangay assignedBarangays scheduled endsAt notes status archivedAt createdAt requiresBeneficiaryApproval')
+      .select('barangay assignedBarangays location scheduled endsAt notes status archivedAt createdAt requiresBeneficiaryApproval')
       .sort({ scheduled: 1, createdAt: -1 })
       .limit(50)
       .lean();
@@ -822,6 +822,7 @@ router.get('/distributions', authMiddleware, authenticatedResidentReadRateLimite
         id,
         barangay: distribution.barangay,
         assignedBarangays: distribution.assignedBarangays ?? [],
+        location: distribution.location?.trim() || `${distribution.barangay} Covered Court`,
         scheduled: distribution.scheduled,
         endsAt: distribution.endsAt,
         notes: distribution.notes || '',

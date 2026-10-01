@@ -99,6 +99,7 @@ interface DistributionResponseItem {
   _id?: string;
   barangay: string;
   assignedBarangays?: string[];
+  location?: string;
   scheduled?: string;
   notes?: string;
   createdAt?: string;
@@ -161,7 +162,7 @@ function toDistribution(item: DistributionResponseItem, index: number): Distribu
       : (item.notes || 'Relief goods distribution for eligible residents.'),
     date,
     time,
-    location: `${item.barangay} Covered Court`,
+    location: item.location?.trim() || `${item.barangay} Covered Court`,
     imageUrl: 'https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800&q=80',
     coverage: targetAreas,
     coverageList,
