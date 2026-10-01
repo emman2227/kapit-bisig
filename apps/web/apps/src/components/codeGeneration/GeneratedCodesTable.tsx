@@ -21,6 +21,8 @@ type Props = {
   batchTitle?: string
   hasActiveBatch?: boolean
   selectedBarangay?: string
+  onRefresh?: () => void
+  isRefreshing?: boolean
 }
 
 function StatusBadge({ status }: { status: CodeStatus }) {
@@ -65,6 +67,8 @@ export default function GeneratedCodesTable({
   batchTitle,
   hasActiveBatch,
   selectedBarangay,
+  onRefresh,
+  isRefreshing = false,
 }: Props) {
   return (
     <section className="overflow-hidden rounded-[2rem] border border-slate-200/90 dark:border-slate-700/80 bg-white dark:bg-slate-900 shadow-sm flex flex-col">
@@ -110,6 +114,21 @@ export default function GeneratedCodesTable({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {onRefresh && (
+            <button
+              type="button"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="h-10 px-3 text-xs font-semibold text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white border border-gray-200 dark:border-slate-700 rounded-xl bg-white/80 dark:bg-slate-800/80 hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors inline-flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+              title="Refresh status of codes from server"
+              aria-label="Refresh code statuses"
+            >
+              <svg className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+              <span>{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
+            </button>
+          )}
           {viewMode === 'BATCH' && hasActiveBatch && onClearActiveBatch && (
             <button
               type="button"

@@ -127,9 +127,29 @@ export default function SelectDropdown({
     if (disabled) setOpen(false)
   }, [disabled])
 
+  const handleToggle = () => {
+    if (!open && usePortal && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect()
+      if (direction === 'up') {
+        setCoords({
+          bottom: window.innerHeight - rect.top + 6,
+          left: rect.left,
+          minWidth: rect.width,
+        })
+      } else {
+        setCoords({
+          top: rect.bottom + 6,
+          left: rect.left,
+          minWidth: rect.width,
+        })
+      }
+    }
+    setOpen((prev) => !prev)
+  }
+
   const positionClass = direction === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
 
-  const menuContent = open ? (
+  const menuContent = open && (!usePortal || coords) ? (
     <div
       id={menuId}
       ref={menuRef}
@@ -192,7 +212,7 @@ export default function SelectDropdown({
         aria-expanded={open}
         aria-controls={menuId}
         aria-label={ariaLabel}
-        onClick={() => setOpen((prev) => !prev)}
+        onClick={handleToggle}
         className={cx(BASE_BUTTON_CLASS, buttonClassName)}
       >
         <span className={cx('truncate', hasSelection ? 'text-gray-900 dark:text-gray-100' : 'text-gray-500 dark:text-gray-400')}>

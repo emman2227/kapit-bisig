@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { BARANGAY_OPTIONS, getScopedBarangays } from '@/lib/api'
 import { showToast } from '@/lib/toast'
 import { useAuth } from '@/lib/AuthContext'
@@ -244,7 +244,9 @@ export default function CodeGenerationTable() {
   const [history, setHistory] = useState<BatchHistoryItem[]>([])
   const [viewMode, setViewMode] = useState<'BATCH' | 'REGISTRY'>('BATCH')
   const [hasActiveBatch, setHasActiveBatch] = useState(false)
+  const [activeBatchId, setActiveBatchId] = useState('')
   const [batchTitle, setBatchTitle] = useState('Generated Codes Batch')
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | CodeStatus>('ALL')
@@ -278,7 +280,102 @@ export default function CodeGenerationTable() {
     return () => window.clearInterval(intervalId)
   }, [])
 
-  // Restore active batch from session storage on mount
+  // Sync statuses of batch tokens with live database records
+  const syncBatchStatuses = useCallback(
+    async (targetBatchId: string, existingRows: GeneratedCodeRow[]): Promise<GeneratedCodeRow[]> => {
+      if (!targetBatchId || !existingRows.length) return existingRows
+
+      try {
+        const response = await fetch(`${API_URL}/residents/codes/batch/${encodeURIComponent(targetBatchId)}`, {
+          credentials: 'include',
+        })
+        if (!response.ok) return existingRows
+        const json = await response.json()
+        if (json.success && Array.isArray(json.tokens)) {
+          const prefixMap = new Map<string, { status: CodeStatus; expiry?: string }>()
+          for (const t of json.tokens) {
+            const prefix = (t.code || '').replace(/-/g, '').slice(0, 4).toUpperCase()
+            if (prefix) {
+              prefixMap.set(prefix, {
+                status: normalizeStatus(t.status),
+                expiry: t.expiry ? toReadableDate(t.expiry) : undefined,
+              })
+            }
+          }
+
+          const updatedRows = existingRows.map((row) => {
+            const prefix = row.code.replace(/-/g, '').slice(0, 4).toUpperCase()
+            const live = prefixMap.get(prefix)
+            if (live) {
+              return {
+                ...row,
+                status: live.status,
+                expiry: live.expiry || row.expiry,
+              }
+            }
+            return row
+          })
+
+          setBatchRows(updatedRows)
+
+          const usedCount = updatedRows.filter((r) => r.status === 'USED').length
+          const unusedCount = updatedRows.filter((r) => r.status === 'UNUSED').length
+          const expiredCount = updatedRows.filter((r) => r.status === 'EXPIRED').length
+
+          // Update session storage with refreshed statuses
+          try {
+            const cached = sessionStorage.getItem(ACTIVE_BATCH_STORAGE_KEY)
+            if (cached) {
+              const parsed = JSON.parse(cached)
+              if (parsed.batchId === targetBatchId) {
+                sessionStorage.setItem(
+                  ACTIVE_BATCH_STORAGE_KEY,
+                  JSON.stringify({
+                    ...parsed,
+                    rows: updatedRows,
+                    summary: {
+                      ...parsed.summary,
+                      used: usedCount,
+                      unused: unusedCount,
+                      expired: expiredCount,
+                    },
+                  })
+                )
+              }
+            }
+          } catch {
+            // Ignore
+          }
+
+          // Update in-memory history state
+          setHistory((prev) =>
+            prev.map((item) =>
+              item.batchId === targetBatchId
+                ? {
+                    ...item,
+                    rows: updatedRows,
+                    summary: {
+                      ...item.summary,
+                      unused: unusedCount,
+                      used: usedCount,
+                      expired: expiredCount,
+                    },
+                  }
+                : item
+            )
+          )
+
+          return updatedRows
+        }
+      } catch {
+        // Silently keep existing rows on network error
+      }
+      return existingRows
+    },
+    []
+  )
+
+  // Restore active batch from session storage on mount and sync with live database
   useEffect(() => {
     try {
       const cached = sessionStorage.getItem(ACTIVE_BATCH_STORAGE_KEY)
@@ -290,12 +387,16 @@ export default function CodeGenerationTable() {
           if (parsed.barangay) setBarangay(parsed.barangay)
           setHasActiveBatch(true)
           setBatchTitle(parsed.batchId ? `Active Batch: ${parsed.batchId}` : 'Active Generated Batch')
+          if (parsed.batchId) {
+            setActiveBatchId(parsed.batchId)
+            syncBatchStatuses(parsed.batchId, parsed.rows)
+          }
         }
       }
     } catch {
       // Ignore session storage errors
     }
-  }, [])
+  }, [syncBatchStatuses])
 
   // Load batch history
   useEffect(() => {
@@ -315,7 +416,7 @@ export default function CodeGenerationTable() {
   }, [barangay])
 
   // Fetch real-time token stats when barangay changes
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     if (!barangay) {
       setActiveUnusedLabel('Select a barangay to view active unused codes')
       return
@@ -340,57 +441,75 @@ export default function CodeGenerationTable() {
     } catch {
       setActiveUnusedLabel('Active unused codes: unavailable')
     }
-  }
+  }, [barangay])
 
   useEffect(() => {
     fetchStats()
-  }, [barangay])
+  }, [fetchStats])
 
   // Fetch registry tokens when in REGISTRY mode
+  const fetchRegistry = useCallback(async () => {
+    if (!barangay) {
+      setRegistryRows([])
+      return
+    }
+
+    try {
+      const statusParam = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
+      const response = await fetch(
+        `${API_URL}/residents/codes/list?barangay=${encodeURIComponent(barangay)}${statusParam}&limit=100`,
+        { credentials: 'include' }
+      )
+
+      if (!response.ok) throw new Error('Registry endpoint failed')
+
+      const json = await response.json()
+      if (json.success && Array.isArray(json.tokens)) {
+        const mapped: GeneratedCodeRow[] = json.tokens.map((t: any) => ({
+          code: t.code,
+          barangay: t.barangay,
+          status: normalizeStatus(t.status),
+          expiry: toReadableDate(t.expiry),
+        }))
+        setRegistryRows(mapped)
+        setSummary({
+          generatedCount: json.total || mapped.length,
+          failedCount: 0,
+        })
+      }
+    } catch {
+      setErrorBanner('Failed to load token registry for this barangay.')
+    }
+  }, [barangay, statusFilter])
+
   useEffect(() => {
-    let mounted = true
-
-    const fetchRegistry = async () => {
-      if (viewMode !== 'REGISTRY' || !barangay) {
-        if (!barangay && mounted) setRegistryRows([])
-        return
-      }
-
-      try {
-        const statusParam = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
-        const response = await fetch(
-          `${API_URL}/residents/codes/list?barangay=${encodeURIComponent(barangay)}${statusParam}&limit=100`,
-          { credentials: 'include' }
-        )
-
-        if (!response.ok) throw new Error('Registry endpoint failed')
-
-        const json = await response.json()
-        if (mounted && json.success && Array.isArray(json.tokens)) {
-          const mapped: GeneratedCodeRow[] = json.tokens.map((t: any) => ({
-            code: t.code,
-            barangay: t.barangay,
-            status: normalizeStatus(t.status),
-            expiry: toReadableDate(t.expiry),
-          }))
-          setRegistryRows(mapped)
-          setSummary({
-            generatedCount: json.total || mapped.length,
-            failedCount: 0,
-          })
-        }
-      } catch {
-        if (mounted) {
-          setErrorBanner('Failed to load token registry for this barangay.')
-        }
-      }
+    if (viewMode === 'REGISTRY') {
+      fetchRegistry()
     }
+  }, [viewMode, fetchRegistry])
 
-    fetchRegistry()
-    return () => {
-      mounted = false
+  // Manual refresh of live statuses
+  const onRefresh = async () => {
+    try {
+      setIsRefreshing(true)
+      if (viewMode === 'BATCH') {
+        if (activeBatchId && batchRows.length > 0) {
+          await syncBatchStatuses(activeBatchId, batchRows)
+        }
+        const updatedHistory = await loadBatchHistoryFromApi(barangay)
+        setHistory(updatedHistory)
+        await fetchStats()
+      } else {
+        await fetchRegistry()
+        await fetchStats()
+      }
+      showToast.success('Statuses updated.')
+    } catch {
+      showToast.error('Failed to refresh statuses.')
+    } finally {
+      setIsRefreshing(false)
     }
-  }, [barangay, viewMode, statusFilter])
+  }
 
   const submitGeneration = async () => {
     if (!canSubmit || isLoading) return
@@ -435,6 +554,7 @@ export default function CodeGenerationTable() {
       setStatusFilter('ALL')
       setViewMode('BATCH')
       setHasActiveBatch(true)
+      setActiveBatchId(normalized.batchId)
       setBatchTitle(`Batch: ${normalized.batchId}`)
 
       // Persist active batch in session storage so navigating away doesn't discard plain codes
@@ -524,19 +644,8 @@ export default function CodeGenerationTable() {
 
   const onViewBatch = async (batchId: string) => {
     const selected = history.find((item) => item.batchId === batchId)
-    if (selected && selected.rows?.length) {
-      setBatchRows(selected.rows)
-      setSummary(selected.summary)
-      setBarangay(selected.barangay)
-      setSearch('')
-      setStatusFilter('ALL')
-      setErrorBanner('')
-      setViewMode('BATCH')
-      setBatchTitle(`Batch: ${batchId}`)
-      return
-    }
+    const existingRows = selected?.rows?.length ? selected.rows : []
 
-    // Otherwise fetch tokens for this historical batch from the API
     try {
       setIsLoading(true)
       const response = await fetch(`${API_URL}/residents/codes/batch/${encodeURIComponent(batchId)}`, {
@@ -544,23 +653,76 @@ export default function CodeGenerationTable() {
       })
       const json = await response.json()
       if (json.success && Array.isArray(json.tokens)) {
-        const rows: GeneratedCodeRow[] = json.tokens.map((t: any) => ({
-          code: t.code,
-          barangay: t.barangay,
-          status: normalizeStatus(t.status),
-          expiry: toReadableDate(t.expiry),
-        }))
-        setBatchRows(rows)
+        let finalRows: GeneratedCodeRow[] = []
+
+        if (existingRows.length > 0) {
+          // If we have plain unmasked codes from this session, merge live statuses into them
+          const prefixMap = new Map<string, { status: CodeStatus; expiry?: string }>()
+          for (const t of json.tokens) {
+            const prefix = (t.code || '').replace(/-/g, '').slice(0, 4).toUpperCase()
+            if (prefix) {
+              prefixMap.set(prefix, {
+                status: normalizeStatus(t.status),
+                expiry: t.expiry ? toReadableDate(t.expiry) : undefined,
+              })
+            }
+          }
+
+          finalRows = existingRows.map((row) => {
+            const prefix = row.code.replace(/-/g, '').slice(0, 4).toUpperCase()
+            const live = prefixMap.get(prefix)
+            if (live) {
+              return {
+                ...row,
+                status: live.status,
+                expiry: live.expiry || row.expiry,
+              }
+            }
+            return row
+          })
+        } else {
+          // Historical batch from server (masked codes)
+          finalRows = json.tokens.map((t: any) => ({
+            code: t.code,
+            barangay: t.barangay,
+            status: normalizeStatus(t.status),
+            expiry: toReadableDate(t.expiry),
+          }))
+        }
+
+        const usedCount = finalRows.filter((r) => r.status === 'USED').length
+        const unusedCount = finalRows.filter((r) => r.status === 'UNUSED').length
+        const expiredCount = finalRows.filter((r) => r.status === 'EXPIRED').length
+
+        setBatchRows(finalRows)
         setSummary({
-          generatedCount: rows.length,
+          generatedCount: finalRows.length,
           failedCount: 0,
         })
         if (selected?.barangay) setBarangay(selected.barangay)
+        setActiveBatchId(batchId)
         setSearch('')
         setStatusFilter('ALL')
         setErrorBanner('')
         setViewMode('BATCH')
         setBatchTitle(`Batch: ${batchId}`)
+
+        setHistory((prev) =>
+          prev.map((item) =>
+            item.batchId === batchId
+              ? {
+                  ...item,
+                  rows: finalRows,
+                  summary: {
+                    ...item.summary,
+                    unused: unusedCount,
+                    used: usedCount,
+                    expired: expiredCount,
+                  },
+                }
+              : item
+          )
+        )
       }
     } catch {
       showToast.error('Failed to load batch records')
@@ -578,6 +740,7 @@ export default function CodeGenerationTable() {
     setBatchRows([])
     setSummary(null)
     setHasActiveBatch(false)
+    setActiveBatchId('')
     setBatchTitle('Generated Codes Batch')
     showToast.success('Batch view cleared.')
   }
@@ -617,6 +780,8 @@ export default function CodeGenerationTable() {
         batchTitle={batchTitle}
         hasActiveBatch={hasActiveBatch}
         selectedBarangay={barangay}
+        onRefresh={onRefresh}
+        isRefreshing={isRefreshing}
         downloadActions={
           <DownloadActions
             disabled={!filteredRows.length}
