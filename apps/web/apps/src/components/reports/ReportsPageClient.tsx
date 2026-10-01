@@ -661,11 +661,19 @@ export default function ReportsPageClient() {
       {generated && !loading && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
           {/* Monthly Trend */}
-          <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)] flex flex-col justify-between">
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Monthly Volume Comparison</h3>
-              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Distributions planned vs actual claims fulfilled</p>
+          <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)] flex flex-col justify-between transition-all hover:border-slate-300 dark:hover:border-slate-700">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Monthly Volume Comparison</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Distributions planned vs actual claims fulfilled</p>
+              </div>
+              {monthlyTrends.length > 0 && (
+                <span className="self-start sm:self-auto text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200/60 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/40 whitespace-nowrap">
+                  {monthlyTrends.length} {monthlyTrends.length === 1 ? 'Month' : 'Months'} Logged
+                </span>
+              )}
             </div>
+
             {monthlyTrends.length > 0 ? (
               <MiniBarChart
                 labels={monthlyTrends.map((t) => t.month.split(' ')[0])}
@@ -675,16 +683,32 @@ export default function ReportsPageClient() {
                 legendB="Claims"
               />
             ) : (
-              <div className="py-10 text-center text-xs text-slate-400">No trend data available</div>
+              <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 dark:text-slate-500">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-2.5 text-slate-400">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                </div>
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">No trend data available</span>
+                <span className="text-[11px] text-slate-400 mt-0.5">Historical distributions will appear here</span>
+              </div>
             )}
           </div>
 
           {/* Barangay Donut */}
-          <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)] flex flex-col justify-between">
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Sector Allocation Share</h3>
-              <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Distribution events share by barangay</p>
+          <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)] flex flex-col justify-between transition-all hover:border-slate-300 dark:hover:border-slate-700">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+              <div>
+                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Sector Allocation Share</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Distribution events share by barangay</p>
+              </div>
+              {barangayBreakdown.length > 0 && (
+                <span className="self-start sm:self-auto text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40 whitespace-nowrap">
+                  {barangayBreakdown.length} {barangayBreakdown.length === 1 ? 'Sector' : 'Sectors'} Active
+                </span>
+              )}
             </div>
+
             {barangayBreakdown.length > 0 ? (
               <Donut
                 segments={barangayBreakdown.map((b, i) => ({
@@ -694,7 +718,16 @@ export default function ReportsPageClient() {
                 }))}
               />
             ) : (
-              <div className="py-10 text-center text-xs text-slate-400">No sector data available</div>
+              <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 dark:text-slate-500">
+                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-2.5 text-slate-400">
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                  </svg>
+                </div>
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">No sector data available</span>
+                <span className="text-[11px] text-slate-400 mt-0.5">Barangay event logs will populate sector metrics</span>
+              </div>
             )}
           </div>
         </div>
