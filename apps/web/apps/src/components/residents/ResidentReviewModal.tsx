@@ -273,13 +273,18 @@ export default function ResidentReviewModal({
   return (
     <div className="fixed inset-0 z-[120] overflow-y-auto" role="dialog" aria-modal="true">
       <div className="flex min-h-full items-start justify-center px-4 py-8">
-        <div className="fixed inset-0 bg-black/55" onClick={onClose} />
+        <div className="fixed inset-0 bg-black/45 backdrop-blur-sm" onClick={onClose} />
 
-        <div className="relative flex max-h-[calc(100vh-4rem)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-[0_24px_80px_rgba(0,0,0,0.25)]">
+        <div className="relative flex max-h-[calc(100vh-4rem)] w-full max-w-6xl flex-col overflow-hidden rounded-3xl border border-gray-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-2xl">
+          {/* Top Emerald Accent Bar */}
+          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 overflow-hidden shrink-0">
+            <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-[#0F533A] shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
+          </div>
+
           <div className="shrink-0 border-b border-gray-100 dark:border-slate-800 bg-gradient-to-r from-white via-slate-50 to-white dark:from-slate-900 dark:via-slate-800/30 dark:to-slate-900 px-6 py-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-bold uppercase tracking-[0.24em] text-gray-400 dark:text-slate-500">{eyebrow}</p>
+                <p className="text-xs font-bold uppercase tracking-[0.24em] text-emerald-600 dark:text-emerald-400">{eyebrow}</p>
                 <h2 className="mt-1 text-2xl font-bold text-gray-900 dark:text-slate-100">{getDisplayName(resident)}</h2>
                 {resident ? (
                   <p className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
@@ -292,11 +297,11 @@ export default function ResidentReviewModal({
               </div>
               <button
                 onClick={onClose}
-                className="rounded-full p-2 text-gray-400 dark:text-slate-400 transition-colors hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-700 dark:hover:text-slate-200"
+                className="rounded-xl border border-gray-200 dark:border-slate-700 p-2 text-gray-400 hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-700 dark:hover:text-slate-200 transition-colors"
                 aria-label="Close resident review modal"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
