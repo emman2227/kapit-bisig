@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 export type SelectDropdownOption = {
   value: string
@@ -18,13 +19,16 @@ type SelectDropdownProps = {
   className?: string
   buttonClassName?: string
   menuClassName?: string
+  optionClassName?: string
+  direction?: 'up' | 'down'
+  usePortal?: boolean
 }
 
 const BASE_BUTTON_CLASS =
   'inline-flex h-11 w-full items-center justify-between rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 text-left text-sm shadow-[0_2px_10px_rgba(0,0,0,0.06)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.2)] outline-none transition focus:ring-2 focus:ring-[#0F533A]/20 dark:focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:bg-gray-50 dark:disabled:bg-slate-700 disabled:text-gray-400 dark:disabled:text-gray-500'
 
 const BASE_MENU_CLASS =
-  'absolute left-0 top-full z-50 mt-2 w-full max-h-64 overflow-y-auto rounded-2xl border border-[#DCDCDC] dark:border-slate-600 bg-[#ECECEC] dark:bg-slate-700 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)]'
+  'z-50 max-h-64 overflow-y-auto rounded-2xl border border-[#DCDCDC] dark:border-slate-600 bg-[#ECECEC] dark:bg-slate-700 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)]'
 
 const BASE_OPTION_CLASS =
   'w-full flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-colors'
@@ -44,11 +48,15 @@ export default function SelectDropdown({
   className,
   buttonClassName,
   menuClassName,
+  optionClassName,
+  direction = 'down',
+  usePortal = false,
 }: SelectDropdownProps) {
   const [open, setOpen] = useState(false)
   const buttonRef = useRef<HTMLButtonElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
   const generatedId = useId()
+  const [coords, setCoords] = useState<{ top?: number; bottom?: number; left: number; minWidth?: number } | null>(null)
 
   const controlId = useMemo(
     () => id || `select-dropdown-${generatedId.replace(/:/g, '')}`,
@@ -84,8 +92,94 @@ export default function SelectDropdown({
   }, [open])
 
   useEffect(() => {
+    if (!open || !usePortal) return
+
+    const updateCoords = () => {
+      if (!buttonRef.current) return
+      const rect = buttonRef.current.getBoundingClientRect()
+      if (direction === 'up') {
+        setCoords({
+          bottom: window.innerHeight - rect.top + 6,
+          left: rect.left,
+          minWidth: rect.width,
+        })
+      } else {
+        setCoords({
+          top: rect.bottom + 6,
+          left: rect.left,
+          minWidth: rect.width,
+        })
+      }
+    }
+
+    updateCoords()
+    const handleClose = () => setOpen(false)
+    window.addEventListener('scroll', handleClose, true)
+    window.addEventListener('resize', handleClose)
+
+    return () => {
+      window.removeEventListener('scroll', handleClose, true)
+      window.removeEventListener('resize', handleClose)
+    }
+  }, [open, usePortal, direction])
+
+  useEffect(() => {
     if (disabled) setOpen(false)
   }, [disabled])
+
+  const positionClass = direction === 'up' ? 'bottom-full mb-2' : 'top-full mt-2'
+
+  const menuContent = open ? (
+    <div
+      id={menuId}
+      ref={menuRef}
+      role="listbox"
+      aria-labelledby={controlId}
+      style={
+        usePortal && coords
+          ? {
+              position: 'fixed',
+              top: coords.top,
+              bottom: coords.bottom,
+              left: coords.left,
+              minWidth: coords.minWidth,
+              zIndex: 9999,
+            }
+          : undefined
+      }
+      className={cx(
+        BASE_MENU_CLASS,
+        usePortal ? undefined : cx('absolute left-0', positionClass),
+        menuClassName
+      )}
+    >
+      {options.map((opt) => {
+        const isSelected = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="option"
+            aria-selected={isSelected}
+            onClick={() => {
+              onChange(opt.value)
+              setOpen(false)
+            }}
+            className={cx(
+              BASE_OPTION_CLASS,
+              isSelected ? 'bg-[#EAB308] text-gray-900 font-medium' : 'text-slate-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-slate-600/70',
+              optionClassName
+            )}
+          >
+            <span className="w-5 flex items-center justify-center text-gray-900 shrink-0">
+              {isSelected ? <CheckIcon /> : null}
+            </span>
+            <span className="truncate">{opt.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  ) : null
 
   return (
     <div className={cx('relative', className)}>
@@ -107,40 +201,11 @@ export default function SelectDropdown({
         <ChevronDownIcon open={open} />
       </button>
 
-      {open ? (
-        <div
-          id={menuId}
-          ref={menuRef}
-          role="listbox"
-          aria-labelledby={controlId}
-          className={cx(BASE_MENU_CLASS, menuClassName)}
-        >
-          {options.map((opt) => {
-            const isSelected = opt.value === value
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="option"
-                aria-selected={isSelected}
-                onClick={() => {
-                  onChange(opt.value)
-                  setOpen(false)
-                }}
-                className={cx(
-                  BASE_OPTION_CLASS,
-                  isSelected ? 'bg-[#EAB308] text-gray-900' : 'text-slate-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-slate-600/70'
-                )}
-              >
-                <span className="w-5 flex items-center justify-center text-gray-900">
-                  {isSelected ? <CheckIcon /> : null}
-                </span>
-                <span className="truncate">{opt.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      ) : null}
+      {usePortal && typeof document !== 'undefined'
+        ? menuContent
+          ? createPortal(menuContent, document.body)
+          : null
+        : menuContent}
     </div>
   )
 }
@@ -148,7 +213,7 @@ export default function SelectDropdown({
 function ChevronDownIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={cx('h-4 w-4 text-gray-500 transition-transform', open ? 'rotate-180' : '')}
+      className={cx('h-4 w-4 text-gray-500 transition-transform shrink-0', open ? 'rotate-180' : '')}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"

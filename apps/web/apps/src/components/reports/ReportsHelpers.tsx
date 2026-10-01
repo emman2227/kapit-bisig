@@ -1,7 +1,8 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState } from 'react'
 import { type ReportDistributionRow } from '@/lib/api'
+import SelectDropdown from '@/components/ui/SelectDropdown'
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -93,60 +94,16 @@ export function Dropdown({
   buttonLabel: string
   widthClass?: string
 }) {
-  const [open, setOpen] = useState(false)
-  const btnRef = useRef<HTMLButtonElement>(null)
-  const menuRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Node
-      if (!btnRef.current?.contains(t) && !menuRef.current?.contains(t)) setOpen(false)
-    }
-    document.addEventListener('mousedown', onDown)
-    return () => document.removeEventListener('mousedown', onDown)
-  }, [])
-
-  const selectedLabel = items.find((i) => i.value === value)?.label ?? buttonLabel
-
   return (
-    <div className={`relative ${widthClass}`}>
-      <button
-        ref={btnRef}
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-slate-700 shadow-sm transition-all hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-      >
-        <span className="text-xs sm:text-sm truncate font-medium">{selectedLabel}</span>
-        <ChevronDownIcon />
-      </button>
-      {open && (
-        <div
-          ref={menuRef}
-          className="absolute left-0 top-full z-50 mt-1.5 w-full max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl dark:border-slate-700 dark:bg-slate-800"
-        >
-          {items.map((opt) => {
-            const isSelected = opt.value === value
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => { onChange(opt.value); setOpen(false) }}
-                className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-xs sm:text-sm text-left transition-colors ${
-                  isSelected
-                    ? 'bg-emerald-50 text-emerald-800 font-semibold dark:bg-emerald-950/60 dark:text-emerald-300'
-                    : 'text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-700/60'
-                }`}
-              >
-                <span className="w-4 flex items-center justify-center">
-                  {isSelected ? <CheckIcon /> : null}
-                </span>
-                <span className="truncate">{opt.label}</span>
-              </button>
-            )
-          })}
-        </div>
-      )}
-    </div>
+    <SelectDropdown
+      value={value}
+      options={items}
+      onChange={onChange}
+      placeholder={buttonLabel}
+      className={widthClass}
+      buttonClassName="!h-[38px] !px-3.5 !py-2 !text-xs sm:!text-sm !font-medium"
+      menuClassName="!rounded-2xl"
+    />
   )
 }
 
@@ -576,7 +533,7 @@ export function Pagination({
   totalItems,
   onPageChange,
   onPageSizeChange,
-  pageSizeOptions = [5, 10, 20, 50],
+  pageSizeOptions = [5, 10, 20, 50, 100],
 }: PaginationProps) {
   if (totalItems <= 0) return null
 
@@ -615,19 +572,20 @@ export function Pagination({
           <strong className="font-semibold text-slate-700 dark:text-slate-200">{totalItems}</strong> entries
         </span>
 
-        <div className="flex items-center gap-1.5 pl-2 border-l border-slate-200 dark:border-slate-700">
-          <span>Rows:</span>
-          <select
-            value={pageSize}
-            onChange={(e) => onPageSizeChange(Number(e.target.value))}
-            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 focus:border-emerald-500 focus:outline-none dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 cursor-pointer"
-          >
-            {pageSizeOptions.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
+        <div className="flex items-center gap-2 pl-3 border-l border-slate-200 dark:border-slate-700">
+          <span className="text-xs font-medium text-slate-500 dark:text-slate-400">Rows:</span>
+          <SelectDropdown
+            value={String(pageSize)}
+            options={pageSizeOptions.map((opt) => ({ value: String(opt), label: String(opt) }))}
+            onChange={(val) => onPageSizeChange(Number(val))}
+            ariaLabel="Rows per page"
+            className="w-[72px]"
+            buttonClassName="!h-8 !px-2.5 !py-1 !text-xs !font-semibold !rounded-lg !border-slate-200 dark:!border-slate-700 !bg-slate-50 dark:!bg-slate-800 text-slate-700 dark:text-slate-200 !shadow-none hover:bg-slate-100 dark:hover:bg-slate-700/80"
+            menuClassName="!min-w-[76px] !w-auto !rounded-xl !p-1.5 !shadow-xl"
+            optionClassName="!px-2 !py-1.5 !text-xs !rounded-lg !gap-1.5"
+            direction="up"
+            usePortal={true}
+          />
         </div>
       </div>
 
