@@ -32,10 +32,11 @@ import {
   syncPendingClaims,
   type ClaimSyncSnapshot,
 } from '../services/sync/ClaimSyncCoordinator';
+import BottomNavigation, { BottomTab } from './ui/BottomNavigation';
 
 interface VolunteerQRScannerScreenProps {
   onBack: () => void;
-  onNavigate?: (screen: 'home' | 'qr' | 'profile') => void;
+  onNavigate?: (screen: BottomTab) => void;
 }
 
 interface ResolvedResident {
@@ -137,7 +138,7 @@ function getToneStyles(tone: ScannerTone) {
   };
 }
 
-export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerScreenProps) {
+export default function VolunteerQRScannerScreen({ onBack, onNavigate }: VolunteerQRScannerScreenProps) {
   const SCAN_COOLDOWN_MS = 1500;
   const [permission, requestPermission] = useCameraPermissions();
   const [isResolving, setIsResolving] = useState(false);
@@ -1061,6 +1062,13 @@ export default function VolunteerQRScannerScreen({ onBack }: VolunteerQRScannerS
           </View>
         </View>
       </ScrollView>
+      <BottomNavigation
+        activeTab="qr"
+        onNavigate={onNavigate || ((screen) => (screen === 'home' ? onBack() : undefined))}
+        showDistributions={false}
+        showScan={true}
+        appearance="resident"
+      />
     </SafeAreaView>
   );
 }
@@ -1103,7 +1111,7 @@ const styles = StyleSheet.create({
   },
   bodyContent: {
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingBottom: 88,
     gap: 14,
   },
   heroCard: {

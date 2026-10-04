@@ -21,7 +21,7 @@ import {
   User as VolunteerUser,
 } from '../services/auth/MobileAuthService';
 import { staffTheme } from '../theme';
-import BottomNavigation from './ui/BottomNavigation';
+import BottomNavigation, { BottomTab } from './ui/BottomNavigation';
 import ResidentBrandLockup from './ui/ResidentBrandLockup';
 import { DistributionCardSkeleton, VolunteerDashboardSkeleton } from './ui/Skeleton';
 
@@ -29,7 +29,7 @@ const sc = staffTheme.colors;
 
 interface VolunteerDashboardScreenProps {
   volunteerUser?: VolunteerUser | null;
-  onNavigate?: (screen: 'home' | 'qr' | 'profile') => void;
+  onNavigate?: (screen: BottomTab) => void;
   onLogout?: () => void;
 }
 
@@ -668,7 +668,13 @@ export default function VolunteerDashboardScreen({
       </Modal>
 
       {/* ── Bottom Navigation ── */}
-      <BottomNavigation activeTab="home" onNavigate={onNavigate as ((screen: 'home' | 'distributions' | 'profile') => void) | undefined} showDistributions={false} appearance="resident" />
+      <BottomNavigation
+        activeTab="home"
+        onNavigate={onNavigate}
+        showDistributions={false}
+        showScan={true}
+        appearance="resident"
+      />
     </SafeAreaView>
   );
 }

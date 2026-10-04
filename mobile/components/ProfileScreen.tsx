@@ -1102,6 +1102,7 @@ export default function ProfileScreen({
         activeTab="profile"
         onNavigate={onNavigate}
         showDistributions={!isVolunteer}
+        showScan={isVolunteer}
         appearance="resident"
       />
 
