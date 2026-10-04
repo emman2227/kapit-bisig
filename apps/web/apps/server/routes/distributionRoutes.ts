@@ -831,7 +831,8 @@ router.get(
       const roster = residents.map((r) => ({
         residentId: r._id.toString(),
         residentCode: r.residentCode || '',
-        maskedName: getMaskedName(r.fullName || ''),
+        fullName: r.fullName || '',
+        maskedName: r.fullName || '',
         barangay: r.barangay,
         qrVersion: r.qrVersion ?? 1,
         isApprovedBeneficiary: true,

@@ -24,6 +24,7 @@ import { staffTheme } from '../theme';
 import BottomNavigation, { BottomTab } from './ui/BottomNavigation';
 import ResidentBrandLockup from './ui/ResidentBrandLockup';
 import { DistributionCardSkeleton, VolunteerDashboardSkeleton } from './ui/Skeleton';
+import DistributionBeneficiariesModal from './DistributionBeneficiariesModal';
 
 const sc = staffTheme.colors;
 
@@ -44,6 +45,7 @@ interface DistributionData {
   isUrgent: boolean;
   registeredHouseholds: number;
   claimedHouseholds: number;
+  lifecycleStatus?: 'Upcoming' | 'Active' | 'Completed' | 'Archived';
 }
 
 interface DashboardStats {
@@ -100,6 +102,7 @@ export default function VolunteerDashboardScreen({
   const [showNotifications, setShowNotifications] = useState(false);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState<VolunteerNotificationItem[]>([]);
+  const [selectedDistributionForModal, setSelectedDistributionForModal] = useState<DistributionData | null>(null);
 
   const displayName = volunteerUser
     ? `${volunteerUser.firstName || ''} ${volunteerUser.lastName || ''}`.trim() || 'Staff Member'
@@ -151,7 +154,19 @@ export default function VolunteerDashboardScreen({
         distributionResult.data?.success &&
         Array.isArray(distributionResult.data.data)
       ) {
-        const mappedDistributions: DistributionData[] = distributionResult.data.data
+        // Exclude Completed and Archived distributions from live/upcoming card
+        const activeOrUpcoming = distributionResult.data.data.filter(
+          (item) => item.lifecycleStatus === 'Active' || item.lifecycleStatus === 'Upcoming'
+        );
+
+        // Prioritize Active distributions first, then Upcoming
+        const sorted = [...activeOrUpcoming].sort((a, b) => {
+          if (a.lifecycleStatus === 'Active' && b.lifecycleStatus !== 'Active') return -1;
+          if (a.lifecycleStatus !== 'Active' && b.lifecycleStatus === 'Active') return 1;
+          return 0;
+        });
+
+        const mappedDistributions: DistributionData[] = sorted
           .slice(0, 3)
           .map((item, idx) => ({
             id: item.id || item._id || `dist-${idx}`,
@@ -164,6 +179,7 @@ export default function VolunteerDashboardScreen({
             isUrgent: idx === 0,
             registeredHouseholds: Number(item.registeredHouseholds || 0),
             claimedHouseholds: Number(item.claimedHouseholds || 0),
+            lifecycleStatus: item.lifecycleStatus,
           }));
         setDistributions(mappedDistributions);
       } else {
@@ -512,12 +528,7 @@ export default function VolunteerDashboardScreen({
             <TouchableOpacity
               style={styles.premiumCardShadow}
               activeOpacity={0.86}
-              onPress={() =>
-                Alert.alert(
-                  featuredDistribution.title,
-                  `Coverage: ${featuredDistribution.coverage.join(', ')}\nSchedule: ${featuredDistribution.schedule}\nClaimed: ${featuredDistribution.claimedHouseholds} / ${featuredDistribution.registeredHouseholds}`,
-                )
-              }
+              onPress={() => setSelectedDistributionForModal(featuredDistribution)}
             >
               <LinearGradient
                 colors={[sc.surface, sc.surfaceMuted]}
@@ -592,6 +603,13 @@ export default function VolunteerDashboardScreen({
           )}
         </View>
       </ScrollView>
+
+      {/* ── Beneficiaries & Claims Modal ── */}
+      <DistributionBeneficiariesModal
+        visible={Boolean(selectedDistributionForModal)}
+        onClose={() => setSelectedDistributionForModal(null)}
+        distribution={selectedDistributionForModal}
+      />
 
       {/* ── Notification Bottom Sheet ── */}
       <Modal transparent animationType="fade" visible={showNotifications} onRequestClose={() => setShowNotifications(false)}>

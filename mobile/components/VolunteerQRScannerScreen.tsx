@@ -153,23 +153,7 @@ export default function VolunteerQRScannerScreen({ onBack, onNavigate }: Volunte
   const [claimStatusText, setClaimStatusText] = useState<string | null>(null);
   const lastScanRef = useRef<{ data: string; at: number } | null>(null);
   const toMaskedName = (rawName?: string): string => {
-    const parts = String(rawName || '')
-      .trim()
-      .split(/\s+/)
-      .filter(Boolean);
-
-    if (parts.length === 0) {
-      return 'Uxxxx Uxxxx';
-    }
-
-    if (parts.length === 1) {
-      const firstInitial = parts[0][0]?.toUpperCase() || 'U';
-      return `${firstInitial}xxxx`;
-    }
-
-    const firstInitial = parts[0][0]?.toUpperCase() || 'U';
-    const lastInitial = parts[parts.length - 1][0]?.toUpperCase() || 'U';
-    return `${firstInitial}xxxx ${lastInitial}xxxx`;
+    return String(rawName || '').trim() || 'Resident';
   };
 
   const [syncSnapshot, setSyncSnapshot] = useState<ClaimSyncSnapshot>(getClaimSyncSnapshot());
@@ -1023,12 +1007,12 @@ export default function VolunteerQRScannerScreen({ onBack, onNavigate }: Volunte
             <View style={styles.personCard}>
               <View style={styles.personAvatar}>
                 <Text style={styles.personAvatarText}>
-                  {(resolvedResident.maskedName || toMaskedName(resolvedResident.fullName)).slice(0, 1)}
+                  {(resolvedResident.fullName || resolvedResident.maskedName || 'R').slice(0, 1).toUpperCase()}
                 </Text>
               </View>
               <View style={styles.personBody}>
                 <Text style={styles.personName}>
-                  {resolvedResident.maskedName || toMaskedName(resolvedResident.fullName)}
+                  {resolvedResident.fullName || resolvedResident.maskedName || 'Resident'}
                 </Text>
                 <Text style={styles.personMeta}>
                   {resolvedResident.fromCache ? 'Resolved from offline cache' : 'Resolved from live server'}
