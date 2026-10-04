@@ -122,10 +122,11 @@ export default function DistributionBeneficiariesModal({
         message?: string;
       }>(`/distributions/${distributionId}/households`, { method: 'GET' });
 
-      if (response.success && response.data?.success && response.data.data) {
-        setData(response.data.data);
+      const resData = response.data?.data || (response.data as unknown as DistributionHouseholdsPayload);
+      if (response.success && resData && resData.totals) {
+        setData(resData);
       } else {
-        setError(response.data?.message || 'Failed to load beneficiaries.');
+        setError(response.error || response.data?.message || 'Failed to load beneficiaries.');
       }
     } catch (err: unknown) {
       console.error('[BENEFICIARIES_MODAL]', err);
