@@ -587,11 +587,14 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
   };
 
   const validatePasswordWithServer = async (value: string): Promise<string | null> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 4000);
     try {
       const response = await fetch(`${API_URL}/auth/validate-password`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ password: value }),
+        signal: controller.signal,
       });
 
       const data = await response.json().catch(() => null);
@@ -608,6 +611,8 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
     } catch (error) {
       console.warn('Password validation API unavailable:', error);
       return null;
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 

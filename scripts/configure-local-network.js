@@ -95,11 +95,26 @@ try {
   const faceApiUrl = `http://${lanIp}:8000`
   const webOrigins = `http://localhost:3000,http://${lanIp}:3000`
 
-  const updatedFiles = [
-    updateEnvFile('mobile/.env', {
-      EXPO_PUBLIC_API_URL: apiUrl,
-      EXPO_PUBLIC_FACE_API_URL: faceApiUrl,
-    }),
+  const mobileEnvPath = path.join(workspaceRoot, 'mobile/.env')
+  const mobileEnvExists = fs.existsSync(mobileEnvPath)
+  const mobileEnvContent = mobileEnvExists ? fs.readFileSync(mobileEnvPath, 'utf8') : ''
+  const hasHttpsApiUrl = /^EXPO_PUBLIC_API_URL\s*=\s*https:\/\//m.test(mobileEnvContent)
+  const forceLocal = process.argv.includes('--force-local') || process.env.FORCE_LOCAL_NETWORK === 'true'
+
+  const updatedFiles = []
+
+  if (hasHttpsApiUrl && !forceLocal) {
+    console.log('[configure-local-network] Preserving production deployment URL (https://) in mobile/.env')
+  } else {
+    updatedFiles.push(
+      updateEnvFile('mobile/.env', {
+        EXPO_PUBLIC_API_URL: apiUrl,
+        EXPO_PUBLIC_FACE_API_URL: faceApiUrl,
+      })
+    )
+  }
+
+  updatedFiles.push(
     updateEnvFile('apps/web/apps/.env.local', {
       NEXT_PUBLIC_API_URL: '/api',
       API_PROXY_TARGET: 'http://127.0.0.1:3001/api',
@@ -108,7 +123,7 @@ try {
     updateEnvFile('backend/.env', {
       FACE_API_ALLOWED_ORIGINS: webOrigins,
     }),
-  ]
+  )
 
   console.log(`Local network configured for ${lanIp}`)
   console.log(`Mobile API: ${apiUrl}`)

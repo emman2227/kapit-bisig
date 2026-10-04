@@ -54,7 +54,8 @@ export function resolveApiBaseUrl(
 ): string {
   const value = (envValue && envValue.trim()) || fallbackValue;
   ensureSecureApiUrl(value, serviceLabel);
-  return value.replace(/\/+$/, '');
+  const resolved = value.replace(/\/+$/, '');
+  return useExpoLanHostInDevelopment(resolved);
 }
 
 export function resolveOptionalApiBaseUrl(
@@ -65,12 +66,14 @@ export function resolveOptionalApiBaseUrl(
   const trimmed = envValue?.trim();
   if (trimmed) {
     ensureSecureApiUrl(trimmed, serviceLabel);
-    return trimmed.replace(/\/+$/, '');
+    const resolved = trimmed.replace(/\/+$/, '');
+    return useExpoLanHostInDevelopment(resolved);
   }
 
   if (__DEV__ && fallbackValue) {
     ensureSecureApiUrl(fallbackValue, serviceLabel);
-    return fallbackValue.replace(/\/+$/, '');
+    const resolved = fallbackValue.replace(/\/+$/, '');
+    return useExpoLanHostInDevelopment(resolved);
   }
 
   return null;
