@@ -79,7 +79,7 @@ const AndroidImportance = Notifications ? Notifications.AndroidImportance : {
 import SplashScreen from './components/SplashScreen';
 import HomeScreen from './components/ResidentHomeDashboardScreen';
 import ProfileScreen from './components/ProfileScreen';
-import ResidentProofRequestScreen from './components/ResidentProofRequestScreen';
+import ResidentProofRequestScreen, { type TargetDistributionInfo } from './components/ResidentProofRequestScreen';
 import { registerBackgroundProofSync, unregisterBackgroundProofSync } from './services/sync/BackgroundSyncService';
 import {
   refreshProofSyncSnapshot,
@@ -243,6 +243,7 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(false);
   const [splashInitialView, setSplashInitialView] = useState<SplashInitialView>('landing');
   const [currentScreen, setCurrentScreen] = useState<Screen>('home');
+  const [selectedDistributionForProof, setSelectedDistributionForProof] = useState<TargetDistributionInfo | null>(null);
   const [residentProfile, setResidentProfile] = useState<ResidentProfile | null>(null);
   const [residentVirtualId, setResidentVirtualId] = useState<ResidentQrData | null>(null);
   const [isVirtualIdLoading, setIsVirtualIdLoading] = useState(false);
@@ -571,7 +572,10 @@ export default function App() {
     unregisterBackgroundProofSync().catch(() => undefined);
   };
 
-  const handleNavigate = (screen: Screen) => {
+  const handleNavigate = (
+    screen: Screen,
+    options?: { distribution?: TargetDistributionInfo | null }
+  ) => {
     if (isResidentPending && (screen === 'qr' || screen === 'distributions')) {
       Alert.alert(
         residentProfile?.status === 'Needs Revision' ? 'Needs Revision' : 'Pending Approval',
@@ -580,6 +584,11 @@ export default function App() {
           : 'Distribution and QR access are disabled while your account is pending admin review.',
       );
       return;
+    }
+    if (options?.distribution !== undefined) {
+      setSelectedDistributionForProof(options.distribution);
+    } else if (screen !== 'proof-request') {
+      setSelectedDistributionForProof(null);
     }
     setCurrentScreen(screen);
   };
@@ -868,7 +877,11 @@ export default function App() {
       case 'proof-request':
         return (
           <ResidentProofRequestScreen
-            onBack={() => handleNavigate('home')}
+            targetDistribution={selectedDistributionForProof}
+            onBack={() => {
+              setSelectedDistributionForProof(null);
+              handleNavigate('home');
+            }}
             onSignInRequired={handleLogout}
           />
         );

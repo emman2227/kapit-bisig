@@ -829,16 +829,16 @@ export default function NewDistributionModal({
                       </p>
                       <div className="mt-2 text-[11px] text-amber-700 dark:text-amber-400 font-semibold flex flex-col gap-0.5">
                         <span className="flex items-center gap-1">
-                          <span>✓ Pre-approved beneficiaries auto-enrolled on creation</span>
+                          <span>✓ Damage assessment proof required per targeted distribution</span>
                         </span>
                         {barangay && preApprovedCount !== null && preApprovedCount > 0 && (
                           <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                            • {preApprovedCount} approved {preApprovedCount === 1 ? 'household' : 'households'} in coverage ready for instant claim pass
+                            • {preApprovedCount} pre-assessed {preApprovedCount === 1 ? 'household' : 'households'} ready for initial enrollment
                           </span>
                         )}
                         {barangay && preApprovedCount === 0 && (
                           <span className="text-slate-500 dark:text-slate-400 font-normal">
-                            • 0 households currently pre-approved (residents can submit proof after scheduling)
+                            • 0 households currently pre-assessed (residents can submit proof after scheduling)
                           </span>
                         )}
                       </div>

@@ -182,12 +182,13 @@ export type ResidentQueuedProofSubmission = ResidentProofSubmissionPayload & {
 };
 
 export interface ResidentOfflineProofSubmissionInput {
-  disasterEventId: string;
-  eventSnapshot: {
+  distributionId?: string | null;
+  disasterEventId?: string | null;
+  eventSnapshot?: {
     name: string;
     disasterType: string;
     submissionDeadline?: string | null;
-  };
+  } | null;
   damageType: ResidentProofSubmissionPayload['damageType'];
   description: string;
   supportingInfo?: string;
@@ -993,7 +994,8 @@ export async function fetchActiveBeneficiaryEvent(
 
 export async function fetchResidentProofSubmissionStatus(
   token: string,
-  disasterEventId: string,
+  disasterEventId?: string | null,
+  distributionId?: string | null,
 ): Promise<{
   success: boolean;
   message?: string;
@@ -1003,8 +1005,13 @@ export async function fetchResidentProofSubmissionStatus(
   failureKind?: ApiFailureKind;
 }> {
   try {
-    const query = encodeURIComponent(disasterEventId);
-    const response = await fetch(`${API_BASE_URL}/beneficiaries/proof-submissions/me?disasterEventId=${query}`, {
+    const queryParams = new URLSearchParams();
+    if (distributionId) {
+      queryParams.set('distributionId', distributionId);
+    } else if (disasterEventId) {
+      queryParams.set('disasterEventId', disasterEventId);
+    }
+    const response = await fetch(`${API_BASE_URL}/beneficiaries/proof-submissions/me?${queryParams.toString()}`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
@@ -1080,8 +1087,9 @@ export async function submitResidentProofSubmission(
     ownerResidentId: residentId,
     clientGeneratedId: input.clientGeneratedId,
     deviceId,
-    disasterEventId: input.disasterEventId,
-    eventSnapshot: input.eventSnapshot,
+    disasterEventId: input.disasterEventId || null,
+    distributionId: input.distributionId || null,
+    eventSnapshot: input.eventSnapshot || undefined,
     damageType: input.damageType,
     description: input.description,
     supportingInfo: input.supportingInfo,
@@ -1218,7 +1226,8 @@ export async function syncQueuedResidentProofSubmissions(
           deviceId: item.deviceId,
           submissions: [{
             clientGeneratedId: item.clientGeneratedId,
-            disasterEventId: item.disasterEventId,
+            distributionId: item.distributionId || undefined,
+            disasterEventId: item.disasterEventId || undefined,
             damageType: item.damageType,
             description: item.description,
             supportingInfo: item.supportingInfo,

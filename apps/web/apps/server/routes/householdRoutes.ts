@@ -814,7 +814,7 @@ router.get('/distributions', authMiddleware, authenticatedResidentReadRateLimite
     const data = coveredDistributions.map((distribution) => {
       const id = distribution._id.toString();
       const claimStatus = claimByDistribution.get(id) || null;
-      const el = eligibilityByDistribution.get(id) || (distribution.disasterEventId ? eligibilityByEvent.get(String(distribution.disasterEventId)) : null);
+      const el = eligibilityByDistribution.get(id) || null;
       const isApprovedBeneficiary = el?.status === 'Eligible' && el?.proofStatus === 'Approved';
       const proofStatus = el?.proofStatus || null;
 

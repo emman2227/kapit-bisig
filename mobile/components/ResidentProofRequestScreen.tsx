@@ -146,12 +146,24 @@ function formatSchedule(value?: string): string {
   });
 }
 
+export interface TargetDistributionInfo {
+  id: string;
+  barangay?: string;
+  name?: string;
+  scheduled?: string;
+}
+
 interface ResidentProofRequestScreenProps {
   onBack: () => void;
   onSignInRequired: () => void;
+  targetDistribution?: TargetDistributionInfo | null;
 }
 
-export default function ResidentProofRequestScreen({ onBack, onSignInRequired }: ResidentProofRequestScreenProps) {
+export default function ResidentProofRequestScreen({
+  onBack,
+  onSignInRequired,
+  targetDistribution,
+}: ResidentProofRequestScreenProps) {
   const insets = useSafeAreaInsets();
   const [activeEvent, setActiveEvent] = useState<ResidentDisasterEvent | null>(null);
   const [proofStatus, setProofStatus] = useState<ResidentProofSubmissionStatus | null>(null);
@@ -184,12 +196,12 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
   const trimmedDescriptionLength = description.trim().length;
   const descriptionReady = trimmedDescriptionLength >= 10;
   const photosReady = photos.length >= MIN_PHOTOS;
-  const eventReady = Boolean(activeEvent);
+  const eventReady = Boolean(targetDistribution || activeEvent);
   const completedRequirementCount = [eventReady, descriptionReady, photosReady].filter(Boolean).length;
   const remainingPhotos = Math.max(0, MIN_PHOTOS - photos.length);
   const proofLocked = proofStatus?.status === 'Approved' || proofStatus?.status === 'Pending Verification';
   const canEditProof = !proofLocked;
-  const submitDisabled = submitting || eventLoading || !activeEvent || proofLocked;
+  const submitDisabled = submitting || eventLoading || (!activeEvent && !targetDistribution) || proofLocked;
   const footerPadding = Math.max(insets.bottom, theme.spacing.md);
   const hasSupportingInfo = supportingInfo.trim().length > 0;
   const showingSupportingInfo = showSupportingInfo || hasSupportingInfo;
@@ -245,8 +257,15 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
       }
 
       const currentEventId = currentEvent?.id || currentEvent?._id;
-      if (currentEventId) {
-        const statusResult = await fetchResidentProofSubmissionStatus(session.token, currentEventId);
+      if (targetDistribution?.id) {
+        const statusResult = await fetchResidentProofSubmissionStatus(session.token, null, targetDistribution.id);
+        if (statusResult.success) {
+          setProofStatus(statusResult.data ?? null);
+        } else {
+          setProofStatus(null);
+        }
+      } else if (currentEventId) {
+        const statusResult = await fetchResidentProofSubmissionStatus(session.token, currentEventId, null);
         if (statusResult.success) {
           setProofStatus(statusResult.data ?? null);
           await updateResidentOfflineCache(session.residentId, { proofStatus: statusResult.data ?? null });
@@ -494,12 +513,13 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
     setSubmitting(true);
     try {
       const result = await submitResidentProofSubmission(session.token, session.residentId, {
-        disasterEventId: activeEvent.id || activeEvent._id || '',
-        eventSnapshot: {
+        distributionId: targetDistribution?.id || null,
+        disasterEventId: targetDistribution?.id ? null : (activeEvent?.id || activeEvent?._id || ''),
+        eventSnapshot: activeEvent ? {
           name: activeEvent.name,
           disasterType: activeEvent.disasterType,
           submissionDeadline: activeEvent.submissionDeadline,
-        },
+        } : null,
         damageType: selectedDamageType,
         description: description.trim(),
         supportingInfo: supportingInfo.trim(),
@@ -672,7 +692,7 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
               {queuedRecords.map((record) => (
                 <View key={record.clientGeneratedId} style={styles.savedProofRow}>
                   <View style={styles.savedProofCopy}>
-                    <Text style={styles.savedProofTitle}>{record.eventSnapshot.name}</Text>
+                    <Text style={styles.savedProofTitle}>{record.eventSnapshot?.name || 'Targeted Proof Submission'}</Text>
                     <Text style={styles.savedProofMeta}>
                       {record.status === 'SYNCING'
                         ? 'Syncing now'
@@ -754,10 +774,29 @@ export default function ResidentProofRequestScreen({ onBack, onSignInRequired }:
                 <Typography variant="caption" color={theme.colors.textSecondary}>Relief Program / Disaster Event</Typography>
               </View>
 
-              {eventLoading ? (
+              {eventLoading && !activeEvent && !targetDistribution ? (
                 <Typography variant="caption" color={theme.colors.textSecondary}>
-                  Checking for active relief events...
+                  Checking active relief distributions...
                 </Typography>
+              ) : targetDistribution ? (
+                <View style={styles.selectedDistributionCard}>
+                  <View style={styles.selectedDistributionHeader}>
+                    <View style={styles.selectedDistributionIcon}>
+                      <Ionicons name="shield-checkmark-outline" size={18} color={residentColors.icon} />
+                    </View>
+                    <View style={styles.selectedDistributionCopy}>
+                      <Typography variant="body" weight="semiBold">
+                        {targetDistribution.name || (targetDistribution.barangay ? `${targetDistribution.barangay} Relief Distribution` : 'Targeted Distribution')}
+                      </Typography>
+                      <Typography variant="caption" color={theme.colors.textSecondary}>
+                        {targetDistribution.barangay ? `Barangay ${targetDistribution.barangay} • ` : ''}Targeted Relief Distribution
+                      </Typography>
+                    </View>
+                  </View>
+                  <Typography variant="caption" color={theme.colors.textSecondary}>
+                    Submitting proof for this specific relief distribution. Once verified by the admin, your claim pass for this distribution will unlock.
+                  </Typography>
+                </View>
               ) : !activeEvent ? (
                 <View style={styles.emptyState}>
                   <Ionicons name="calendar-clear-outline" size={20} color={residentColors.icon} />

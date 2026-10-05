@@ -28,8 +28,9 @@ export interface OfflineProofRecord {
   ownerResidentId: string;
   clientGeneratedId: string;
   deviceId: string;
-  disasterEventId: string;
-  eventSnapshot: {
+  disasterEventId?: string | null;
+  distributionId?: string | null;
+  eventSnapshot?: {
     name: string;
     disasterType: string;
     submissionDeadline?: string | null;

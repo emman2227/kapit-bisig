@@ -28,7 +28,10 @@ interface DistributionScreenProps {
   distributionWarning?: string | null;
   distributionFetchedAt?: string | null;
   onRefreshDistributions?: (force?: boolean) => Promise<void>;
-  onNavigate?: (screen: 'home' | 'distributions' | 'profile' | 'proof-request' | 'qr') => void;
+  onNavigate?: (
+    screen: 'home' | 'distributions' | 'profile' | 'proof-request' | 'qr',
+    options?: { distribution?: { id: string; name?: string; barangay?: string; scheduled?: string } | null }
+  ) => void;
 }
 
 interface DistributionView extends ResidentDistributionItem {
@@ -66,7 +69,9 @@ function formatDistribution(item: ResidentDistributionItem, index: number): Dist
       ? 'Relief distribution claimed'
       : item.lifecycleStatus === 'Active'
         ? 'Distribution is open'
-        : 'Upcoming relief distribution',
+        : item.lifecycleStatus === 'Completed'
+          ? 'Distribution concluded'
+          : 'Upcoming relief distribution',
     dateLabel,
     timeLabel,
     monthLabel: validDate ? validDate.toLocaleDateString('en-PH', { month: 'short' }).toUpperCase() : 'DATE',
@@ -94,7 +99,8 @@ export default function DistributionScreen({
   );
   const [selected, setSelected] = useState<DistributionView | null>(null);
   const activeCount = items.filter((item) => item.lifecycleStatus === 'Active').length;
-  const upcomingCount = items.length - activeCount;
+  const upcomingCount = items.filter((item) => item.lifecycleStatus !== 'Active' && item.lifecycleStatus !== 'Completed').length;
+  const completedCount = items.filter((item) => item.lifecycleStatus === 'Completed').length;
 
   const onRefresh = useCallback(async () => {
     if (isDistributionRefreshing || !onRefreshDistributions) return;
@@ -138,7 +144,7 @@ export default function DistributionScreen({
         {!isDistributionLoading && !distributionError ? (
           <View style={styles.summaryRow}>
             <Text style={styles.summaryText}>
-              {activeCount > 0 ? `${activeCount} active` : `${upcomingCount} upcoming`}
+              {activeCount > 0 ? `${activeCount} active` : upcomingCount > 0 ? `${upcomingCount} upcoming` : `${completedCount} completed`}
               {activeCount > 0 && upcomingCount > 0 ? ` • ${upcomingCount} upcoming` : ''}
             </Text>
             <View style={styles.livePill}>
@@ -207,10 +213,20 @@ export default function DistributionScreen({
                         <Ionicons name="checkmark" size={11} color={residentColors.icon} />
                         <Text style={styles.claimedText}>CLAIMED</Text>
                       </View>
+                    ) : item.lifecycleStatus === 'Completed' ? (
+                      <View style={styles.endedPill}>
+                        <Ionicons name="time-outline" size={10} color="#6B7280" />
+                        <Text style={styles.endedText}>ENDED</Text>
+                      </View>
                     ) : null}
                   </View>
                   <View style={styles.tagRow}>
-                    {item.requiresBeneficiaryApproval ? (
+                    {item.lifecycleStatus === 'Completed' && !item.residentClaimed ? (
+                      <View style={styles.unclaimedPill}>
+                        <Ionicons name="close-circle-outline" size={11} color="#6B7280" />
+                        <Text style={styles.unclaimedPillText}>UNCLAIMED</Text>
+                      </View>
+                    ) : item.requiresBeneficiaryApproval ? (
                       item.isBeneficiaryApproved ? (
                         <View style={styles.approvedPill}>
                           <Ionicons name="checkmark-circle" size={11} color="#065F46" />
@@ -292,7 +308,33 @@ export default function DistributionScreen({
               </View>
             ) : null}
 
-            {selected?.requiresBeneficiaryApproval ? (
+            {selected?.residentClaimed ? (
+              <View style={styles.claimedBanner}>
+                <View style={styles.claimedHeader}>
+                  <Ionicons name="checkmark-circle" size={19} color="#059669" />
+                  <Text style={styles.claimedBannerTitle}>Relief Aid Claimed</Text>
+                </View>
+                <Text style={styles.claimedBannerDescription}>
+                  You have successfully claimed your relief package for this distribution event.
+                </Text>
+              </View>
+            ) : selected?.lifecycleStatus === 'Completed' ? (
+              <View style={styles.proofEndedBanner}>
+                <View style={styles.proofEndedHeader}>
+                  <Ionicons name="information-circle" size={19} color="#4B5563" />
+                  <Text style={styles.proofEndedTitle}>Distribution Concluded • Unclaimed</Text>
+                </View>
+                <Text style={styles.proofEndedDescription}>
+                  {selected?.isBeneficiaryApproved
+                    ? 'This distribution event has concluded. Your damage assessment was verified, but relief aid was not claimed during the scheduled window.'
+                    : 'This distribution event has concluded and is no longer accepting claims or proof submissions.'}
+                </Text>
+                <View style={styles.windowClosedBadge}>
+                  <Ionicons name="lock-closed-outline" size={14} color="#6B7280" />
+                  <Text style={styles.windowClosedText}>Claim Window Closed</Text>
+                </View>
+              </View>
+            ) : selected?.requiresBeneficiaryApproval ? (
               selected.isBeneficiaryApproved ? (
                 <View style={styles.proofApprovedBanner}>
                   <View style={styles.proofApprovedHeader}>
@@ -325,8 +367,14 @@ export default function DistributionScreen({
                   <TouchableOpacity
                     style={styles.reviewActionButton}
                     onPress={() => {
+                      const distPayload = selected ? {
+                        id: selected.id,
+                        name: selected.title,
+                        barangay: selected.barangay,
+                        scheduled: selected.scheduled,
+                      } : null;
                       setSelected(null);
-                      onNavigate?.('proof-request');
+                      onNavigate?.('proof-request', { distribution: distPayload });
                     }}
                   >
                     <Ionicons name="document-text-outline" size={16} color="#854D0E" />
@@ -345,8 +393,14 @@ export default function DistributionScreen({
                   <TouchableOpacity
                     style={styles.proofActionButton}
                     onPress={() => {
+                      const distPayload = selected ? {
+                        id: selected.id,
+                        name: selected.title,
+                        barangay: selected.barangay,
+                        scheduled: selected.scheduled,
+                      } : null;
                       setSelected(null);
-                      onNavigate?.('proof-request');
+                      onNavigate?.('proof-request', { distribution: distPayload });
                     }}
                   >
                     <Ionicons name="camera-outline" size={16} color={residentColors.inverse} />
@@ -399,6 +453,8 @@ const styles = StyleSheet.create({
   cardTitle: { flex: 1, fontSize: 14, fontWeight: '800', color: residentColors.ink },
   claimedPill: { paddingHorizontal: 6, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 2, borderRadius: 999, backgroundColor: residentColors.surfaceMuted },
   claimedText: { fontSize: 7, fontWeight: '900', letterSpacing: 0.4, color: residentColors.ink },
+  endedPill: { paddingHorizontal: 6, paddingVertical: 3, flexDirection: 'row', alignItems: 'center', gap: 3, borderRadius: 999, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  endedText: { fontSize: 7.5, fontWeight: '900', letterSpacing: 0.4, color: '#6B7280' },
   metaRow: { marginTop: 7, flexDirection: 'row', alignItems: 'center', gap: 5 },
   metaText: { flex: 1, fontSize: 11.5, color: residentColors.secondary },
   stateCard: { marginTop: 24, minHeight: 260, padding: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: residentColors.surface, borderWidth: 1, borderColor: residentColors.borderAccent, ...residentTheme.shadow },
@@ -429,8 +485,20 @@ const styles = StyleSheet.create({
   approvedPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#065F46' },
   underReviewPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#FEF9C3', borderWidth: 1, borderColor: '#FDE047' },
   underReviewPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#854D0E' },
+  unclaimedPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  unclaimedPillText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#6B7280' },
   openPill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 999, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
   openText: { fontSize: 8.5, fontWeight: '800', letterSpacing: 0.4, color: '#065F46' },
+  claimedBanner: { marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
+  claimedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  claimedBannerTitle: { fontSize: 13, fontWeight: '800', color: '#065F46' },
+  claimedBannerDescription: { marginTop: 5, fontSize: 11.5, lineHeight: 16.5, color: '#047857' },
+  proofEndedBanner: { marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#F9FAFB', borderWidth: 1, borderColor: '#E5E7EB' },
+  proofEndedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  proofEndedTitle: { fontSize: 13, fontWeight: '800', color: '#374151' },
+  proofEndedDescription: { marginTop: 5, fontSize: 11.5, lineHeight: 16.5, color: '#4B5563' },
+  windowClosedBadge: { marginTop: 12, minHeight: 38, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, borderRadius: 10, backgroundColor: '#E5E7EB' },
+  windowClosedText: { color: '#4B5563', fontSize: 12, fontWeight: '800' },
   proofApprovedBanner: { marginTop: 14, padding: 14, borderRadius: 14, backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#A7F3D0' },
   proofApprovedHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   proofApprovedTitle: { fontSize: 13, fontWeight: '800', color: '#065F46' },

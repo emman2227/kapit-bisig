@@ -10,7 +10,10 @@ import {
   deriveEligibilityStatus,
   parseResidentCodeFromQrData,
 } from '../services/beneficiaryService';
-import { isResidentApprovedBeneficiaryForDistribution } from '../services/distributionFlowService';
+import {
+  isResidentApprovedBeneficiaryForDistribution,
+  enrollApprovedResidentsInDistribution,
+} from '../services/distributionFlowService';
 
 export async function runBeneficiaryFlowUnitTests(): Promise<void> {
   assert.strictEqual(deriveEligibilityStatus('Approved', 'Approved'), 'Eligible');
@@ -83,9 +86,45 @@ export async function runBeneficiaryFlowUnitTests(): Promise<void> {
 
   // Should not be eligible if qrStatus is revoked
   await Resident.updateOne({ _id: resident._id }, { qrStatus: 'REVOKED' });
-  isEligible = await isResidentApprovedBeneficiaryForDistribution(dist._id as string, resident._id as string);
+  isEligible = await isResidentApprovedBeneficiaryForDistribution(String(dist._id), String(resident._id));
   assert.strictEqual(isEligible, false);
+
+  // Restore active status
+  await Resident.updateOne({ _id: resident._id }, { qrStatus: 'ACTIVE' });
+
+  // Create a second targeted distribution
+  const disasterEventId = new mongoose.Types.ObjectId();
+  await Distribution.updateOne({ _id: dist._id }, { disasterEventId });
+  const dist2 = await Distribution.create({
+    name: 'Test Dist 2',
+    targetBarangays: ['Bolo'],
+    barangay: 'Bolo',
+    status: 'Unclaimed',
+    households: 0,
+    scheduled: new Date().toISOString(),
+    requiresBeneficiaryApproval: true,
+    disasterEventId,
+  });
+
+  // Also simulate an event-level eligibility record (from disaster proof intake)
+  await BeneficiaryEligibility.create({
+    residentId: resident._id,
+    disasterEventId,
+    distributionId: null,
+    status: 'Eligible',
+    registrationStatus: 'Approved',
+    proofStatus: 'Approved',
+  });
+
+  // Calling enrollApprovedResidentsInDistribution on dist2 should NOT re-enroll this resident
+  const enrollmentResult = await enrollApprovedResidentsInDistribution(dist2);
+  assert.strictEqual(enrollmentResult.enrolledResidents, 0, 'Already enrolled resident must not be enrolled into dist2');
+
+  // Resident must NOT be eligible for dist2 without a dist2-specific BeneficiaryEligibility
+  const isEligibleDist2 = await isResidentApprovedBeneficiaryForDistribution(String(dist2._id), String(resident._id));
+  assert.strictEqual(isEligibleDist2, false, 'Resident must not be eligible for dist2 merely from event or dist1');
 
   await mongoose.disconnect();
   await mongoServer.stop();
-  console.log('Beneficiary Flow Unit Tests Passed!');}
+  console.log('Beneficiary Flow Unit Tests Passed!');
+}

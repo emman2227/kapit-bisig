@@ -136,7 +136,7 @@ export async function isResidentApprovedBeneficiaryForDistribution(
     return false;
   }
 
-  let eligibility = await BeneficiaryEligibility.findOne({
+  const eligibility = await BeneficiaryEligibility.findOne({
     distributionId: new mongoose.Types.ObjectId(distributionId),
     residentId: new mongoose.Types.ObjectId(residentId),
     status: 'Eligible',
@@ -145,20 +145,6 @@ export async function isResidentApprovedBeneficiaryForDistribution(
   })
     .select('_id')
     .lean();
-
-  if (!eligibility) {
-    const distribution = await Distribution.findById(distributionId).select('disasterEventId').lean();
-    if (distribution?.disasterEventId) {
-      eligibility = await BeneficiaryEligibility.findOne({
-        disasterEventId: distribution.disasterEventId,
-        residentId: new mongoose.Types.ObjectId(residentId),
-        distributionId: null,
-        status: 'Eligible',
-        registrationStatus: 'Approved',
-        proofStatus: 'Approved',
-      }).select('_id').lean();
-    }
-  }
 
   if (!eligibility) {
     return false;
@@ -177,7 +163,8 @@ export async function isResidentApprovedBeneficiaryForDistribution(
  * Copies approved calamity/disaster eligibility into a distribution-specific
  * enrollment snapshot. The distribution snapshot is what QR validation uses.
  * Supports pre-assessment: residents approved prior to distribution creation
- * are automatically enrolled.
+ * are automatically enrolled in their first distribution, but do not indefinitely
+ * roll over to future distributions once enrolled.
  */
 export async function enrollApprovedResidentsInDistribution(
   distribution: DistributionCoverage,
@@ -208,6 +195,13 @@ export async function enrollApprovedResidentsInDistribution(
     return { matchedResidents: 0, enrolledResidents: 0 };
   }
 
+  // Residents already enrolled in any previous distribution should not automatically
+  // roll over into new distribution cycles without fresh proof.
+  const alreadyEnrolledResidents = await BeneficiaryEligibility.distinct('residentId', {
+    distributionId: { $ne: null },
+  });
+  const alreadyEnrolledSet = new Set(alreadyEnrolledResidents.map((id) => id.toString()));
+
   const eligibleResidentIds = [...new Set(eventEligibilityRows.map((row) => row.residentId.toString()))];
   const residents = await Resident.find({
     _id: mongoose.trusted({ $in: eligibleResidentIds.map((id) => new mongoose.Types.ObjectId(id)) }),
@@ -220,7 +214,7 @@ export async function enrollApprovedResidentsInDistribution(
   const residentRowMap = new Map<string, typeof eventEligibilityRows[0]>();
   for (const row of eventEligibilityRows) {
     const resIdStr = row.residentId.toString();
-    if (allowedIds.has(resIdStr) && !residentRowMap.has(resIdStr)) {
+    if (allowedIds.has(resIdStr) && !alreadyEnrolledSet.has(resIdStr) && !residentRowMap.has(resIdStr)) {
       residentRowMap.set(resIdStr, row);
     }
   }
