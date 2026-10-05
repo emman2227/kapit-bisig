@@ -25,7 +25,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import * as Haptics from 'expo-haptics';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { VerificationResult } from '../services/ai';
-import { resolveApiBaseUrl, resolveOptionalApiBaseUrl, resolveDevApiFallbackUrl } from '../services/config/apiSecurity';
+import { resolveApiBaseUrl, resolveDevApiFallbackUrl } from '../services/config/apiSecurity';
 import RegistrationOtpModal from './registration/RegistrationOtpModal';
 import { smsVerificationService } from '../services/auth/SmsVerificationService';
 import {
@@ -44,7 +44,7 @@ const API_URL = resolveApiBaseUrl(
   'https://kapit-bisig.onrender.com/api',
   'RegisterScreen API',
 );
-const FACE_API_URL = resolveOptionalApiBaseUrl(
+const FACE_API_URL = resolveApiBaseUrl(
   process.env.EXPO_PUBLIC_FACE_API_URL,
   'https://kapit-bisig.onrender.com',
   'RegisterScreen Face API',
@@ -1535,10 +1535,12 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
       if (!photo?.base64) throw new Error('Failed to capture photo from camera');
 
       if (!FACE_API_URL) {
-        setFaceImage(photo.uri);
-        setScanStatus('success');
-        setFaceScanComplete(true);
-        setTimeout(() => setShowFaceScanner(false), 1200);
+        frontalPhotoRef.current = { uri: photo.uri, base64: photo.base64 };
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+        setChallengeDirection('turn_any');
+        setLivenessStep(2);
+        setScanStatus('idle');
+        setFaceInstructions('Turn or tilt your head slightly');
         return;
       }
 
@@ -1597,6 +1599,7 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
         setFaceImage(frontalPhotoRef.current.uri);
         setScanStatus('success');
         setFaceScanComplete(true);
+        if (showErrors) setStep4Errors({ faceScan: false });
         setTimeout(() => setShowFaceScanner(false), 1200);
         return;
       }
