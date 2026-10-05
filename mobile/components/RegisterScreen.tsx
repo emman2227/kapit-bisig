@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Keyboard,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -2096,6 +2097,38 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
     setCurrentStep(step);
   };
 
+  const hasEnteredData = (): boolean => {
+    return !!(
+      firstName.trim() ||
+      lastName.trim() ||
+      mobileNumber.trim() ||
+      dateOfBirth.trim() ||
+      password ||
+      barangay ||
+      streetAddress.trim() ||
+      householdToken ||
+      idType ||
+      idNumber ||
+      frontIdImage ||
+      faceImage
+    );
+  };
+
+  const confirmExitRegistration = () => {
+    if (hasEnteredData()) {
+      Alert.alert(
+        'Exit Registration?',
+        'Your registration progress will be lost. Are you sure you want to exit?',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          { text: 'Exit', style: 'destructive', onPress: onBack },
+        ]
+      );
+    } else {
+      onBack();
+    }
+  };
+
   const handleBack = () => {
     if (currentStep === 5) {
       if (submissionComplete) {
@@ -2117,9 +2150,95 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
     if (currentStep > 1) {
       setCurrentStep(currentStep - 1);
     } else {
-      onBack();
+      confirmExitRegistration();
     }
   };
+
+  // Hardware back button support for Android
+  useEffect(() => {
+    const handleHardwareBackPress = () => {
+      // Close active modals first if open
+      if (showFaceScanner) {
+        closeFaceScanner();
+        return true;
+      }
+      if (showImagePickerModal) {
+        setShowImagePickerModal(false);
+        return true;
+      }
+      if (showVulnerableDetailsModal) {
+        setShowVulnerableDetailsModal(false);
+        return true;
+      }
+      if (showOtpModal) {
+        setShowOtpModal(false);
+        return true;
+      }
+      if (showTermsModal) {
+        setShowTermsModal(false);
+        return true;
+      }
+      if (showDatePicker) {
+        setShowDatePicker(false);
+        return true;
+      }
+      if (showBarangayDropdown) {
+        setShowBarangayDropdown(false);
+        return true;
+      }
+      if (showIdTypeDropdown) {
+        setShowIdTypeDropdown(false);
+        return true;
+      }
+
+      // Step navigation
+      if (currentStep > 1) {
+        handleBack();
+        return true;
+      }
+
+      // If on step 1, confirm before exit if any data is entered
+      confirmExitRegistration();
+      return true;
+    };
+
+    const backHandlerSub = BackHandler.addEventListener(
+      'hardwareBackPress',
+      handleHardwareBackPress
+    );
+
+    return () => {
+      if (backHandlerSub && typeof backHandlerSub.remove === 'function') {
+        backHandlerSub.remove();
+      } else {
+        (BackHandler as any).removeEventListener?.('hardwareBackPress', handleHardwareBackPress);
+      }
+    };
+  }, [
+    currentStep,
+    showFaceScanner,
+    showImagePickerModal,
+    showVulnerableDetailsModal,
+    showOtpModal,
+    showTermsModal,
+    showDatePicker,
+    showBarangayDropdown,
+    showIdTypeDropdown,
+    submissionComplete,
+    duplicateCheckResult,
+    firstName,
+    lastName,
+    mobileNumber,
+    dateOfBirth,
+    password,
+    barangay,
+    streetAddress,
+    householdToken,
+    idType,
+    idNumber,
+    frontIdImage,
+    faceImage,
+  ]);
 
   const formatDateInput = (text: string) => {
     // Remove non-numeric characters
@@ -2572,7 +2691,7 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
                     if (showErrors) setStep2Errors(prev => ({ ...prev, barangay: false }));
 
                     // Reset token validation if barangay changes
-                    if (previousBarangay !== option && tokenValidated) {
+                    if (previousBarangay && previousBarangay !== option && tokenValidated) {
                       setTokenValidated(false);
                       setTokenError(null);
                       setTokenHouseholdInfo(null);
@@ -3303,7 +3422,7 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
               ]}
               onPress={() => {
                 if (duplicateCheckResult?.decision === 'BLOCK') {
-                  returnToRegistrationStep(1);
+                  returnToRegistrationStep(4);
                 } else if (submissionErrorMessage) {
                   setDuplicateCheckResult(null);
                   setVerificationResult(null);
