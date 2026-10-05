@@ -4,6 +4,7 @@ import DisasterEvent from '../models/DisasterEvent';
 import Distribution from '../models/Distribution';
 import ProofSubmission from '../models/ProofSubmission';
 import Resident from '../models/Resident';
+import BeneficiaryEligibility from '../models/BeneficiaryEligibility';
 import { requireAuth, AuthRequest } from '../middleware/unifiedAuth';
 import { authMiddleware, AuthenticatedRequest } from '../middleware/authMiddleware';
 import { validateRequest } from '../validation/validateRequest';
@@ -400,6 +401,50 @@ router.get(
 
         for (const candidate of candidateSubmissions) {
           if (!candidate.distributionId) {
+            // Event-scoped pre-assessment submission.
+            // 1. If resident was already enrolled in a distribution, verify whether any enrolled distribution is still Active or Upcoming
+            const residentEligibility = await BeneficiaryEligibility.find({
+              residentId: req.user?.userId,
+              distributionId: { $ne: null },
+            })
+              .populate('distributionId', 'barangay assignedBarangays scheduled endsAt location status archivedAt claimedHouseholds registeredHouseholds')
+              .lean();
+
+            const enrolledDistributions = residentEligibility
+              .map((row: any) => row.distributionId)
+              .filter(Boolean);
+
+            if (enrolledDistributions.length > 0) {
+              const hasActiveEnrolled = enrolledDistributions.some((dist: any) => {
+                const lc = deriveDistributionLifecycle(dist);
+                return lc === 'Active' || lc === 'Upcoming';
+              });
+              // The resident already used their pre-assessment approval on an earlier distribution.
+              // If none of their enrolled distributions are currently Active or Upcoming, this proof is expired/consumed.
+              if (!hasActiveEnrolled) {
+                continue;
+              }
+            }
+
+            // 2. Check if there are any Active or Upcoming distributions for this disaster event.
+            // If all distributions for this disaster event are Completed or Archived, proof is not active.
+            const eventDistributions = await Distribution.find({
+              disasterEventId: new mongoose.Types.ObjectId(disasterEventId),
+              archivedAt: null,
+            })
+              .select('barangay assignedBarangays scheduled endsAt location status archivedAt claimedHouseholds registeredHouseholds')
+              .lean();
+
+            if (eventDistributions.length > 0) {
+              const hasActiveOrUpcoming = eventDistributions.some((dist) => {
+                const lc = deriveDistributionLifecycle(dist);
+                return lc === 'Active' || lc === 'Upcoming';
+              });
+              if (!hasActiveOrUpcoming) {
+                continue;
+              }
+            }
+
             submission = candidate;
             break;
           }

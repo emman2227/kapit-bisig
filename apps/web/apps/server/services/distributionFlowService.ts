@@ -249,6 +249,11 @@ export async function enrollApprovedResidentsInDistribution(
     { ordered: false },
   );
 
+  // Remove the consumed event-level eligibility rows so they are not counted as pre-approved again
+  await BeneficiaryEligibility.deleteMany({
+    _id: { $in: matchingRows.map((row) => row._id) },
+  });
+
   return {
     matchedResidents: matchingRows.length,
     enrolledResidents: result.upsertedCount + result.modifiedCount,
@@ -282,9 +287,19 @@ export async function countPreApprovedBeneficiariesForCoverage(
   const rows = await BeneficiaryEligibility.find(filter).select('residentId').lean();
   if (rows.length === 0) return 0;
 
-  const residentIds = [...new Set(rows.map((r) => r.residentId.toString()))];
+  // Residents already enrolled in any distribution should not be counted as pre-approved for subsequent distributions
+  const alreadyEnrolledResidents = await BeneficiaryEligibility.distinct('residentId', {
+    distributionId: { $ne: null },
+  });
+  const alreadyEnrolledSet = new Set(alreadyEnrolledResidents.map((id) => id.toString()));
+
+  const candidateResidentIds = [...new Set(rows.map((r) => r.residentId.toString()))]
+    .filter((id) => !alreadyEnrolledSet.has(id));
+
+  if (candidateResidentIds.length === 0) return 0;
+
   return Resident.countDocuments({
-    _id: mongoose.trusted({ $in: residentIds.map((id) => new mongoose.Types.ObjectId(id)) }),
+    _id: mongoose.trusted({ $in: candidateResidentIds.map((id) => new mongoose.Types.ObjectId(id)) }),
     barangay: mongoose.trusted({ $in: targetBarangays }),
     status: 'Approved',
     qrStatus: 'ACTIVE',

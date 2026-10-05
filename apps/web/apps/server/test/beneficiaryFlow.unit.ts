@@ -13,6 +13,7 @@ import {
 import {
   isResidentApprovedBeneficiaryForDistribution,
   enrollApprovedResidentsInDistribution,
+  countPreApprovedBeneficiariesForCoverage,
 } from '../services/distributionFlowService';
 
 export async function runBeneficiaryFlowUnitTests(): Promise<void> {
@@ -69,7 +70,7 @@ export async function runBeneficiaryFlowUnitTests(): Promise<void> {
   });
 
   // Should not be eligible initially without BeneficiaryEligibility
-  let isEligible = await isResidentApprovedBeneficiaryForDistribution(dist._id as string, resident._id as string);
+  let isEligible = await isResidentApprovedBeneficiaryForDistribution(String(dist._id), String(resident._id));
   assert.strictEqual(isEligible, false);
 
   // Create BeneficiaryEligibility
@@ -81,7 +82,7 @@ export async function runBeneficiaryFlowUnitTests(): Promise<void> {
     proofStatus: 'Approved'
   });
 
-  isEligible = await isResidentApprovedBeneficiaryForDistribution(dist._id as string, resident._id as string);
+  isEligible = await isResidentApprovedBeneficiaryForDistribution(String(dist._id), String(resident._id));
   assert.strictEqual(isEligible, true);
 
   // Should not be eligible if qrStatus is revoked
@@ -107,7 +108,7 @@ export async function runBeneficiaryFlowUnitTests(): Promise<void> {
   });
 
   // Also simulate an event-level eligibility record (from disaster proof intake)
-  await BeneficiaryEligibility.create({
+  const eventElig = await BeneficiaryEligibility.create({
     residentId: resident._id,
     disasterEventId,
     distributionId: null,
@@ -117,12 +118,65 @@ export async function runBeneficiaryFlowUnitTests(): Promise<void> {
   });
 
   // Calling enrollApprovedResidentsInDistribution on dist2 should NOT re-enroll this resident
+  // because the resident is already enrolled in dist1
   const enrollmentResult = await enrollApprovedResidentsInDistribution(dist2);
   assert.strictEqual(enrollmentResult.enrolledResidents, 0, 'Already enrolled resident must not be enrolled into dist2');
 
   // Resident must NOT be eligible for dist2 without a dist2-specific BeneficiaryEligibility
   const isEligibleDist2 = await isResidentApprovedBeneficiaryForDistribution(String(dist2._id), String(resident._id));
   assert.strictEqual(isEligibleDist2, false, 'Resident must not be eligible for dist2 merely from event or dist1');
+
+  // Verify that countPreApprovedBeneficiariesForCoverage does NOT count already enrolled residents
+  const preApprovedCount = await countPreApprovedBeneficiariesForCoverage(['Bolo'], String(disasterEventId));
+  assert.strictEqual(preApprovedCount, 0, 'Already enrolled resident must not be counted as pre-approved');
+
+  // Create a brand new resident with event-level pre-assessment eligibility
+  const resident2 = await Resident.create({
+    residentCode: 'BO-2026-000456',
+    firstName: 'Maria',
+    lastName: 'Santos',
+    fullName: 'Maria Santos',
+    password: 'password123',
+    dateOfBirth: '1992-05-15',
+    gender: 'Female',
+    streetAddress: '456 Side St',
+    mobileNumber: '09170000002',
+    barangay: 'Bolo',
+    city: 'Labrador',
+    idType: 'National ID',
+    idNumber: '987654321',
+    frontIdImage: 'front2.jpg',
+    backIdImage: 'back2.jpg',
+    faceImage: 'face2.jpg',
+    status: 'Approved',
+    qrStatus: 'ACTIVE',
+    verification: { overallConfidence: 95 },
+  });
+
+  const eventElig2 = await BeneficiaryEligibility.create({
+    residentId: resident2._id,
+    disasterEventId,
+    distributionId: null,
+    status: 'Eligible',
+    registrationStatus: 'Approved',
+    proofStatus: 'Approved',
+  });
+
+  // Now countPreApprovedBeneficiariesForCoverage should be 1 for resident2
+  const preApprovedCount2 = await countPreApprovedBeneficiariesForCoverage(['Bolo'], String(disasterEventId));
+  assert.strictEqual(preApprovedCount2, 1, 'Fresh pre-assessed resident should be counted as pre-approved');
+
+  // Enrolling resident2 into dist2 should consume their event-level row
+  const enrollResult2 = await enrollApprovedResidentsInDistribution(dist2);
+  assert.strictEqual(enrollResult2.enrolledResidents, 1, 'Resident2 should be enrolled into dist2');
+
+  // The event-level row for resident2 must be deleted
+  const leftoverEventRow = await BeneficiaryEligibility.findById(eventElig2._id);
+  assert.strictEqual(leftoverEventRow, null, 'Consumed event-level row must be deleted upon enrollment');
+
+  // countPreApprovedBeneficiariesForCoverage should now be 0 again
+  const preApprovedCount3 = await countPreApprovedBeneficiariesForCoverage(['Bolo'], String(disasterEventId));
+  assert.strictEqual(preApprovedCount3, 0, 'Pre-approved count must return to 0 after enrollment');
 
   await mongoose.disconnect();
   await mongoServer.stop();
