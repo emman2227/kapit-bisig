@@ -377,23 +377,42 @@ router.get(
       const disasterEventId = String(req.query.disasterEventId || '');
       const distributionId = String(req.query.distributionId || '');
 
-      const queryFilter: Record<string, unknown> = {
-        residentId: req.user?.userId,
-      };
+      let submission: any = null;
 
       if (distributionId && mongoose.Types.ObjectId.isValid(distributionId)) {
-        queryFilter.distributionId = new mongoose.Types.ObjectId(distributionId);
+        submission = await ProofSubmission.findOne({
+          residentId: req.user?.userId,
+          distributionId: new mongoose.Types.ObjectId(distributionId),
+        })
+          .populate('disasterEventId', 'name disasterType status barangays eventDate submissionDeadline')
+          .populate('distributionId', 'barangay scheduled endsAt location status archivedAt claimedHouseholds registeredHouseholds')
+          .sort({ updatedAt: -1 })
+          .lean();
       } else if (disasterEventId && mongoose.Types.ObjectId.isValid(disasterEventId)) {
-        queryFilter.disasterEventId = new mongoose.Types.ObjectId(disasterEventId);
+        const candidateSubmissions = await ProofSubmission.find({
+          residentId: req.user?.userId,
+          disasterEventId: new mongoose.Types.ObjectId(disasterEventId),
+        })
+          .populate('disasterEventId', 'name disasterType status barangays eventDate submissionDeadline')
+          .populate('distributionId', 'barangay scheduled endsAt location status archivedAt claimedHouseholds registeredHouseholds')
+          .sort({ updatedAt: -1 })
+          .lean();
+
+        for (const candidate of candidateSubmissions) {
+          if (!candidate.distributionId) {
+            submission = candidate;
+            break;
+          }
+          const dist = candidate.distributionId as any;
+          const lifecycle = deriveDistributionLifecycle(dist);
+          if (lifecycle !== 'Completed' && lifecycle !== 'Archived') {
+            submission = candidate;
+            break;
+          }
+        }
       } else {
         return res.status(400).json({ success: false, message: 'A valid distributionId or disasterEventId is required.' });
       }
-
-      const submission = await ProofSubmission.findOne(queryFilter)
-        .populate('disasterEventId', 'name disasterType status barangays eventDate submissionDeadline')
-        .populate('distributionId', 'barangay scheduled location')
-        .sort({ updatedAt: -1 })
-        .lean();
 
       if (!submission) {
         return res.json({ success: true, data: null });

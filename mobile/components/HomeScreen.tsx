@@ -551,19 +551,19 @@ export default function HomeScreen({
                 </View>
                 <Typography variant="body" weight="semiBold" numberOfLines={1}>
                   {proofStatus?.status === 'Approved'
-                    ? 'Proof approved — enrollment active'
+                    ? 'Damage assessment verified'
                     : proofStatus?.status === 'Pending Verification'
                       ? 'Proof is under review'
                       : activeDisasterEvent?.name || 'Need disaster assistance?'}
                 </Typography>
                 <Typography variant="caption" color={theme.colors.textSecondary} numberOfLines={2}>
                   {proofStatus?.status === 'Approved'
-                    ? 'Matching distributions created for your barangay will include you automatically.'
+                    ? 'Your damage assessment was verified by the admin.'
                     : proofStatus?.status === 'Pending Verification'
                       ? 'No need to send again. Open this page to check the admin review status.'
                       : proofStatus?.status === 'Rejected'
                         ? 'Admin requested changes. Open your submission to update the proof.'
-                        : 'Upload 3–5 photos once. After approval, matching barangay distributions enroll you automatically.'}
+                        : 'Submit damage assessment for targeted relief distributions.'}
                 </Typography>
               </View>
               <View style={styles.proofCtaArrow}>

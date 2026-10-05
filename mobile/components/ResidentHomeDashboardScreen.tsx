@@ -258,14 +258,14 @@ export default function ResidentHomeDashboardScreen({
 
   const unreadCount = notifications.filter((item) => !item.isRead).length;
   const proofTitle = proofStatus?.status === 'Approved'
-    ? 'Proof approved'
+    ? 'Damage assessment verified'
     : proofStatus?.status === 'Pending Verification'
       ? 'Proof is under review'
       : proofStatus?.status === 'Rejected'
         ? 'Proof needs changes'
         : 'Submit Proof of Damage';
   const proofDescription = proofStatus?.status === 'Approved'
-    ? 'You are enrolled for matching barangay distributions.'
+    ? 'Your damage assessment was verified by the admin.'
     : proofStatus?.status === 'Pending Verification'
       ? 'No need to submit again. Check your review status.'
       : proofStatus?.status === 'Rejected'

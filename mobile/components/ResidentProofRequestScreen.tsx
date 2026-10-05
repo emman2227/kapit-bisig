@@ -235,7 +235,6 @@ export default function ResidentProofRequestScreen({
         : null;
       if (cachedEvent) {
         setActiveEvent(cachedEvent);
-        setProofStatus(cachedForResident?.proofStatus ?? null);
       }
 
       await syncCurrentResidentProofs();
@@ -267,18 +266,21 @@ export default function ResidentProofRequestScreen({
       } else if (currentEventId) {
         const statusResult = await fetchResidentProofSubmissionStatus(session.token, currentEventId, null);
         if (statusResult.success) {
-          setProofStatus(statusResult.data ?? null);
-          await updateResidentOfflineCache(session.residentId, { proofStatus: statusResult.data ?? null });
-        } else if (!cachedForResident) {
+          const freshStatus = statusResult.data ?? null;
+          setProofStatus(freshStatus);
+          await updateResidentOfflineCache(session.residentId, { proofStatus: freshStatus });
+        } else {
           setProofStatus(null);
+          await updateResidentOfflineCache(session.residentId, { proofStatus: null });
         }
       } else {
         setProofStatus(null);
+        await updateResidentOfflineCache(session.residentId, { proofStatus: null });
       }
     } finally {
       setEventLoading(false);
     }
-  }, []);
+  }, [targetDistribution]);
 
   useEffect(() => {
     loadScreenData().catch(() => {
@@ -731,9 +733,9 @@ export default function ResidentProofRequestScreen({
               </View>
               <View style={styles.summaryCopy}>
                 <Typography variant="label" color={theme.colors.textMuted}>Target Beneficiary</Typography>
-                <Typography variant="body" weight="semiBold">One verified proof per disaster</Typography>
+                <Typography variant="body" weight="semiBold">Targeted Relief Damage Proof</Typography>
                 <Typography variant="caption" color={theme.colors.textSecondary}>
-                  Once approved, you will be enrolled automatically in matching barangay distributions.
+                  Verified damage proof is required for each targeted relief distribution.
                 </Typography>
               </View>
               <View style={styles.progressBubble}>
@@ -756,8 +758,8 @@ export default function ResidentProofRequestScreen({
 
             <View style={styles.requirementWrap}>
               <RequirementPill
-                label={activeEvent ? 'Disaster event found' : eventLoading ? 'Checking active event' : 'No active event'}
-                tone={activeEvent ? 'ready' : eventLoading ? 'pending' : 'warning'}
+                label={targetDistribution ? 'Distribution selected' : activeEvent ? 'Disaster event active' : eventLoading ? 'Checking events' : 'No active event'}
+                tone={targetDistribution || activeEvent ? 'ready' : eventLoading ? 'pending' : 'warning'}
               />
               <RequirementPill
                 label={`${Math.min(trimmedDescriptionLength, 10)}/10 description`}
@@ -808,17 +810,17 @@ export default function ResidentProofRequestScreen({
                 <View style={styles.selectedDistributionCard}>
                   <View style={styles.selectedDistributionHeader}>
                     <View style={styles.selectedDistributionIcon}>
-                      <Ionicons name="shield-checkmark-outline" size={18} color={residentColors.icon} />
+                      <Ionicons name="information-circle-outline" size={18} color={residentColors.icon} />
                     </View>
                     <View style={styles.selectedDistributionCopy}>
-                      <Typography variant="body" weight="semiBold">Calamity Damage Assessment</Typography>
+                      <Typography variant="body" weight="semiBold">No Specific Distribution Selected</Typography>
                       <Typography variant="caption" color={theme.colors.textSecondary}>
                         {residentBarangay ? `Barangay ${residentBarangay} • ` : ''}Targeted Relief Assistance
                       </Typography>
                     </View>
                   </View>
                   <Typography variant="caption" color={theme.colors.textSecondary}>
-                    Your approved damage assessment qualifies your household for targeted relief distributions in {residentBarangay || 'your barangay'}.
+                    Damage assessments are linked to specific distributions. Please select an active distribution from the Relief Schedule to submit or view proof.
                   </Typography>
                 </View>
               )}
@@ -845,7 +847,9 @@ export default function ResidentProofRequestScreen({
                 </Text>
                 <Text style={styles.statusMessage}>
                   {proofStatus.status === 'Approved'
-                    ? `You are eligible for this event. Any matching distribution created for ${residentBarangay || 'your barangay'} will enroll you automatically.`
+                    ? targetDistribution
+                      ? `Your damage assessment is approved for ${targetDistribution.name || 'this distribution'}. Present your QR claim pass at the venue.`
+                      : 'Your damage assessment was verified by the admin.'
                     : proofStatus.status === 'Rejected'
                       ? (proofStatus.rejectionReason || 'Review the proof details and submit clearer information.')
                       : 'You do not need to submit again. We will notify you after the admin completes the review.'}
