@@ -1,13 +1,30 @@
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+'use client'
+
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/AuthContext'
 
 export default function Home() {
-  const cookieStore = cookies()
-  const token = cookieStore.get('sa_token')?.value
+  const router = useRouter()
+  const { user, loading } = useAuth()
 
-  if (token) {
-    redirect('/dashboard')
-  }
+  useEffect(() => {
+    if (!loading) {
+      if (user) {
+        router.replace('/dashboard')
+      } else {
+        router.replace('/login')
+      }
+    }
+  }, [loading, user, router])
 
-  redirect('/login')
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-4 border-[#226538] border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-medium text-gray-600">Loading Kapit-Bisig...</p>
+      </div>
+    </div>
+  )
 }
+
