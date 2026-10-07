@@ -657,15 +657,16 @@ export default function ResidentRegistrationPage() {
               title="Review new registrations"
               subtitle="Screen newly submitted resident applications, proof uploads, and validation flags"
               rightAccessory={
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-3">
                   <button
                     id="assisted-registration-btn"
                     onClick={() => setShowAssistedModal(true)}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors cursor-pointer"
+                    className="inline-flex items-center justify-center whitespace-nowrap gap-2 rounded-xl bg-[#0F533A] px-5 py-2.5 text-sm font-bold text-white shadow-[0_2px_10px_rgba(0,0,0,0.10)] transition-all duration-300 hover:bg-[#0a3f2c] hover:scale-[1.02] hover:shadow-[0_4px_14px_rgba(0,0,0,0.15)] cursor-pointer"
                   >
-                    + Assisted Registration (Walk-In)
+                    <UserPlusIcon className="h-4 w-4" />
+                    <span>Assisted Registration (Walk-In)</span>
                   </button>
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+                  <div className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
                     Ready for review: {queueMetrics.manualReviewCount}
                   </div>
                 </div>
@@ -984,5 +985,13 @@ function AlertCircleIcon({ className }: { className?: string }) {
           <path d="M12 8v4" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} />
           <path d="M12 16h.01" strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} />
       </svg>
+  )
+}
+
+function UserPlusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+    </svg>
   )
 }
