@@ -25,6 +25,8 @@ export interface AssistedRegistrationPayload {
   streetAddress: string;
   city?: string;
   householdSize?: number;
+  vulnerableMembers?: string[];
+  vulnerableCounts?: Record<string, number>;
   idType: string;
   idNumber?: string;
   frontIdImage?: string;

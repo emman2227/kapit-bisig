@@ -286,6 +286,8 @@ export interface ResidentRecord {
   verifiedBy?: string;
   verifiedAt?: string;
   createdAt?: string;
+  registrationMethod?: 'self' | 'assisted';
+  assistedBy?: string;
   verification?: {
     overallConfidence?: number;
     aiVerificationStatus?: 'High Match' | 'Medium Match' | 'Low Match';

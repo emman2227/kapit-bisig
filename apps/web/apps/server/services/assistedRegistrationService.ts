@@ -149,12 +149,12 @@ export async function registerAssistedResident(
       fullName: `${data.firstName} ${data.lastName}`.trim(),
       dateOfBirth: data.dateOfBirth,
       gender: data.gender,
-      mobileNumber: normalizedMobile,
+      mobileNumber: normalizedMobile || undefined,
       email: data.email || '',
       password: plainPassword,
       barangay: data.barangay,
       streetAddress: data.streetAddress,
-      city: data.city || 'Antipolo',
+      city: 'Labrador',
       householdSize: data.householdSize || 1,
       vulnerableMembers: data.vulnerableMembers || [],
       vulnerableCounts: data.vulnerableCounts || {},
@@ -199,11 +199,38 @@ export async function registerAssistedResident(
       qrToken,
       tempPassword: plainPassword,
     };
-  } catch (err) {
+  } catch (err: any) {
     console.error('[AssistedRegistration] Service error:', err);
+
+    // Friendly mapping for MongoDB duplicate key (E11000) errors
+    if (err && (err.code === 11000 || err.name === 'MongoServerError')) {
+      const keyPattern = err.keyPattern || {};
+      const keyValue = err.keyValue || {};
+      if (keyPattern.mobileNumber || ('mobileNumber' in keyValue)) {
+        return {
+          success: false,
+          message: 'This mobile number is already registered.',
+          errorCode: 'DUPLICATE_MOBILE',
+        };
+      }
+      if (keyPattern.idNumber || ('idNumber' in keyValue)) {
+        return {
+          success: false,
+          message: 'This ID number is already registered in the system.',
+          errorCode: 'DUPLICATE_ID',
+        };
+      }
+      return {
+        success: false,
+        message: 'A resident with these unique details already exists.',
+        errorCode: 'DUPLICATE_RECORD',
+      };
+    }
+
+    // Never leak raw MongoDB or stack errors to the user
     return {
       success: false,
-      message: (err as Error).message || 'Failed to complete assisted registration.',
+      message: 'Unable to complete registration. Please check the details and try again.',
       errorCode: 'INTERNAL_ERROR',
     };
   }

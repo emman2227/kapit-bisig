@@ -322,6 +322,17 @@ export default function ResidentReviewModal({
                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                      <div className="flex flex-wrap items-center gap-3">
                        <ResidentStatusBadge status={resident.status} approvedLabel={approvedLabel} />
+                       {resident.registrationMethod === 'assisted' ? (
+                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300 border border-purple-200 dark:border-purple-800">
+                           <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                           Assisted (Walk-In)
+                         </span>
+                       ) : (
+                         <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                           <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                           Self-Registration
+                         </span>
+                       )}
                        
                        <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                           <span>System Confidence: <strong className="text-slate-900 dark:text-slate-100">{resident.verification?.screeningConfidence ?? 0}%</strong></span>
@@ -373,7 +384,15 @@ export default function ResidentReviewModal({
                         <DetailItem label="Barangay" value={resident.barangay} />
                         <DetailItem label="Birth Date" value={formatDateOnly(resident.dateOfBirth)} />
                         <DetailItem label="Gender" value={resident.gender || '-'} />
-                        <DetailItem label="City" value={resident.city || '-'} />
+                        <DetailItem label="City" value={resident.city || 'Labrador'} />
+                        <DetailItem
+                          label="Registration Mode"
+                          value={
+                            resident.registrationMethod === 'assisted'
+                              ? `Assisted Walk-In${resident.assistedBy ? ` (Staff: ${resident.assistedBy})` : ''}`
+                              : 'Self-Registration'
+                          }
+                        />
                         <DetailItem label="Household Size" value={String(resident.householdSize || 1)} />
                         <DetailItem label="Reviewed By" value={resident.verifiedBy || 'Pending review'} />
                         <DetailItem

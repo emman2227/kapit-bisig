@@ -47,6 +47,13 @@ const ID_TYPE_OPTIONS = [
   { value: "Voter's ID", label: "Voter's ID / COMELEC Certification" },
 ];
 
+const VULNERABLE_OPTIONS = [
+  { id: 'senior', label: 'Senior Citizen', desc: '60+ years old' },
+  { id: 'pwd', label: 'PWD', desc: 'Person with Disability' },
+  { id: 'pregnant', label: 'Pregnant', desc: 'Expecting / Nursing' },
+  { id: 'children', label: 'Children (0-5)', desc: 'Infant or Toddler' },
+];
+
 interface AssistedRegistrationModalProps {
   open: boolean;
   onClose: () => void;
@@ -69,11 +76,12 @@ export default function AssistedRegistrationModal({
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
 
-  // Step 2: Address
+  // Step 2: Address & Household
   const [barangay, setBarangay] = useState<string>(BARANGAY_OPTIONS[0]);
   const [streetAddress, setStreetAddress] = useState('');
-  const [city, setCity] = useState('Antipolo');
   const [householdSize, setHouseholdSize] = useState('1');
+  const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
+  const [vulnerableCounts, setVulnerableCounts] = useState<Record<string, number>>({});
 
   // Step 3: Identification
   const [idType, setIdType] = useState<string>('STAFF_ATTESTATION');
@@ -110,8 +118,9 @@ export default function AssistedRegistrationModal({
     setEmail('');
     setBarangay(BARANGAY_OPTIONS[0]);
     setStreetAddress('');
-    setCity('Antipolo');
     setHouseholdSize('1');
+    setVulnerableMembers([]);
+    setVulnerableCounts({});
     setIdType('STAFF_ATTESTATION');
     setIdNumber('');
     setFrontIdImage('');
@@ -123,6 +132,29 @@ export default function AssistedRegistrationModal({
     setErrorMsg('');
     setSubmitting(false);
     stopCamera();
+  };
+
+  const toggleVulnerability = (id: string) => {
+    setVulnerableMembers((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((item) => item !== id);
+        const nextCounts = { ...vulnerableCounts };
+        delete nextCounts[id];
+        setVulnerableCounts(nextCounts);
+        return next;
+      } else {
+        setVulnerableCounts((counts) => ({ ...counts, [id]: counts[id] || 1 }));
+        return [...prev, id];
+      }
+    });
+  };
+
+  const updateVulnerabilityCount = (id: string, delta: number) => {
+    setVulnerableCounts((counts) => {
+      const current = counts[id] || 1;
+      const nextVal = Math.max(1, current + delta);
+      return { ...counts, [id]: nextVal };
+    });
   };
 
   // Check if form has data entered
@@ -362,8 +394,10 @@ export default function AssistedRegistrationModal({
       email: email.trim() || undefined,
       barangay,
       streetAddress: streetAddress.trim(),
-      city: city.trim() || 'Antipolo',
+      city: 'Labrador',
       householdSize: parseInt(householdSize, 10) || 1,
+      vulnerableMembers,
+      vulnerableCounts,
       idType,
       idNumber: idType !== 'STAFF_ATTESTATION' && idNumber.trim() ? idNumber.trim() : undefined,
       attestationReason:
@@ -635,18 +669,17 @@ export default function AssistedRegistrationModal({
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-end">
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-                      Municipality / City
+                      Municipality
                     </label>
-                    <input
-                      type="text"
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      placeholder="Antipolo"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
-                    />
+                    <div className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs text-slate-800 dark:text-slate-200 font-semibold flex items-center justify-between">
+                      <span>Labrador, Pangasinan</span>
+                      <span className="text-[10px] uppercase font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                        Sole Dedicated LGU
+                      </span>
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
@@ -660,6 +693,79 @@ export default function AssistedRegistrationModal({
                       onChange={(e) => setHouseholdSize(e.target.value)}
                       className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                     />
+                  </div>
+                </div>
+
+                {/* Vulnerability Sector Cards */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Vulnerable Sector Categories (Optional)
+                    </label>
+                    <span className="text-[11px] text-gray-500 dark:text-slate-400">
+                      Select all present in household
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    {VULNERABLE_OPTIONS.map((item) => {
+                      const isSelected = vulnerableMembers.includes(item.id);
+                      const count = vulnerableCounts[item.id] || 1;
+                      return (
+                        <div
+                          key={item.id}
+                          className={`rounded-2xl border p-3 transition-all ${
+                            isSelected
+                              ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30 ring-1 ring-emerald-500/20'
+                              : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <label className="flex items-start gap-2 cursor-pointer flex-1">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleVulnerability(item.id)}
+                                className="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                              />
+                              <div>
+                                <span className="block text-xs font-bold text-slate-800 dark:text-slate-200">
+                                  {item.label}
+                                </span>
+                                <span className="block text-[11px] text-slate-500 dark:text-slate-400">
+                                  {item.desc}
+                                </span>
+                              </div>
+                            </label>
+                          </div>
+                          {isSelected && (
+                            <div className="mt-2.5 pt-2 border-t border-emerald-200/60 dark:border-emerald-900/40 flex items-center justify-between">
+                              <span className="text-[11px] font-medium text-emerald-900 dark:text-emerald-300">
+                                Count:
+                              </span>
+                              <div className="flex items-center gap-1.5 bg-white dark:bg-slate-900 rounded-lg border border-emerald-300 dark:border-emerald-700 px-1 py-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => updateVulnerabilityCount(item.id, -1)}
+                                  className="w-5 h-5 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-emerald-600 rounded"
+                                >
+                                  -
+                                </button>
+                                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300 min-w-[16px] text-center">
+                                  {count}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateVulnerabilityCount(item.id, 1)}
+                                  className="w-5 h-5 flex items-center justify-center text-xs font-bold text-slate-600 dark:text-slate-300 hover:text-emerald-600 rounded"
+                                >
+                                  +
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1003,8 +1109,36 @@ export default function AssistedRegistrationModal({
                     <span className="font-semibold text-slate-900 dark:text-slate-100">{barangay}</span>
                   </div>
                   <div className="flex justify-between p-3.5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Registration Mode</span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300">
+                      Assisted Walk-In (Staff Handled)
+                    </span>
+                  </div>
+                  <div className="flex justify-between p-3.5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Municipality</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">Labrador, Pangasinan</span>
+                  </div>
+                  <div className="flex justify-between p-3.5">
                     <span className="text-slate-500 dark:text-slate-400 font-medium">Address</span>
                     <span className="font-semibold text-slate-900 dark:text-slate-100">{streetAddress}</span>
+                  </div>
+                  <div className="flex justify-between p-3.5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Household Size</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{householdSize} Member(s)</span>
+                  </div>
+                  <div className="flex justify-between p-3.5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Vulnerable Members</span>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100 text-right">
+                      {vulnerableMembers.length > 0
+                        ? vulnerableMembers
+                            .map((m) => {
+                              const opt = VULNERABLE_OPTIONS.find((o) => o.id === m);
+                              const count = vulnerableCounts[m] || 1;
+                              return `${opt?.label || m} (${count})`;
+                            })
+                            .join(', ')
+                        : 'None'}
+                    </span>
                   </div>
                   <div className="flex justify-between p-3.5">
                     <span className="text-slate-500 dark:text-slate-400 font-medium">Document / ID Type</span>

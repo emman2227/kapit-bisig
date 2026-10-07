@@ -15,6 +15,7 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as SecureStore from 'expo-secure-store';
 import {
   DashboardSummary,
   mobileAuthService,
@@ -336,6 +337,17 @@ export default function VolunteerDashboardScreen({
       subscription.remove();
     };
   }, [loadDashboardData, loadNotifications]);
+
+  // If user restarted app while assisted registration was open, restore modal
+  useEffect(() => {
+    SecureStore.getItemAsync('kapit_bisig_assisted_open')
+      .then((flag) => {
+        if (flag === 'true') {
+          setShowAssistedRegistration(true);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>

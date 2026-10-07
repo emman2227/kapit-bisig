@@ -45,7 +45,8 @@ export async function runAssistedRegistrationTests(): Promise<void> {
 
     const resident1 = await Resident.findById(result1.residentId).select('+password');
     assert.ok(resident1, 'Resident document should exist in DB');
-    assert.strictEqual(resident1.mobileNumber, '', 'Mobile number should be empty string');
+    assert.ok(!resident1.mobileNumber, 'Mobile number should be empty or undefined');
+    assert.strictEqual(resident1.city, 'Labrador', 'City should default to Labrador');
     assert.strictEqual(resident1.registrationMethod, 'assisted', 'Registration method should be assisted');
     assert.strictEqual(resident1.assistedBy, 'staff_123');
     assert.strictEqual(resident1.status, 'Pending');

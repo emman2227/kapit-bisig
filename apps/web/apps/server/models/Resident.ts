@@ -209,7 +209,6 @@ const ResidentSchema: Schema = new Schema(
     mobileNumber: {
       type: String,
       trim: true,
-      default: '',
       validate: {
         validator: function (value: string | undefined | null) {
           if (!value || value.trim() === '') return true;
@@ -259,7 +258,7 @@ const ResidentSchema: Schema = new Schema(
     city: {
       type: String,
       trim: true,
-      default: '',
+      default: 'Labrador',
     },
     barangay: {
       type: String,
@@ -464,7 +463,11 @@ ResidentSchema.pre('validate', function(next) {
   if (typeof currentMobile === 'string' && currentMobile.trim().length > 0) {
     this.mobileNumber = normalizePhilippineMobileNumber(currentMobile);
   } else {
-    this.mobileNumber = '';
+    this.set('mobileNumber', undefined);
+  }
+
+  if (!this.city || (this.city as string).trim() === '') {
+    this.city = 'Labrador';
   }
 
   const currentEmail = typeof this.email === 'string' ? this.email.trim() : '';

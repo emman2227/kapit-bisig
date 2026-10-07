@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as SecureStore from 'expo-secure-store';
 import {
   submitAssistedRegistration,
   AssistedRegistrationPayload,
@@ -50,6 +52,16 @@ const ALTERNATIVE_ID_TYPES = [
   'STAFF_ATTESTATION',
 ];
 
+const DRAFT_FILE = `${FileSystem.documentDirectory || ''}assisted_registration_draft.json`;
+const OPEN_FLAG_KEY = 'kapit_bisig_assisted_open';
+
+const VULNERABLE_MEMBER_OPTIONS = [
+  { id: 'senior', label: 'Senior Citizen', icon: 'walk-outline' },
+  { id: 'pwd', label: 'PWD', icon: 'accessibility-outline' },
+  { id: 'pregnant', label: 'Pregnant', icon: 'woman-outline' },
+  { id: 'children', label: 'Children (0-5)', icon: 'people-outline' },
+] as const;
+
 interface AssistedRegistrationScreenProps {
   visible: boolean;
   onClose: () => void;
@@ -72,11 +84,12 @@ export default function AssistedRegistrationScreen({
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
 
-  // Step 2: Address
+  // Step 2: Address & Household
   const [barangay, setBarangay] = useState<string>(BARANGAYS[0]);
   const [streetAddress, setStreetAddress] = useState('');
-  const [city, setCity] = useState('Antipolo');
   const [householdSize, setHouseholdSize] = useState('1');
+  const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
+  const [vulnerableCounts, setVulnerableCounts] = useState<{ [key: string]: number }>({});
 
   // Step 3: ID Verification
   const [idType, setIdType] = useState<string>('STAFF_ATTESTATION');
@@ -94,7 +107,126 @@ export default function AssistedRegistrationScreen({
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  const resetForm = () => {
+  // Load draft from disk when modal opens
+  useEffect(() => {
+    if (!visible) return;
+    const loadDraft = async () => {
+      try {
+        const fileInfo = await FileSystem.getInfoAsync(DRAFT_FILE);
+        if (fileInfo.exists) {
+          const raw = await FileSystem.readAsStringAsync(DRAFT_FILE);
+          const draft = JSON.parse(raw);
+          if (draft) {
+            if (draft.currentStep) setCurrentStep(draft.currentStep);
+            if (draft.firstName) setFirstName(draft.firstName);
+            if (draft.lastName) setLastName(draft.lastName);
+            if (draft.dateOfBirth) setDateOfBirth(draft.dateOfBirth);
+            if (draft.gender) setGender(draft.gender);
+            if (typeof draft.hasPhone === 'boolean') setHasPhone(draft.hasPhone);
+            if (draft.mobileNumber) setMobileNumber(draft.mobileNumber);
+            if (draft.email) setEmail(draft.email);
+            if (draft.barangay) setBarangay(draft.barangay);
+            if (draft.streetAddress) setStreetAddress(draft.streetAddress);
+            if (draft.householdSize) setHouseholdSize(draft.householdSize);
+            if (Array.isArray(draft.vulnerableMembers)) setVulnerableMembers(draft.vulnerableMembers);
+            if (draft.vulnerableCounts) setVulnerableCounts(draft.vulnerableCounts);
+            if (draft.idType) setIdType(draft.idType);
+            if (draft.idNumber) setIdNumber(draft.idNumber);
+            if (draft.frontIdImage) setFrontIdImage(draft.frontIdImage);
+            if (draft.backIdImage) setBackIdImage(draft.backIdImage);
+            if (draft.attestationReason) setAttestationReason(draft.attestationReason);
+            if (draft.faceImage) setFaceImage(draft.faceImage);
+          }
+        }
+        await SecureStore.setItemAsync(OPEN_FLAG_KEY, 'true');
+      } catch (e) {
+        console.warn('[AssistedRegistration] Could not restore draft:', e);
+      }
+    };
+    loadDraft();
+  }, [visible]);
+
+  // Persist draft whenever inputs change while visible
+  useEffect(() => {
+    if (!visible) return;
+    const saveDraft = async () => {
+      try {
+        const data = {
+          currentStep,
+          firstName,
+          lastName,
+          dateOfBirth,
+          gender,
+          hasPhone,
+          mobileNumber,
+          email,
+          barangay,
+          streetAddress,
+          householdSize,
+          vulnerableMembers,
+          vulnerableCounts,
+          idType,
+          idNumber,
+          frontIdImage,
+          backIdImage,
+          attestationReason,
+          faceImage,
+        };
+        await FileSystem.writeAsStringAsync(DRAFT_FILE, JSON.stringify(data));
+        await SecureStore.setItemAsync(OPEN_FLAG_KEY, 'true');
+      } catch (e) {
+        console.warn('[AssistedRegistration] Failed to save draft:', e);
+      }
+    };
+    const t = setTimeout(saveDraft, 500);
+    return () => clearTimeout(t);
+  }, [
+    visible,
+    currentStep,
+    firstName,
+    lastName,
+    dateOfBirth,
+    gender,
+    hasPhone,
+    mobileNumber,
+    email,
+    barangay,
+    streetAddress,
+    householdSize,
+    vulnerableMembers,
+    vulnerableCounts,
+    idType,
+    idNumber,
+    frontIdImage,
+    backIdImage,
+    attestationReason,
+    faceImage,
+  ]);
+
+  const toggleVulnerableMember = (id: string) => {
+    setVulnerableMembers((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((m) => m !== id);
+        const nextCounts = { ...vulnerableCounts };
+        delete nextCounts[id];
+        setVulnerableCounts(nextCounts);
+        return next;
+      } else {
+        setVulnerableCounts((counts) => ({ ...counts, [id]: counts[id] || 1 }));
+        return [...prev, id];
+      }
+    });
+  };
+
+  const updateVulnerableCount = (id: string, delta: number) => {
+    setVulnerableCounts((counts) => {
+      const current = counts[id] || 1;
+      const nextVal = Math.max(1, current + delta);
+      return { ...counts, [id]: nextVal };
+    });
+  };
+
+  const resetForm = async () => {
     setCurrentStep(1);
     setFirstName('');
     setLastName('');
@@ -105,8 +237,9 @@ export default function AssistedRegistrationScreen({
     setEmail('');
     setBarangay(BARANGAYS[0]);
     setStreetAddress('');
-    setCity('Antipolo');
     setHouseholdSize('1');
+    setVulnerableMembers([]);
+    setVulnerableCounts({});
     setIdType('STAFF_ATTESTATION');
     setIdNumber('');
     setFrontIdImage('');
@@ -117,6 +250,11 @@ export default function AssistedRegistrationScreen({
     setFaceImage('');
     setErrorMessage('');
     setSubmitting(false);
+
+    try {
+      await FileSystem.deleteAsync(DRAFT_FILE, { idempotent: true });
+      await SecureStore.deleteItemAsync(OPEN_FLAG_KEY);
+    } catch (_) {}
   };
 
   const handleClose = () => {
@@ -244,8 +382,10 @@ export default function AssistedRegistrationScreen({
       email: email.trim() ? email.trim() : undefined,
       barangay,
       streetAddress: streetAddress.trim(),
-      city: city.trim() || 'Antipolo',
+      city: 'Labrador',
       householdSize: parseInt(householdSize, 10) || 1,
+      vulnerableMembers,
+      vulnerableCounts,
       idType,
       idNumber: idType !== 'STAFF_ATTESTATION' ? idNumber.trim() : undefined,
       frontIdImage: frontIdImage || undefined,
@@ -462,13 +602,13 @@ export default function AssistedRegistrationScreen({
                   onChangeText={setStreetAddress}
                 />
 
-                <Text style={styles.inputLabel}>City / Municipality</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="City"
-                  value={city}
-                  onChangeText={setCity}
-                />
+                <Text style={styles.inputLabel}>Municipality</Text>
+                <View style={styles.municipalityBadgeContainer}>
+                  <Text style={styles.municipalityText}>Labrador, Pangasinan</Text>
+                  <View style={styles.dedicatedTag}>
+                    <Text style={styles.dedicatedTagText}>Sole Dedicated LGU</Text>
+                  </View>
+                </View>
 
                 <Text style={styles.inputLabel}>Household Size</Text>
                 <TextInput
@@ -478,6 +618,66 @@ export default function AssistedRegistrationScreen({
                   value={householdSize}
                   onChangeText={setHouseholdSize}
                 />
+
+                {/* Vulnerable Sector Cards */}
+                <Text style={styles.inputLabel}>Vulnerable Members (Optional)</Text>
+                <Text style={styles.subLabel}>Tap to select special needs categories present in this household:</Text>
+                <View style={styles.vulnerableGrid}>
+                  {VULNERABLE_MEMBER_OPTIONS.map((item) => {
+                    const isSelected = vulnerableMembers.includes(item.id);
+                    const count = vulnerableCounts[item.id] || 1;
+                    return (
+                      <View
+                        key={item.id}
+                        style={[
+                          styles.vulnerableCard,
+                          isSelected && styles.vulnerableCardActive,
+                        ]}
+                      >
+                        <TouchableOpacity
+                          style={styles.vulnerableCardHeader}
+                          onPress={() => toggleVulnerableMember(item.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={item.icon as any}
+                            size={20}
+                            color={isSelected ? '#059669' : '#64748B'}
+                          />
+                          <Text
+                            style={[
+                              styles.vulnerableCardText,
+                              isSelected && styles.vulnerableCardTextActive,
+                            ]}
+                          >
+                            {item.label}
+                          </Text>
+                        </TouchableOpacity>
+
+                        {isSelected && (
+                          <View style={styles.vulnerableCounterRow}>
+                            <Text style={styles.vulnerableCounterLabel}>Count:</Text>
+                            <View style={styles.vulnerableStepper}>
+                              <TouchableOpacity
+                                style={styles.stepperBtn}
+                                onPress={() => updateVulnerableCount(item.id, -1)}
+                              >
+                                <Text style={styles.stepperBtnText}>-</Text>
+                              </TouchableOpacity>
+                              <Text style={styles.stepperValue}>{count}</Text>
+                              <TouchableOpacity
+                                style={styles.stepperBtn}
+                                onPress={() => updateVulnerableCount(item.id, 1)}
+                              >
+                                <Text style={styles.stepperBtnText}>+</Text>
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        )}
+                      </View>
+                    );
+                  })}
+                </View>
               </View>
             )}
 
@@ -674,12 +874,40 @@ export default function AssistedRegistrationScreen({
                     </Text>
                   </View>
                   <View style={styles.reviewRow}>
+                    <Text style={styles.reviewLabel}>Mode</Text>
+                    <Text style={[styles.reviewValue, { color: '#7C3AED', fontWeight: 'bold' }]}>
+                      Assisted Walk-In (Staff)
+                    </Text>
+                  </View>
+                  <View style={styles.reviewRow}>
+                    <Text style={styles.reviewLabel}>Municipality</Text>
+                    <Text style={styles.reviewValue}>Labrador, Pangasinan</Text>
+                  </View>
+                  <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Barangay</Text>
                     <Text style={styles.reviewValue}>{barangay}</Text>
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Address</Text>
                     <Text style={styles.reviewValue}>{streetAddress}</Text>
+                  </View>
+                  <View style={styles.reviewRow}>
+                    <Text style={styles.reviewLabel}>Household Size</Text>
+                    <Text style={styles.reviewValue}>{householdSize} Member(s)</Text>
+                  </View>
+                  <View style={styles.reviewRow}>
+                    <Text style={styles.reviewLabel}>Vulnerable</Text>
+                    <Text style={styles.reviewValue}>
+                      {vulnerableMembers.length > 0
+                        ? vulnerableMembers
+                            .map((m) => {
+                              const opt = VULNERABLE_MEMBER_OPTIONS.find((o) => o.id === m);
+                              const count = vulnerableCounts[m] || 1;
+                              return `${opt?.label || m} (${count})`;
+                            })
+                            .join(', ')
+                        : 'None'}
+                    </Text>
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>ID Type</Text>
@@ -1217,5 +1445,111 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#FFFFFF',
+  },
+  municipalityBadgeContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  municipalityText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  dedicatedTag: {
+    backgroundColor: '#ECFDF5',
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  dedicatedTagText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#059669',
+    textTransform: 'uppercase',
+  },
+  vulnerableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  vulnerableCard: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 10,
+    padding: 10,
+  },
+  vulnerableCardActive: {
+    borderColor: '#059669',
+    backgroundColor: '#F0FDF4',
+  },
+  vulnerableCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  vulnerableCardText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#475569',
+    flexShrink: 1,
+  },
+  vulnerableCardTextActive: {
+    color: '#065F46',
+  },
+  vulnerableCounterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#DCFCE7',
+  },
+  vulnerableCounterLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  vulnerableStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+  },
+  stepperBtn: {
+    width: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnText: {
+    fontSize: 13,
+    fontWeight: 'bold',
+    color: '#059669',
+  },
+  stepperValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#065F46',
+    minWidth: 18,
+    textAlign: 'center',
   },
 });

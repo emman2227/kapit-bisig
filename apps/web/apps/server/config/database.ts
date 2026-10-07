@@ -47,6 +47,44 @@ async function dropLegacyStaffUsernameIndex(): Promise<void> {
   }
 }
 
+async function repairResidentMobileIndex(): Promise<void> {
+  try {
+    const db = mongoose.connection.db;
+    if (!db) return;
+
+    const collection = db.collection('residents');
+    // 1. Unset mobileNumber for any documents with empty string or null
+    await collection.updateMany(
+      { $or: [{ mobileNumber: '' }, { mobileNumber: null }] },
+      { $unset: { mobileNumber: '' } }
+    );
+
+    // 2. Inspect indexes
+    const indexes = await collection.indexes();
+    const mobileIndex = indexes.find((idx) => idx.name === 'mobileNumber_1');
+    if (mobileIndex) {
+      const hasPartialFilter = Boolean(mobileIndex.partialFilterExpression);
+      if (!hasPartialFilter) {
+        await collection.dropIndex('mobileNumber_1');
+        console.log('Dropped legacy index residents.mobileNumber_1 (missing partialFilterExpression)');
+      }
+    }
+
+    // Ensure the index exists with partial filter expression
+    await collection.createIndex(
+      { mobileNumber: 1 },
+      {
+        unique: true,
+        sparse: true,
+        partialFilterExpression: { mobileNumber: { $gt: '' } },
+        background: true,
+      }
+    );
+  } catch (error) {
+    console.warn('Could not repair resident mobile index:', (error as Error).message);
+  }
+}
+
 export const connectDB = async (): Promise<void> => {
   const uri = MONGODB_URI || '';
   validateMongoConfig(uri);
@@ -77,6 +115,7 @@ export const connectDB = async (): Promise<void> => {
 
     const conn = await mongoose.connect(uri, options);
     await dropLegacyStaffUsernameIndex();
+    await repairResidentMobileIndex();
 
     console.log(`MongoDB Connected: ${conn.connection.host}`);
     console.log(`Database: ${conn.connection.name}`);
