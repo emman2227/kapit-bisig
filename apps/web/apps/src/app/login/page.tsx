@@ -193,6 +193,17 @@ export default function LoginPage() {
     }
   }
 
+  if (authLoading || user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-4 border-[#226538] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium text-gray-600">Checking session...</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen flex">
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden">

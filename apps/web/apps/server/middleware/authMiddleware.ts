@@ -231,7 +231,7 @@ export const optionalAuthMiddleware = async (
  * @returns Signed JWT token string
  * 
  * Token Configuration:
- * - Expires in 24 hours by default (configurable via JWT_EXPIRES_IN env var)
+ * - Expires in 30 days by default (configurable via JWT_EXPIRES_IN env var)
  * - Contains userId, email, and role claims
  * - Signed with HS256 algorithm
  */
@@ -242,7 +242,7 @@ export const generateToken = (
   assignedBarangays?: string[],
 ): string => {
   const secret: Secret = getJWTSecret();
-  const expiresIn = (process.env.JWT_EXPIRES_IN || '24h') as SignOptions['expiresIn'];
+  const expiresIn = (process.env.JWT_EXPIRES_IN || '30d') as SignOptions['expiresIn'];
   const options: SignOptions = { 
     expiresIn,
     algorithm: 'HS256',
