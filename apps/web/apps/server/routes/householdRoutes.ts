@@ -1098,7 +1098,7 @@ router.post('/auth/forgot-password/send-otp', passwordResetSendRateLimiter, vali
         });
 
         try {
-          await sendPasswordResetOtpSms(resident.mobileNumber, otp);
+          await sendPasswordResetOtpSms(resident.mobileNumber || normalizedMobile, otp);
         } catch (smsErr) {
           console.error('[SMS] Failed to send resident reset OTP:', (smsErr as Error).message);
           return res.status(503).json({

@@ -21,10 +21,13 @@ export const superadminLoginSchema = z
 
 export const householdLoginSchema = z
   .object({
-    mobileNumber: trimmedString.min(1).max(32),
+    identifier: trimmedString.min(1).max(50).optional(),
+    mobileNumber: trimmedString.max(32).optional(),
     password: z.string().min(1).max(128),
   })
-  .strict();
+  .refine((data) => Boolean(data.identifier || data.mobileNumber), {
+    message: 'Mobile number or Resident Code is required',
+  });
 
 export const householdForgotSendOtpSchema = z
   .object({

@@ -76,7 +76,7 @@ export default function SplashScreen({
   const [showVolunteerLoginScreen, setShowVolunteerLoginScreen] = useState(false);
   const [showRegisterScreen, setShowRegisterScreen] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [mobileNumber, setMobileNumber] = useState('');
+  const [loginIdentifier, setLoginIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isMobileInputFocused, setIsMobileInputFocused] = useState(false);
   const [isPasswordInputFocused, setIsPasswordInputFocused] = useState(false);
@@ -159,27 +159,11 @@ export default function SplashScreen({
     setShowOnboarding(true);
   };
 
-  // Normalize Philippine mobile number: strip non-digits, +63 → 0, bare 9xxx → 09xxx
-  const normalizeMobileForLogin = (value: string): string => {
-    const trimmed = (value || '').trim();
-    if (!trimmed) return '';
-    let sanitized = '';
-    if (trimmed.startsWith('+')) {
-      sanitized = `+${trimmed.slice(1).replace(/\D/g, '')}`;
-    } else {
-      sanitized = trimmed.replace(/\D/g, '');
-    }
-    if (sanitized.startsWith('+63')) return `0${sanitized.slice(3)}`;
-    if (sanitized.startsWith('63')) return `0${sanitized.slice(2)}`;
-    if (/^9\d{9}$/.test(sanitized)) return `0${sanitized}`;
-    return sanitized;
-  };
-
   const handleLogin = async () => {
     setLoginError('');
 
-    if (!mobileNumber.trim() || !password.trim()) {
-      setLoginError('Enter your mobile number and password.');
+    if (!loginIdentifier.trim() || !password.trim()) {
+      setLoginError('Enter your mobile number or resident code and password.');
       return;
     }
 
@@ -189,8 +173,7 @@ export default function SplashScreen({
       await mobileAuthService.logout();
       await clearResidentSession();
 
-      const normalizedMobile = normalizeMobileForLogin(mobileNumber);
-      const response = await residentLogin(normalizedMobile, password);
+      const response = await residentLogin(loginIdentifier.trim(), password);
       if (!response.success || !response.data) {
         setLoginError(response.message || 'Login failed. Please try again.');
         return;
@@ -795,15 +778,15 @@ export default function SplashScreen({
               <Ionicons name="call-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="09XXXXXXXXX"
+                placeholder="Mobile (09XXXXXXXXX) or Resident Code"
                 placeholderTextColor="#888"
-                value={mobileNumber}
-                onChangeText={(text) => setMobileNumber(text.replace(/\D/g, '').slice(0, 11))}
+                value={loginIdentifier}
+                onChangeText={setLoginIdentifier}
                 onFocus={() => setIsMobileInputFocused(true)}
                 onBlur={() => setIsMobileInputFocused(false)}
-                keyboardType="phone-pad"
-                autoCapitalize="none"
-                maxLength={11}
+                keyboardType="default"
+                autoCapitalize="characters"
+                maxLength={30}
               />
             </View>
 
@@ -834,7 +817,7 @@ export default function SplashScreen({
               <TouchableOpacity
                 onPress={() => {
                   setForgotStep('mobile');
-                  setForgotMobile(mobileNumber);
+                  setForgotMobile(loginIdentifier);
                   setForgotResetToken('');
                   setForgotVerificationCode('');
                   setForgotNewPassword('');

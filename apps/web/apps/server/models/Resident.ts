@@ -75,7 +75,7 @@ export interface IResident extends Document {
   fullName: string;
   dateOfBirth: string;
   gender: 'Male' | 'Female';
-  mobileNumber: string;
+  mobileNumber?: string;
   email?: string;
   emailLower?: string;
   password: string;
@@ -91,11 +91,16 @@ export interface IResident extends Document {
   // Identity Verification (Step 3)
   idType: string;
   idNumber: string;
-  frontIdImage: string;
-  backIdImage: string;
+  frontIdImage?: string;
+  backIdImage?: string;
   
   // Face Scan (Step 4)
   faceImage: string;
+  
+  // Assisted Registration Tracking
+  registrationMethod?: 'self' | 'assisted';
+  assistedBy?: string | null;
+  attestationReason?: string;
   
   // Face Descriptor (128-float array for face recognition - privacy compliant)
   faceDescriptor?: number[];
@@ -203,10 +208,11 @@ const ResidentSchema: Schema = new Schema(
     },
     mobileNumber: {
       type: String,
-      required: [true, 'Mobile number is required'],
       trim: true,
+      default: '',
       validate: {
-        validator: function(value: string) {
+        validator: function (value: string | undefined | null) {
+          if (!value || value.trim() === '') return true;
           return isValidPhilippineMobileNumber(value);
         },
         message: 'Mobile number must be a valid Philippine format (09XXXXXXXXX)',
@@ -234,6 +240,21 @@ const ResidentSchema: Schema = new Schema(
     lastProfileUpdateAt: {
       type: Date,
       default: null,
+    },
+    registrationMethod: {
+      type: String,
+      enum: ['self', 'assisted'],
+      default: 'self',
+      index: true,
+    },
+    assistedBy: {
+      type: String,
+      default: null,
+    },
+    attestationReason: {
+      type: String,
+      trim: true,
+      default: '',
     },
     city: {
       type: String,
@@ -271,15 +292,21 @@ const ResidentSchema: Schema = new Schema(
     },
     idNumber: {
       type: String,
-      required: [true, 'ID number is required'],
+      required: [
+        function (this: any) {
+          return this.idType !== 'STAFF_ATTESTATION';
+        },
+        'ID number is required',
+      ],
+      default: '',
     },
     frontIdImage: {
       type: String,
-      required: [true, 'Front ID image is required'],
+      default: '',
     },
     backIdImage: {
       type: String,
-      required: [true, 'Back ID image is required'],
+      default: '',
     },
     
     // Face Scan
@@ -433,9 +460,11 @@ const ResidentSchema: Schema = new Schema(
 );
 
 ResidentSchema.pre('validate', function(next) {
-  const currentMobile = this.mobileNumber;
+  const currentMobile = this.mobileNumber as string | undefined;
   if (typeof currentMobile === 'string' && currentMobile.trim().length > 0) {
     this.mobileNumber = normalizePhilippineMobileNumber(currentMobile);
+  } else {
+    this.mobileNumber = '';
   }
 
   const currentEmail = typeof this.email === 'string' ? this.email.trim() : '';
@@ -461,6 +490,16 @@ ResidentSchema.pre('save', async function (next) {
   } catch (error) {
     next(error as Error);
   }
+});
+
+// Surrogate ID hook for staff attestation (residents with no government ID)
+ResidentSchema.pre('save', async function (next) {
+  const currentId = this.idNumber as string | undefined;
+  if (this.idType === 'STAFF_ATTESTATION' && (!currentId || currentId.trim() === '')) {
+    const code = this.residentCode || `ATTEST-${Date.now()}`;
+    this.idNumber = `ATTEST-${code}`;
+  }
+  next();
 });
 
 // Hash password before saving
@@ -507,5 +546,13 @@ ResidentSchema.index({ barangay: 1, createdAt: -1 });
 ResidentSchema.index({ status: 1, createdAt: -1 });
 ResidentSchema.index({ idNumber: 1 }, { unique: true });
 ResidentSchema.index({ emailLower: 1 }, { unique: true, sparse: true });
+ResidentSchema.index(
+  { mobileNumber: 1 },
+  {
+    unique: true,
+    sparse: true,
+    partialFilterExpression: { mobileNumber: { $gt: '' } },
+  }
+);
 
 export default mongoose.model<IResident>('Resident', ResidentSchema);

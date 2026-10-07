@@ -12,6 +12,7 @@ import SectionHeader from '@/components/ui/SectionHeader'
 import ConfirmModal from '@/components/ui/ConfirmModal'
 
 import ResidentReviewModal from '@/components/residents/ResidentReviewModal'
+import AssistedRegistrationModal from '@/components/residents/AssistedRegistrationModal'
 import FilterDropdown from '@/components/ui/FilterDropdown'
 import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
 
@@ -315,6 +316,7 @@ export default function ResidentRegistrationPage() {
   const [approveTargetId, setApproveTargetId] = useState<string | null>(null)
   const [revisionTargetId, setRevisionTargetId] = useState<string | null>(null)
   const [revisionNote, setRevisionNote] = useState('')
+  const [showAssistedModal, setShowAssistedModal] = useState(false)
   
   const [barangay, setBarangay] = useState('All Barangays')
   const [searchQuery, setSearchQuery] = useState('')
@@ -655,8 +657,17 @@ export default function ResidentRegistrationPage() {
               title="Review new registrations"
               subtitle="Screen newly submitted resident applications, proof uploads, and validation flags"
               rightAccessory={
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-                  Ready for review: {queueMetrics.manualReviewCount}
+                <div className="flex items-center gap-2">
+                  <button
+                    id="assisted-registration-btn"
+                    onClick={() => setShowAssistedModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm transition-colors cursor-pointer"
+                  >
+                    + Assisted Registration (Walk-In)
+                  </button>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+                    Ready for review: {queueMetrics.manualReviewCount}
+                  </div>
                 </div>
               }
             />
@@ -899,6 +910,16 @@ export default function ResidentRegistrationPage() {
         onNoteChange={setRevisionNote}
         onClose={closeRevisionModal}
         onSubmit={submitRevision}
+      />
+
+      <AssistedRegistrationModal
+        open={showAssistedModal}
+        onClose={() => setShowAssistedModal(false)}
+        onSuccess={(code) => {
+          setShowAssistedModal(false)
+          showToast.success(`Resident registered: ${code}`)
+          fetchResidents()
+        }}
       />
     </DashboardLayout>
   )

@@ -87,29 +87,37 @@ const residentAvatarUpload = multer({
  */
 router.post('/auth/login', loginRateLimiter, validateRequest({ body: householdLoginSchema }), async (req: Request, res: Response) => {
   try {
-    const { mobileNumber, password } = req.body;
+    const rawIdentifier = (req.body.identifier || req.body.mobileNumber || '') as string;
+    const { password } = req.body;
 
-    if (!mobileNumber || !password || typeof mobileNumber !== 'string' || typeof password !== 'string') {
+    if (!rawIdentifier || !password || typeof rawIdentifier !== 'string' || typeof password !== 'string') {
       return res.status(400).json({
         success: false,
-        message: 'Mobile number and password are required',
+        message: 'Mobile number or Resident Code and password are required',
       });
     }
 
-    const normalizedMobile = normalizePhilippineMobileNumber(mobileNumber.trim());
-    if (!isValidPhilippineMobileNumber(normalizedMobile)) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid mobile number format',
-      });
-    }
+    const trimmed = rawIdentifier.trim();
+    const isMobile = /^(\+?63|0)?9\d{9}$/.test(trimmed.replace(/\D/g, ''));
+    let resident = null;
 
-    const resident = await Resident.findOne({ mobileNumber: normalizedMobile }).select('+password');
+    if (isMobile) {
+      const normalizedMobile = normalizePhilippineMobileNumber(trimmed);
+      if (!isValidPhilippineMobileNumber(normalizedMobile)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid mobile number format',
+        });
+      }
+      resident = await Resident.findOne({ mobileNumber: normalizedMobile }).select('+password');
+    } else {
+      resident = await Resident.findOne({ residentCode: trimmed.toUpperCase() }).select('+password');
+    }
 
     if (!resident) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid mobile number or password',
+        message: isMobile ? 'Invalid mobile number or password' : 'Invalid resident code or password',
       });
     }
 
@@ -129,7 +137,7 @@ router.post('/auth/login', loginRateLimiter, validateRequest({ body: householdLo
     if (!passwordValid) {
       return res.status(401).json({
         success: false,
-        message: 'Invalid mobile number or password',
+        message: 'Invalid credentials',
       });
     }
 
@@ -141,7 +149,10 @@ router.post('/auth/login', loginRateLimiter, validateRequest({ body: householdLo
       });
     }
 
-    const token = generateToken(resident._id.toString(), normalizedMobile, 'Resident');
+    const tokenIdentifier = (resident.mobileNumber && resident.mobileNumber.trim().length > 0)
+      ? resident.mobileNumber
+      : resident.residentCode;
+    const token = generateToken(resident._id.toString(), tokenIdentifier, 'Resident');
 
     return res.json({
       success: true,
@@ -149,13 +160,15 @@ router.post('/auth/login', loginRateLimiter, validateRequest({ body: householdLo
       data: {
         user: {
           id: resident._id,
+          residentCode: resident.residentCode,
           firstName: resident.firstName,
           lastName: resident.lastName,
           fullName: resident.fullName,
-          mobileNumber: resident.mobileNumber,
+          mobileNumber: resident.mobileNumber || '',
           barangay: resident.barangay,
           status: resident.status,
           role: 'Resident',
+          registrationMethod: resident.registrationMethod || 'self',
         },
         token,
       },

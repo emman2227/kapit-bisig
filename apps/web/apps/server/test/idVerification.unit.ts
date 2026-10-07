@@ -35,6 +35,15 @@ function run(): void {
   assert.strictEqual(validateIdNumberFormat('PhilHealth ID', 'A23456789012'), false);
   assert.strictEqual(validateIdNumberFormat("Voter's ID", 'AB1234'), true);
   assert.strictEqual(validateIdNumberFormat("Voter's ID", 'AB123'), false);
+
+  // Assisted ID Types validation
+  assert.strictEqual(validateIdType('Barangay Certification', true), true);
+  assert.strictEqual(validateIdType('Certificate of Indigency', true), true);
+  assert.strictEqual(validateIdType('Tribal / NCIP Endorsement', true), true);
+  assert.strictEqual(validateIdType('STAFF_ATTESTATION', true), true);
+  assert.strictEqual(validateIdType('STAFF_ATTESTATION', false), false);
+  assert.strictEqual(validateIdNumberFormat('STAFF_ATTESTATION', ''), true);
+  assert.strictEqual(validateIdNumberFormat('Barangay Certification', 'BC-12345'), true);
 }
 
 run();

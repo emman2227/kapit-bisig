@@ -40,6 +40,7 @@ import beneficiaryRoutes from './routes/beneficiaryRoutes';
 import residentAuthRoutes from './routes/residentAuthRoutes';
 import staffMobileAuthRoutes from './routes/staffMobileAuthRoutes';
 import aiProxyRoutes from './routes/aiProxyRoutes';
+import assistedRegistrationRoutes from './routes/assistedRegistrationRoutes';
 
 import { requireAuth, requireStaffOrSuperadmin } from './middleware/unifiedAuth';
 import { generalRateLimiter } from './middleware/rateLimiter';
@@ -143,6 +144,7 @@ app.use('/api/household', residentAuthRoutes); // resident login/logout/me
 app.use('/api/household', householdRoutes);
 app.use('/api/verification', verificationRoutes);
 app.use('/api/beneficiaries', beneficiaryRoutes);
+app.use('/api/assisted-registration', assistedRegistrationRoutes);
 
 app.use('/api/admin/tokens', adminTokenRoutes);
 

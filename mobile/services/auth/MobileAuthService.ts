@@ -185,8 +185,11 @@ class MobileAuthService {
   /**
    * Get auth token
    */
-  getToken(): string | null {
-    return this.token;
+  async getToken(): Promise<string | null> {
+    if (this.token) return this.token;
+    const stored = await this.getStoredItem(STORAGE_KEYS.AUTH_TOKEN);
+    if (stored) this.token = stored;
+    return stored;
   }
 
   /**
@@ -674,6 +677,7 @@ class MobileAuthService {
 
     return headers;
   }
+
 
   /**
    * Make an authenticated API request

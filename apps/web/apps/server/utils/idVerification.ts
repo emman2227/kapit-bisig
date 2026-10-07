@@ -14,6 +14,26 @@ export const SUPPORTED_ID_TYPES = [
 
 export type SupportedIdType = (typeof SUPPORTED_ID_TYPES)[number];
 
+export const ASSISTED_ID_TYPES = [
+  'Barangay Certification',
+  'Certificate of Indigency',
+  'Tribal / NCIP Endorsement',
+  'STAFF_ATTESTATION',
+] as const;
+
+export type AssistedIdType = (typeof ASSISTED_ID_TYPES)[number];
+
+export const ALL_VALID_ID_TYPES = [
+  ...SUPPORTED_ID_TYPES,
+  ...ASSISTED_ID_TYPES,
+] as const;
+
+export type AllValidIdType = (typeof ALL_VALID_ID_TYPES)[number];
+
+export function isAssistedIdType(idType: string): boolean {
+  return ASSISTED_ID_TYPES.includes(idType as AssistedIdType);
+}
+
 function normalizeForGeneric(value: string): string {
   return String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
 }
@@ -37,11 +57,18 @@ export function normalizeIdNumber(idType: string, idNumber: string): string {
   }
 }
 
-export function validateIdType(idType: string): boolean {
+export function validateIdType(idType: string, allowAssisted = false): boolean {
+  if (allowAssisted) {
+    return ALL_VALID_ID_TYPES.includes(idType as AllValidIdType);
+  }
   return SUPPORTED_ID_TYPES.includes(idType as SupportedIdType);
 }
 
 export function validateIdNumberFormat(idType: string, idNumber: string): boolean {
+  if (isAssistedIdType(idType)) {
+    return true;
+  }
+
   const normalized = normalizeIdNumber(idType, idNumber);
 
   switch (idType) {

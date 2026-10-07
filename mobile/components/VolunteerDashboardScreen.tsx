@@ -25,6 +25,7 @@ import BottomNavigation, { BottomTab } from './ui/BottomNavigation';
 import ResidentBrandLockup from './ui/ResidentBrandLockup';
 import { DistributionCardSkeleton, VolunteerDashboardSkeleton } from './ui/Skeleton';
 import DistributionBeneficiariesModal from './DistributionBeneficiariesModal';
+import AssistedRegistrationScreen from './AssistedRegistrationScreen';
 
 const sc = staffTheme.colors;
 
@@ -103,6 +104,7 @@ export default function VolunteerDashboardScreen({
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [notifications, setNotifications] = useState<VolunteerNotificationItem[]>([]);
   const [selectedDistributionForModal, setSelectedDistributionForModal] = useState<DistributionData | null>(null);
+  const [showAssistedRegistration, setShowAssistedRegistration] = useState(false);
 
   const displayName = volunteerUser
     ? `${volunteerUser.firstName || ''} ${volunteerUser.lastName || ''}`.trim() || 'Staff Member'
@@ -426,6 +428,36 @@ export default function VolunteerDashboardScreen({
               </View>
             </LinearGradient>
           </TouchableOpacity>
+
+          {/* ── Walk-In Registration Card ── */}
+          <TouchableOpacity
+            style={[styles.premiumCardShadow, { marginTop: 12 }]}
+            activeOpacity={0.86}
+            onPress={() => setShowAssistedRegistration(true)}
+          >
+            <LinearGradient
+              colors={['#18452D', '#123723', '#0E291B']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.qrActionCard}
+            >
+              <View style={styles.cardGoldAccent} />
+              <View style={styles.qrWatermark} pointerEvents="none">
+                <Ionicons name="person-add-outline" size={92} color="rgba(255, 255, 255, 0.045)" />
+              </View>
+              <View style={styles.darkIconTile}>
+                <Ionicons name="person-add-outline" size={23} color={sc.accent} />
+              </View>
+              <View style={styles.premiumCardCopy}>
+                <Text style={styles.darkCardEyebrow}>WALK-IN BENEFICIARY</Text>
+                <Text style={styles.darkCardTitle}>Register resident</Text>
+                <Text style={styles.darkCardDescription}>For residents without a phone or government ID.</Text>
+              </View>
+              <View style={styles.darkArrowButton}>
+                <Ionicons name="arrow-forward" size={18} color={sc.accent} />
+              </View>
+            </LinearGradient>
+          </TouchableOpacity>
         </View>
 
         {/* ── Progress Card ── */}
@@ -684,6 +716,16 @@ export default function VolunteerDashboardScreen({
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* ── Assisted Registration Modal ── */}
+      <AssistedRegistrationScreen
+        visible={showAssistedRegistration}
+        onClose={() => setShowAssistedRegistration(false)}
+        onSuccess={(_code) => {
+          setShowAssistedRegistration(false);
+          loadDashboardData(true);
+        }}
+      />
 
       {/* ── Bottom Navigation ── */}
       <BottomNavigation

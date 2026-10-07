@@ -330,15 +330,22 @@ export function filterVisibleResidentDistributions(
 }
 
 export async function residentLogin(
-  mobileNumber: string,
+  identifier: string,
   password: string
 ): Promise<{ success: boolean; message?: string; data?: ResidentSession }> {
   try {
-    const normalizedMobile = normalizeMobileNumber(mobileNumber);
+    const trimmed = (identifier || '').trim();
+    const isMobile = /^(\+?63|0)?9\d{9}$/.test(trimmed.replace(/\D/g, ''));
+    const finalIdentifier = isMobile ? normalizeMobileNumber(trimmed) : trimmed.toUpperCase();
+
     const response = await fetch(`${API_BASE_URL}/household/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mobileNumber: normalizedMobile, password }),
+      body: JSON.stringify({
+        identifier: finalIdentifier,
+        mobileNumber: isMobile ? finalIdentifier : undefined,
+        password,
+      }),
     });
 
     const payload = await parseApiResponse<{

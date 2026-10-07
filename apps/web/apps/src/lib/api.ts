@@ -1111,6 +1111,21 @@ export const api = {
     });
     return handleResponse<PaginatedApiResponse<AuditLogRecord[]>>(response);
   },
+
+  /** POST /api/assisted-registration/register */
+  async submitAssistedRegistration(payload: Record<string, unknown>): Promise<{
+    success: boolean;
+    message: string;
+    data?: { residentCode: string; residentId: string; qrToken?: string; tempPassword?: string };
+  }> {
+    const response = await fetch(`${API_URL}/assisted-registration/register`, {
+      method: 'POST',
+      headers: createHeaders('POST'),
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
+  },
 };
 
 export default api;
