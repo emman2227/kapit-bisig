@@ -40,7 +40,6 @@ export const registerHouseholdBody = z.object({
   frontIdImage: z.string().min(1, 'Front ID image is required'),
   backIdImage: z.string().min(1, 'Back ID image is required'),
   faceImage: z.string().min(1, 'Face image is required'),
-  faceDescriptor: z.array(z.number()).optional(),
   verification: z.any().optional(),
   verificationResult: z.any().optional(),
   verifiedToken: z.string().optional(),

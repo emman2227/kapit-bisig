@@ -101,14 +101,7 @@ export interface IResident extends Document {
   registrationMethod?: 'self' | 'assisted';
   assistedBy?: string | null;
   attestationReason?: string;
-  
-  // Face Descriptor (128-float array for face recognition - privacy compliant)
-  faceDescriptor?: number[];
-  faceDescriptorMetadata?: {
-    generatedAt: Date;
-    modelVersion: string;
-    confidence: number;
-  };
+
   
   // AI Verification Results
   verification: {
@@ -313,31 +306,7 @@ const ResidentSchema: Schema = new Schema(
       type: String,
       required: [true, 'Face image is required'],
     },
-    
-    // Face Descriptor (128-float array for face recognition)
-    // This is stored instead of raw images for privacy compliance
-    faceDescriptor: {
-      type: [Number],
-      validate: {
-        validator: function(arr: number[]) {
-          return !arr || arr.length === 0 || arr.length === 128;
-        },
-        message: 'Face descriptor must contain exactly 128 values'
-      },
-      index: true,  // Index for faster duplicate checks
-    },
-    faceDescriptorMetadata: {
-      generatedAt: {
-        type: Date,
-      },
-      modelVersion: {
-        type: String,
-        default: 'face-api.js-ssd-mobilenetv1'
-      },
-      confidence: {
-        type: Number,
-      }
-    },
+
     
     // AI Verification Results
     verification: {

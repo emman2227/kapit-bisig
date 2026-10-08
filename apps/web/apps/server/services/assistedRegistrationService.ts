@@ -117,10 +117,19 @@ export async function registerAssistedResident(
       };
     }
 
-    // Check duplicate face
-    let computedFaceDescriptor: number[] = data.faceDescriptor || [];
+    // Check duplicate face (unified FaceNet 512-d backend)
     try {
-      const duplicateCheck = await checkDuplicateFace(data.faceImage);
+      const residentBiometricData = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        dateOfBirth: data.dateOfBirth,
+        gender: data.gender,
+        mobileNumber: normalizedMobile || data.mobileNumber || '',
+        barangay: data.barangay,
+        streetAddress: data.streetAddress,
+      };
+
+      const duplicateCheck = await checkDuplicateFace(data.faceImage, residentBiometricData);
       if (duplicateCheck.isDuplicate) {
         return {
           success: false,
@@ -128,11 +137,15 @@ export async function registerAssistedResident(
           errorCode: 'DUPLICATE_FACE',
         };
       }
-      if (duplicateCheck.descriptor && Array.isArray(duplicateCheck.descriptor) && duplicateCheck.descriptor.length === 128) {
-        computedFaceDescriptor = duplicateCheck.descriptor;
-      }
     } catch (faceErr: any) {
-      console.warn('[AssistedRegistration] Face duplicate check note:', faceErr.message);
+      console.error('[AssistedRegistration] Face duplicate check failed:', faceErr.message);
+      return {
+        success: false,
+        message: faceErr.message?.startsWith('Face verification backend unavailable')
+          ? 'Face verification service is temporarily unavailable. Please try again shortly.'
+          : (faceErr.message || 'Face verification failed.'),
+        errorCode: 'FACE_CHECK_UNAVAILABLE',
+      };
     }
 
     // 4. Persist images
@@ -167,7 +180,6 @@ export async function registerAssistedResident(
       frontIdImage: frontIdImagePath,
       backIdImage: backIdImagePath,
       faceImage: faceImagePath,
-      faceDescriptor: computedFaceDescriptor,
       registrationMethod: 'assisted',
       assistedBy: staffUser.userId,
       attestationReason: data.attestationReason || '',
@@ -192,12 +204,7 @@ export async function registerAssistedResident(
 
     await resident.save();
 
-    // 7. Auto-enroll face embedding in unified biometric backend (non-blocking)
-    enrollResidentFaceEmbedding(resident, data.faceImage).catch((enrollErr: any) => {
-      console.warn('[AssistedRegistration] Biometric auto-enroll deferred:', enrollErr.message);
-    });
-
-    // 8. Generate QR token
+    // 7. Generate QR token
     const qrToken = buildResidentQrToken(resident.residentCode, resident.qrVersion, resident.createdAt);
 
     return {
@@ -245,37 +252,4 @@ export async function registerAssistedResident(
   }
 }
 
-/**
- * Auto-enroll resident face embedding in Python AI backend / MongoDB face_embeddings
- */
-async function enrollResidentFaceEmbedding(resident: any, faceBase64: string): Promise<void> {
-  const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-
-  try {
-    const payload = {
-      image: faceBase64,
-      resident_data: {
-        resident_id: resident.residentCode || resident._id?.toString() || 'RES_WALKIN',
-        firstName: resident.firstName,
-        lastName: resident.lastName,
-        mobileNumber: resident.mobileNumber || '',
-        barangay: resident.barangay,
-        streetAddress: resident.streetAddress || '',
-      },
-    };
-
-    await fetch(`${pythonUrl}/api/face/check-duplicate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-  } catch (err: any) {
-    clearTimeout(timeout);
-    // Non-fatal if Python service is temporarily unavailable
-  }
-}
 

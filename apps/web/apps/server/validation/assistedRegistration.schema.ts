@@ -24,7 +24,6 @@ export const assistedRegistrationBody = z.object({
   frontIdImage: z.string().optional(),
   backIdImage: z.string().optional(),
   faceImage: z.string().min(1, 'Face image is required'),
-  faceDescriptor: z.array(z.number()).optional(),
   attestationReason: z.string().max(500).optional(),
   verification: z.any().optional(),
 });

@@ -199,7 +199,7 @@ def enforce_face_attempt_limit(http_request: Optional[Request], endpoint_name: s
 # ============================================
 
 MONGODB_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017")
-MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "kapit_bisig")
+MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "kapit-bisig")
 
 # MongoDB connection (lazy initialization)
 mongo_client = None
