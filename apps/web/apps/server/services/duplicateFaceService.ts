@@ -6,6 +6,8 @@
  * backend (FaceNet 512-d embeddings in db.face_embeddings).
  */
 
+import mongoose from 'mongoose';
+
 // Configuration
 const DUPLICATE_THRESHOLD = 0.6;
 
@@ -117,7 +119,70 @@ export async function checkDuplicateFace(
   return checkWithPythonAiBackend(base64Image, residentData);
 }
 
+/**
+ * Remove a resident's face embedding from MongoDB face_embeddings and Python cache
+ * when their registration is rejected or returned for revision.
+ */
+export async function removeResidentFaceEmbedding(identifiers: {
+  residentId?: string;
+  residentCode?: string;
+  mobileNumber?: string;
+}): Promise<number> {
+  const { residentId, residentCode, mobileNumber } = identifiers;
+  const queries: any[] = [];
+
+  if (residentCode) {
+    queries.push({ resident_id: residentCode });
+  }
+  if (residentId) {
+    queries.push({ resident_id: residentId });
+  }
+  if (mobileNumber && mobileNumber.trim()) {
+    queries.push({ mobile_number: mobileNumber.trim() });
+  }
+
+  if (queries.length === 0) {
+    return 0;
+  }
+
+  let deletedCount = 0;
+  try {
+    const db = mongoose.connection.db;
+    if (db) {
+      const result = await db.collection('face_embeddings').deleteMany({
+        $or: queries,
+      });
+      deletedCount = result.deletedCount || 0;
+      if (shouldLogDebug()) {
+        console.log(`[FaceBiometrics] Removed ${deletedCount} face embedding(s) for resident:`, identifiers);
+      }
+    }
+  } catch (err: any) {
+    console.error('[FaceBiometrics] Error removing face embedding from MongoDB:', err.message);
+  }
+
+  // Also call Python backend to remove from in-memory cache if targetId exists
+  const targetId = residentCode || residentId;
+  if (targetId) {
+    try {
+      const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+      await fetch(`${pythonUrl}/api/face/user/${targetId}`, {
+        method: 'DELETE',
+        signal: controller.signal,
+      }).catch(() => {});
+      clearTimeout(timeout);
+    } catch {
+      // Non-fatal if Python backend is offline
+    }
+  }
+
+  return deletedCount;
+}
+
 export default {
   checkDuplicateFace,
+  removeResidentFaceEmbedding,
   DUPLICATE_THRESHOLD,
 };

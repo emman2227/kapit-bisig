@@ -33,6 +33,7 @@ import {
 import { createNotification } from '../utils/createNotification';
 import { sendAccountStatusUpdateSms } from '../utils/smsService';
 import { logAudit } from '../utils/audit';
+import { removeResidentFaceEmbedding } from '../services/duplicateFaceService';
 
 const router = Router();
 const REGISTER_PAYLOAD_MAX_BYTES = 8 * 1024 * 1024; // 8MB
@@ -496,6 +497,17 @@ router.patch(
           meta: {
             residentId: resident._id.toString(),
           },
+        });
+      }
+ 
+      // If registration is returned for revision or rejected, remove biometric embedding so applicant is not blocked
+      if (status === 'Needs Revision' || status === 'Rejected') {
+        removeResidentFaceEmbedding({
+          residentId: resident._id.toString(),
+          residentCode: resident.residentCode,
+          mobileNumber: resident.mobileNumber,
+        }).catch((err: any) => {
+          console.warn('[ResidentRoutes] Failed to remove face embedding on status change:', err?.message || err);
         });
       }
 
