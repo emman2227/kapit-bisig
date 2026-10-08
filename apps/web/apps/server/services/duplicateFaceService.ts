@@ -59,6 +59,70 @@ function euclideanDistance(descriptor1: number[], descriptor2: number[]): number
 }
 
 /**
+ * Check with unified Python AI backend (FastAPI / FaceNet / db.face_embeddings)
+ */
+async function checkWithPythonAiBackend(base64Image: string): Promise<DuplicateCheckResult | null> {
+  const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const res = await fetch(`${pythonUrl}/api/face/check-duplicate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: base64Image }),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      if (shouldLogDebug()) {
+        console.warn(`[DuplicateCheck] Python AI service returned status ${res.status}`);
+      }
+      return null;
+    }
+
+    const data = (await res.json()) as any;
+    if (data.decision === 'BLOCK') {
+      return {
+        isDuplicate: true,
+        descriptor: null,
+        matchedResident: {
+          id: data.best_match_id || 'duplicate-face',
+          name: data.best_match_name || 'Registered Resident',
+          barangay: '',
+          registeredAt: new Date(),
+        },
+        distance: null,
+        similarity: typeof data.similarity === 'number' ? Math.round(data.similarity * 100) : 88,
+        totalCompared: 1,
+        processingTime: data.processing_time_ms || 0,
+      };
+    }
+
+    if (data.decision === 'ALLOW') {
+      return {
+        isDuplicate: false,
+        descriptor: null,
+        matchedResident: null,
+        distance: null,
+        similarity: null,
+        totalCompared: 1,
+        processingTime: data.processing_time_ms || 0,
+      };
+    }
+
+    return null;
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (shouldLogDebug()) {
+      console.log(`[DuplicateCheck] Python AI backend not reachable (${err.message}), falling back to local face-api`);
+    }
+    return null;
+  }
+}
+
+/**
  * Check if a face already exists in the database
  * 
  * @param base64Image - Base64 encoded face image
@@ -66,6 +130,12 @@ function euclideanDistance(descriptor1: number[], descriptor2: number[]): number
  */
 export async function checkDuplicateFace(base64Image: string): Promise<DuplicateCheckResult> {
   const startTime = Date.now();
+
+  // Step 0: Query unified Python AI service (FaceNet 512-d / db.face_embeddings)
+  const pythonResult = await checkWithPythonAiBackend(base64Image);
+  if (pythonResult) {
+    return pythonResult;
+  }
   
   try {
     // Step 1: Generate face descriptor for the new image
