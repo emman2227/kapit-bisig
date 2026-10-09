@@ -77,7 +77,9 @@ router.post(
   async (req: StaffAuthRequest, res: Response) => {
     try {
       const staffUser = req.staffUser || { userId: 'staff', role: 'LGU_STAFF' };
-      const result = await registerAssistedResident(req.body, staffUser);
+      const ipAddress = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || '127.0.0.1';
+      const userAgent = req.headers['user-agent'] || 'Staff-Assisted-Registration';
+      const result = await registerAssistedResident(req.body, staffUser, ipAddress, userAgent);
 
       if (!result.success) {
         return res.status(400).json({

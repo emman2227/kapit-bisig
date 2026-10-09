@@ -15,6 +15,7 @@ export const assistedRegistrationBody = z.object({
   password: z.string().min(8, 'Password must be at least 8 characters').max(200).optional(),
   barangay: barangayEnum,
   streetAddress: trimmedString(1, 500),
+  householdToken: z.string().trim().regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i, 'Invalid household token format (XXXX-XXXX-XXXX)'),
   city: z.string().max(100).optional(),
   householdSize: z.number().int().min(1).max(50).optional(),
   vulnerableMembers: z.array(z.string().max(50)).optional(),

@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import Resident from '../models/Resident';
 import { registerAssistedResident } from '../services/assistedRegistrationService';
+import { householdTokenService } from '../services/householdTokenService';
 import bcrypt from 'bcrypt';
 
 export async function runAssistedRegistrationTests(): Promise<void> {
@@ -11,7 +12,33 @@ export async function runAssistedRegistrationTests(): Promise<void> {
   process.env.JWT_SECRET = 'super-secret-jwt-key-minimum-32-chars-long';
   process.env.RESIDENT_QR_SECRET = 'super-secret-qr-key-minimum-32-chars-long';
 
-  const mongoServer = await MongoMemoryServer.create();
+  const originalFetch = global.fetch;
+  global.fetch = (async (url: any, options: any) => {
+    if (typeof url === 'string' && url.includes('/api/face/check-duplicate')) {
+      return new Response(
+        JSON.stringify({
+          success: true,
+          face_detected: true,
+          decision: 'ALLOW',
+          similarity: 0.1,
+          threshold: 0.65,
+          processing_time_ms: 10,
+          message: 'No duplicate face found',
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+    }
+    return originalFetch(url, options);
+  }) as typeof fetch;
+
+  const mongoServer = await MongoMemoryServer.create({
+    instance: {
+      launchTimeout: 60000,
+    },
+  });
   await mongoose.connect(mongoServer.getUri());
 
   try {
@@ -20,6 +47,16 @@ export async function runAssistedRegistrationTests(): Promise<void> {
       name: 'Barangay Staff Officer',
       role: 'LGU_STAFF',
     };
+
+    // Generate test household tokens for San Jose
+    const batchSanJose = await householdTokenService.generateBatch({
+      barangay: 'San Jose',
+      quantity: 5,
+      issuedBy: 'staff_123',
+    });
+    assert.strictEqual(batchSanJose.success, true, 'Batch generation should succeed');
+    const token1 = batchSanJose.tokens![0].code;
+    const token2 = batchSanJose.tokens![1].code;
 
     // 1. Successful assisted registration without phone number (STAFF_ATTESTATION)
     const result1 = await registerAssistedResident(
@@ -30,6 +67,7 @@ export async function runAssistedRegistrationTests(): Promise<void> {
         gender: 'Female',
         barangay: 'San Jose',
         streetAddress: 'Sitio Pulo, Purok 2',
+        householdToken: token1,
         idType: 'STAFF_ATTESTATION',
         attestationReason: 'Elderly indigent resident without civil documents or mobile phone.',
         faceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP...',
@@ -61,6 +99,7 @@ export async function runAssistedRegistrationTests(): Promise<void> {
         gender: 'Male',
         barangay: 'San Jose',
         streetAddress: 'Sitio Pulo, Purok 4',
+        householdToken: token2,
         idType: 'STAFF_ATTESTATION',
         attestationReason: 'Indigenous family member without civil registration.',
         faceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP...',
@@ -84,8 +123,9 @@ export async function runAssistedRegistrationTests(): Promise<void> {
         lastName: 'Penduko',
         dateOfBirth: '1990-01-01',
         gender: 'Male',
-        barangay: 'Bolo',
+        barangay: 'San Jose',
         streetAddress: 'Main St',
+        householdToken: batchSanJose.tokens![2].code,
         idType: 'STAFF_ATTESTATION',
         attestationReason: '', // Empty reason
         faceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP...',
@@ -102,8 +142,9 @@ export async function runAssistedRegistrationTests(): Promise<void> {
         lastName: 'Reyes',
         dateOfBirth: '1995-02-02',
         gender: 'Female',
-        barangay: 'Bolo',
+        barangay: 'San Jose',
         streetAddress: 'Main St',
+        householdToken: batchSanJose.tokens![3].code,
         idType: 'STAFF_ATTESTATION',
         attestationReason: 'Valid reason',
         faceImage: '', // Empty face
@@ -112,8 +153,47 @@ export async function runAssistedRegistrationTests(): Promise<void> {
     );
     assert.strictEqual(missingFace.success, false, 'Missing face image must fail');
 
+    // 6. Test missing household token rejection
+    const missingToken = await registerAssistedResident(
+      {
+        firstName: 'Carlos',
+        lastName: 'Mendoza',
+        dateOfBirth: '1988-05-15',
+        gender: 'Male',
+        barangay: 'San Jose',
+        streetAddress: 'Main St',
+        householdToken: '',
+        idType: 'STAFF_ATTESTATION',
+        attestationReason: 'Valid reason',
+        faceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP...',
+      },
+      staffUser
+    );
+    assert.strictEqual(missingToken.success, false, 'Missing household token must fail');
+    assert.strictEqual(missingToken.errorCode, 'TOKEN_REQUIRED');
+
+    // 7. Test re-using already used token
+    const reusedToken = await registerAssistedResident(
+      {
+        firstName: 'Elena',
+        lastName: 'Roxas',
+        dateOfBirth: '1992-11-20',
+        gender: 'Female',
+        barangay: 'San Jose',
+        streetAddress: 'Main St',
+        householdToken: token1, // already used by Maria Santos
+        idType: 'STAFF_ATTESTATION',
+        attestationReason: 'Valid reason',
+        faceImage: 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP...',
+      },
+      staffUser
+    );
+    assert.strictEqual(reusedToken.success, false, 'Reusing token must fail');
+    assert.strictEqual(reusedToken.errorCode, 'TOKEN_ALREADY_USED');
+
     console.log('Assisted Registration Integration Tests Passed Successfully! ✓');
   } finally {
+    global.fetch = originalFetch;
     await mongoose.disconnect();
     await mongoServer.stop();
   }

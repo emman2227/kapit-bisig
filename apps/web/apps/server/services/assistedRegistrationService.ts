@@ -20,6 +20,8 @@ import {
 import { persistVerificationImage } from '../utils/imageStorage';
 import { buildResidentQrToken } from './residentQrService';
 import { checkDuplicateFace } from './duplicateFaceService';
+import { householdTokenService, generateRequestId } from './householdTokenService';
+import mongoose from 'mongoose';
 
 export interface AssistedStaffUser {
   userId: string;
@@ -39,82 +41,137 @@ export interface AssistedRegistrationResult {
 
 export async function registerAssistedResident(
   data: AssistedRegistrationInput,
-  staffUser: AssistedStaffUser
+  staffUser: AssistedStaffUser,
+  ipAddress: string = '127.0.0.1',
+  userAgent: string = 'Staff-Assisted-Registration'
 ): Promise<AssistedRegistrationResult> {
+  const requestId = generateRequestId();
+  const lockerId = `${staffUser.userId || 'staff'}_${requestId}`;
+  let tokenId: mongoose.Types.ObjectId | null = null;
+  let lockAcquired = false;
+
+  const abortWithLockRelease = async (
+    message: string,
+    errorCode: string
+  ): Promise<AssistedRegistrationResult> => {
+    if (lockAcquired && tokenId) {
+      await householdTokenService.releaseLock(
+        tokenId,
+        lockerId,
+        ipAddress,
+        userAgent,
+        requestId,
+        `Assisted registration aborted: ${errorCode}`
+      );
+    }
+    return {
+      success: false,
+      message,
+      errorCode,
+    };
+  };
+
   try {
+    // 0. Household Token validation & atomic lock
+    if (!data.householdToken || !data.householdToken.trim()) {
+      return {
+        success: false,
+        message: 'Household registration token is required.',
+        errorCode: 'TOKEN_REQUIRED',
+      };
+    }
+
+    const lockResult = await householdTokenService.acquireLock(
+      data.householdToken.trim(),
+      lockerId,
+      ipAddress,
+      userAgent,
+      requestId,
+      data.barangay
+    );
+
+    if (!lockResult.success || !lockResult.locked) {
+      const errorMessages: Record<string, string> = {
+        'TOKEN_NOT_FOUND': 'Household token not found or has expired. Please verify the code.',
+        'TOKEN_ALREADY_USED': 'This household token has already been used for registration.',
+        'TOKEN_EXPIRED': 'This household token has expired. Please generate a new code.',
+        'TOKEN_LOCKED': 'This household token is currently being processed by another registration.',
+        'LOCK_CONFLICT': 'Registration is already in progress for this household token.',
+        'TOKEN_REVIEW_REQUIRED': 'This token is temporarily blocked for review due to repeated duplicate detections.',
+        'BARANGAY_MISMATCH': `This household token is issued for a different barangay, not ${data.barangay}.`,
+      };
+      return {
+        success: false,
+        message: lockResult.error || errorMessages[lockResult.errorCode || ''] || 'Invalid household token.',
+        errorCode: lockResult.errorCode || 'INVALID_TOKEN',
+      };
+    }
+
+    tokenId = lockResult.tokenId!;
+    lockAcquired = true;
+
     // 1. Mobile number validation & duplicate check (if provided)
     let normalizedMobile = '';
     if (data.mobileNumber && data.mobileNumber.trim().length > 0) {
       if (!isValidPhilippineMobileNumber(data.mobileNumber)) {
-        return {
-          success: false,
-          message: 'Invalid Philippine mobile number format.',
-          errorCode: 'INVALID_MOBILE',
-        };
+        return await abortWithLockRelease(
+          'Invalid Philippine mobile number format.',
+          'INVALID_MOBILE'
+        );
       }
       normalizedMobile = normalizePhilippineMobileNumber(data.mobileNumber);
       const existingMobile = await Resident.findOne({ mobileNumber: normalizedMobile });
       if (existingMobile) {
-        return {
-          success: false,
-          message: 'This mobile number is already registered.',
-          errorCode: 'DUPLICATE_MOBILE',
-        };
+        return await abortWithLockRelease(
+          'This mobile number is already registered.',
+          'DUPLICATE_MOBILE'
+        );
       }
     }
 
     // 2. ID validation & duplicate check
     if (!validateIdType(data.idType, true)) {
-      return {
-        success: false,
-        message: 'Unsupported ID type.',
-        errorCode: 'INVALID_ID_TYPE',
-      };
+      return await abortWithLockRelease('Unsupported ID type.', 'INVALID_ID_TYPE');
     }
 
     let finalIdNumber = '';
     if (data.idType !== 'STAFF_ATTESTATION') {
       if (!data.idNumber || data.idNumber.trim() === '') {
-        return {
-          success: false,
-          message: 'ID number is required for the selected ID type.',
-          errorCode: 'MISSING_ID_NUMBER',
-        };
+        return await abortWithLockRelease(
+          'ID number is required for the selected ID type.',
+          'MISSING_ID_NUMBER'
+        );
       }
       finalIdNumber = normalizeIdNumber(data.idType, data.idNumber);
       if (!validateIdNumberFormat(data.idType, finalIdNumber)) {
-        return {
-          success: false,
-          message: 'Invalid ID number format for this ID type.',
-          errorCode: 'INVALID_ID_FORMAT',
-        };
+        return await abortWithLockRelease(
+          'Invalid ID number format for this ID type.',
+          'INVALID_ID_FORMAT'
+        );
       }
       const existingId = await Resident.findOne({ idNumber: finalIdNumber });
       if (existingId) {
-        return {
-          success: false,
-          message: 'This ID number is already registered in the system.',
-          errorCode: 'DUPLICATE_ID',
-        };
+        return await abortWithLockRelease(
+          'This ID number is already registered in the system.',
+          'DUPLICATE_ID'
+        );
       }
     } else {
       // For STAFF_ATTESTATION, attestationReason is required
       if (!data.attestationReason || data.attestationReason.trim().length === 0) {
-        return {
-          success: false,
-          message: 'Please provide an attestation reason for residents without documents.',
-          errorCode: 'MISSING_ATTESTATION_REASON',
-        };
+        return await abortWithLockRelease(
+          'Please provide an attestation reason for residents without documents.',
+          'MISSING_ATTESTATION_REASON'
+        );
       }
     }
 
     // 3. Face verification & duplicate check
     if (!data.faceImage || data.faceImage.trim().length === 0) {
-      return {
-        success: false,
-        message: 'Face scan/photo is required for assisted registration.',
-        errorCode: 'MISSING_FACE_IMAGE',
-      };
+      return await abortWithLockRelease(
+        'Face scan/photo is required for assisted registration.',
+        'MISSING_FACE_IMAGE'
+      );
     }
 
     // Check duplicate face (unified FaceNet 512-d backend)
@@ -131,22 +188,20 @@ export async function registerAssistedResident(
 
       const duplicateCheck = await checkDuplicateFace(data.faceImage, residentBiometricData);
       if (duplicateCheck.isDuplicate) {
-        return {
-          success: false,
-          message: `Biometric duplicate detected. This face matches an existing registered resident (${duplicateCheck.matchedResident?.name || 'already registered'}).`,
-          errorCode: 'DUPLICATE_FACE',
-        };
+        return await abortWithLockRelease(
+          `Biometric duplicate detected. This face matches an existing registered resident (${duplicateCheck.matchedResident?.name || 'already registered'}).`,
+          'DUPLICATE_FACE'
+        );
       }
     } catch (faceErr: any) {
       console.error('[AssistedRegistration] Face duplicate check failed:', faceErr.message);
       const isBackendDown = faceErr.message?.includes('Face verification backend unavailable');
-      return {
-        success: false,
-        message: isBackendDown
+      return await abortWithLockRelease(
+        isBackendDown
           ? 'Face verification service is temporarily unavailable. Please try again shortly.'
           : (faceErr.message || 'No face detected in the photo. Please ensure the resident face is clearly visible and try again.'),
-        errorCode: isBackendDown ? 'FACE_CHECK_UNAVAILABLE' : 'INVALID_FACE_IMAGE',
-      };
+        isBackendDown ? 'FACE_CHECK_UNAVAILABLE' : 'INVALID_FACE_IMAGE'
+      );
     }
 
     // 4. Persist images
@@ -205,7 +260,17 @@ export async function registerAssistedResident(
 
     await resident.save();
 
-    // 7. Generate QR token
+    // 7. Complete token registration
+    await householdTokenService.completeRegistration(
+      tokenId,
+      lockerId,
+      resident._id,
+      ipAddress,
+      userAgent,
+      requestId
+    );
+
+    // 8. Generate QR token
     const qrToken = buildResidentQrToken(resident.residentCode, resident.qrVersion, resident.createdAt);
 
     return {
@@ -218,6 +283,17 @@ export async function registerAssistedResident(
     };
   } catch (err: any) {
     console.error('[AssistedRegistration] Service error:', err);
+
+    if (lockAcquired && tokenId) {
+      await householdTokenService.releaseLock(
+        tokenId,
+        lockerId,
+        ipAddress,
+        userAgent,
+        requestId,
+        `Assisted registration threw error: ${err.message}`
+      );
+    }
 
     // Friendly mapping for MongoDB duplicate key (E11000) errors
     if (err && (err.code === 11000 || err.name === 'MongoServerError')) {

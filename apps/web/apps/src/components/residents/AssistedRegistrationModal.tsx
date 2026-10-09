@@ -78,6 +78,15 @@ export default function AssistedRegistrationModal({
 
   // Step 2: Address & Household
   const [barangay, setBarangay] = useState<string>(BARANGAY_OPTIONS[0]);
+  const [householdToken, setHouseholdToken] = useState('');
+  const [tokenValidating, setTokenValidating] = useState(false);
+  const [tokenValidated, setTokenValidated] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenHouseholdInfo, setTokenHouseholdInfo] = useState<{
+    headOfHousehold?: string;
+    address?: string;
+    barangay?: string;
+  } | null>(null);
   const [streetAddress, setStreetAddress] = useState('');
   const [householdSize, setHouseholdSize] = useState('1');
   const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
@@ -98,6 +107,7 @@ export default function AssistedRegistrationModal({
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -117,6 +127,11 @@ export default function AssistedRegistrationModal({
     setMobileNumber('');
     setEmail('');
     setBarangay(BARANGAY_OPTIONS[0]);
+    setHouseholdToken('');
+    setTokenValidating(false);
+    setTokenValidated(false);
+    setTokenError(null);
+    setTokenHouseholdInfo(null);
     setStreetAddress('');
     setHouseholdSize('1');
     setVulnerableMembers([]);
@@ -165,6 +180,7 @@ export default function AssistedRegistrationModal({
       lastName.trim().length > 0 ||
       dateOfBirth.length > 0 ||
       streetAddress.trim().length > 0 ||
+      householdToken.length > 0 ||
       faceImage.length > 0 ||
       frontIdImage.length > 0 ||
       mobileNumber.trim().length > 0
@@ -175,6 +191,7 @@ export default function AssistedRegistrationModal({
     lastName,
     dateOfBirth,
     streetAddress,
+    householdToken,
     faceImage,
     frontIdImage,
     mobileNumber,
@@ -197,10 +214,71 @@ export default function AssistedRegistrationModal({
     onClose();
   };
 
+  // Household Token Handlers
+  const handleTokenChange = (raw: string) => {
+    const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+    const parts: string[] = [];
+    for (let i = 0; i < cleaned.length; i += 4) {
+      parts.push(cleaned.slice(i, i + 4));
+    }
+    const formatted = parts.join('-');
+    setHouseholdToken(formatted);
+    setTokenValidated(false);
+    setTokenError(null);
+    setTokenHouseholdInfo(null);
+  };
+
+  const handleBarangayChange = (newBarangay: string) => {
+    setBarangay(newBarangay);
+    setTokenValidated(false);
+    setTokenError(null);
+    setTokenHouseholdInfo(null);
+  };
+
+  const validateHouseholdToken = async (overrideToken?: string) => {
+    const code = (overrideToken || householdToken).trim().toUpperCase();
+    if (!code) {
+      setTokenError('Household registration code is required.');
+      return false;
+    }
+    if (!/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(code)) {
+      setTokenError('Invalid code format. Expected format: XXXX-XXXX-XXXX');
+      return false;
+    }
+
+    setTokenValidating(true);
+    setTokenError(null);
+    try {
+      const res = await api.validateHouseholdToken(code, barangay);
+      setTokenValidating(false);
+      if (res.success && res.valid) {
+        if (res.householdInfo?.barangay && res.householdInfo.barangay.toLowerCase() !== barangay.toLowerCase()) {
+          setTokenValidated(false);
+          setTokenError(`This code belongs to Barangay ${res.householdInfo.barangay}, not ${barangay}.`);
+          return false;
+        }
+        setTokenValidated(true);
+        setTokenError(null);
+        setTokenHouseholdInfo(res.householdInfo || null);
+        return true;
+      } else {
+        setTokenValidated(false);
+        setTokenError(res.message || 'This household token is invalid, expired, or already used.');
+        return false;
+      }
+    } catch (err: any) {
+      setTokenValidating(false);
+      setTokenValidated(false);
+      setTokenError(err.message || 'Failed to validate household token. Please try again.');
+      return false;
+    }
+  };
+
   // Webcam Controls
   const startCamera = async () => {
     setCameraError('');
     setCameraLoading(true);
+    setVideoReady(false);
     try {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         throw new Error('Webcam is not supported on this browser or requires HTTPS.');
@@ -239,7 +317,16 @@ export default function AssistedRegistrationModal({
     }
     setCameraActive(false);
     setCameraLoading(false);
+    setVideoReady(false);
   };
+
+  // Synchronize stream with videoRef when cameraActive becomes true and element mounts
+  useEffect(() => {
+    if (cameraActive && videoRef.current && streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+      videoRef.current.play().catch(() => {});
+    }
+  }, [cameraActive]);
 
   const capturePhoto = () => {
     if (!videoRef.current) return;
@@ -260,6 +347,7 @@ export default function AssistedRegistrationModal({
 
     const base64 = canvas.toDataURL('image/jpeg', 0.88);
     setFaceImage(base64);
+    setVideoReady(false);
     stopCamera();
   };
 
@@ -326,6 +414,14 @@ export default function AssistedRegistrationModal({
     }
 
     if (step === 2) {
+      if (!householdToken.trim()) {
+        setErrorMsg('Household registration code is required.');
+        return false;
+      }
+      if (!tokenValidated) {
+        setErrorMsg('Please verify the household registration code before proceeding.');
+        return false;
+      }
       if (!streetAddress.trim()) {
         setErrorMsg('Street address is required.');
         return false;
@@ -393,6 +489,7 @@ export default function AssistedRegistrationModal({
       mobileNumber: hasPhone && mobileNumber.trim() ? mobileNumber.trim() : undefined,
       email: email.trim() || undefined,
       barangay,
+      householdToken: householdToken.trim(),
       streetAddress: streetAddress.trim(),
       city: 'Labrador',
       householdSize: parseInt(householdSize, 10) || 1,
@@ -650,9 +747,89 @@ export default function AssistedRegistrationModal({
                   <SelectDropdown
                     value={barangay}
                     options={BARANGAY_DROPDOWN_OPTIONS}
-                    onChange={(val) => setBarangay(val)}
+                    onChange={(val) => handleBarangayChange(val)}
                     placeholder="Select Barangay"
                   />
+                </div>
+
+                {/* Household Registration Code (Code Generation) */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-slate-700/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                      Household Registration Code <span className="text-red-500">*</span>
+                    </label>
+                    <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                      From Municipal Code Generator
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        maxLength={14}
+                        placeholder="XXXX-XXXX-XXXX"
+                        value={householdToken}
+                        onChange={(e) => handleTokenChange(e.target.value)}
+                        className={`w-full px-3.5 py-2.5 rounded-xl border bg-white dark:bg-slate-800 text-xs font-mono font-bold tracking-wider placeholder-slate-400 focus:outline-none transition-colors ${
+                          tokenValidated
+                            ? 'border-emerald-500 text-emerald-700 dark:text-emerald-300 focus:ring-1 focus:ring-emerald-500'
+                            : tokenError
+                            ? 'border-rose-500 text-rose-700 dark:text-rose-300 focus:ring-1 focus:ring-rose-500'
+                            : 'border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                        }`}
+                      />
+                      {tokenValidated && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-600 dark:text-emerald-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      disabled={tokenValidating || !householdToken.trim() || tokenValidated}
+                      onClick={() => validateHouseholdToken()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0F533A] hover:bg-[#0c4430] text-white text-xs font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer shrink-0 shadow-sm"
+                    >
+                      {tokenValidating ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>Verifying...</span>
+                        </>
+                      ) : tokenValidated ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Verified</span>
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Verify Code</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {tokenError && (
+                    <div className="flex items-center gap-1.5 text-xs text-rose-600 dark:text-rose-400 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{tokenError}</span>
+                    </div>
+                  )}
+
+                  {tokenValidated && (
+                    <div className="flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        Valid registration code for <strong>Barangay {barangay}</strong>
+                        {tokenHouseholdInfo?.headOfHousehold && (
+                          <span className="block text-[11px] font-normal text-emerald-600 dark:text-emerald-300">
+                            Head of Household: {tokenHouseholdInfo.headOfHousehold}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -985,14 +1162,29 @@ export default function AssistedRegistrationModal({
                     <div className="flex flex-col items-center space-y-4">
                       {cameraActive ? (
                         <>
-                          <div className="relative w-56 h-56 rounded-full overflow-hidden border-4 border-[#0F533A] shadow-xl bg-black">
+                          <div className="relative w-56 h-56 rounded-full overflow-hidden border-4 border-[#0F533A] shadow-xl bg-slate-900 flex items-center justify-center">
                             <video
                               ref={videoRef}
                               autoPlay
                               playsInline
                               muted
-                              className="w-full h-full object-cover scale-x-[-1]"
+                              onLoadedData={() => setVideoReady(true)}
+                              onPlaying={() => setVideoReady(true)}
+                              className={`w-full h-full object-cover scale-x-[-1] transition-opacity duration-300 ${
+                                videoReady ? 'opacity-100' : 'opacity-0'
+                              }`}
                             />
+                            {!videoReady && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-300 p-4 text-center">
+                                <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
+                                <span className="text-[11px] font-bold tracking-wide uppercase text-slate-200">
+                                  Connecting Camera...
+                                </span>
+                                <span className="text-[10px] text-slate-400 mt-0.5">
+                                  Warming up video feed
+                                </span>
+                              </div>
+                            )}
                             {/* Face Alignment Ring Overlay */}
                             <div className="pointer-events-none absolute inset-4 rounded-full border-2 border-dashed border-white/60 animate-pulse" />
                           </div>
@@ -1107,6 +1299,10 @@ export default function AssistedRegistrationModal({
                   <div className="flex justify-between p-3.5">
                     <span className="text-slate-500 dark:text-slate-400 font-medium">Barangay</span>
                     <span className="font-semibold text-slate-900 dark:text-slate-100">{barangay}</span>
+                  </div>
+                  <div className="flex justify-between p-3.5">
+                    <span className="text-slate-500 dark:text-slate-400 font-medium">Household Code</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-slate-100">{householdToken}</span>
                   </div>
                   <div className="flex justify-between p-3.5">
                     <span className="text-slate-500 dark:text-slate-400 font-medium">Registration Mode</span>

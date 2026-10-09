@@ -1114,6 +1114,27 @@ export const api = {
     return handleResponse<PaginatedApiResponse<AuditLogRecord[]>>(response);
   },
 
+  /** POST /api/household/validate-token */
+  async validateHouseholdToken(token: string, barangay?: string): Promise<{
+    success: boolean;
+    valid?: boolean;
+    message?: string;
+    householdInfo?: {
+      headOfHousehold?: string;
+      address?: string;
+      barangay?: string;
+      expectedMembers?: number;
+    };
+  }> {
+    const response = await fetch(`${API_URL}/household/validate-token`, {
+      method: 'POST',
+      headers: createHeaders('POST'),
+      credentials: 'include',
+      body: JSON.stringify({ token, barangay }),
+    });
+    return handleResponse(response);
+  },
+
   /** POST /api/assisted-registration/register */
   async submitAssistedRegistration(payload: Record<string, unknown>): Promise<{
     success: boolean;
