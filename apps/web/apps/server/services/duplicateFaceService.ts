@@ -42,6 +42,7 @@ async function checkWithPythonAiBackend(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12000);
 
+  let res: Response;
   try {
     const payload: { image: string; resident_data?: Record<string, any> } = {
       image: base64Image,
@@ -50,52 +51,13 @@ async function checkWithPythonAiBackend(
       payload.resident_data = residentData;
     }
 
-    const res = await fetch(`${pythonUrl}/api/face/check-duplicate`, {
+    res = await fetch(`${pythonUrl}/api/face/check-duplicate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
     clearTimeout(timeout);
-
-    if (!res.ok) {
-      if (shouldLogDebug()) {
-        console.warn(`[DuplicateCheck] Python AI service returned status ${res.status}`);
-      }
-      throw new Error(`Face verification backend returned error status: ${res.status}`);
-    }
-
-    const data = (await res.json()) as any;
-    if (data.decision === 'BLOCK') {
-      return {
-        isDuplicate: true,
-        descriptor: null,
-        matchedResident: {
-          id: data.best_match_id || 'duplicate-face',
-          name: data.best_match_name || 'Registered Resident',
-          barangay: '',
-          registeredAt: new Date(),
-        },
-        distance: null,
-        similarity: typeof data.similarity === 'number' ? Math.round(data.similarity * 100) : 88,
-        totalCompared: 1,
-        processingTime: data.processing_time_ms || 0,
-      };
-    }
-
-    if (data.decision === 'ALLOW') {
-      return {
-        isDuplicate: false,
-        descriptor: null,
-        matchedResident: null,
-        distance: null,
-        similarity: null,
-        totalCompared: 1,
-        processingTime: data.processing_time_ms || 0,
-      };
-    }
-
-    throw new Error(data.message || 'Face verification returned unexpected decision');
   } catch (err: any) {
     clearTimeout(timeout);
     if (shouldLogDebug()) {
@@ -103,6 +65,45 @@ async function checkWithPythonAiBackend(
     }
     throw new Error(`Face verification backend unavailable: ${err.message}`);
   }
+
+  if (!res.ok) {
+    if (shouldLogDebug()) {
+      console.warn(`[DuplicateCheck] Python AI service returned status ${res.status}`);
+    }
+    throw new Error(`Face verification backend returned error status: ${res.status}`);
+  }
+
+  const data = (await res.json()) as any;
+  if (data.decision === 'BLOCK') {
+    return {
+      isDuplicate: true,
+      descriptor: null,
+      matchedResident: {
+        id: data.best_match_id || 'duplicate-face',
+        name: data.best_match_name || 'Registered Resident',
+        barangay: '',
+        registeredAt: new Date(),
+      },
+      distance: null,
+      similarity: typeof data.similarity === 'number' ? Math.round(data.similarity * 100) : 88,
+      totalCompared: 1,
+      processingTime: data.processing_time_ms || 0,
+    };
+  }
+
+  if (data.decision === 'ALLOW') {
+    return {
+      isDuplicate: false,
+      descriptor: null,
+      matchedResident: null,
+      distance: null,
+      similarity: null,
+      totalCompared: 1,
+      processingTime: data.processing_time_ms || 0,
+    };
+  }
+
+  throw new Error(data.message || 'No face detected. Please ensure your face is clearly visible.');
 }
 
 /**

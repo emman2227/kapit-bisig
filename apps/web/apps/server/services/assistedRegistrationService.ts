@@ -139,12 +139,13 @@ export async function registerAssistedResident(
       }
     } catch (faceErr: any) {
       console.error('[AssistedRegistration] Face duplicate check failed:', faceErr.message);
+      const isBackendDown = faceErr.message?.includes('Face verification backend unavailable');
       return {
         success: false,
-        message: faceErr.message?.startsWith('Face verification backend unavailable')
+        message: isBackendDown
           ? 'Face verification service is temporarily unavailable. Please try again shortly.'
-          : (faceErr.message || 'Face verification failed.'),
-        errorCode: 'FACE_CHECK_UNAVAILABLE',
+          : (faceErr.message || 'No face detected in the photo. Please ensure the resident face is clearly visible and try again.'),
+        errorCode: isBackendDown ? 'FACE_CHECK_UNAVAILABLE' : 'INVALID_FACE_IMAGE',
       };
     }
 
