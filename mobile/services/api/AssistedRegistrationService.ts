@@ -22,6 +22,7 @@ export interface AssistedRegistrationPayload {
   mobileNumber?: string;
   email?: string;
   barangay: string;
+  householdToken: string;
   streetAddress: string;
   city?: string;
   householdSize?: number;

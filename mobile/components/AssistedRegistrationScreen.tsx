@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -15,13 +15,22 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as SecureStore from 'expo-secure-store';
+import * as Haptics from 'expo-haptics';
 import {
   submitAssistedRegistration,
   AssistedRegistrationPayload,
 } from '../services/api/AssistedRegistrationService';
+import { resolveApiBaseUrl } from '../services/config/apiSecurity';
+
+const API_URL = resolveApiBaseUrl(
+  process.env.EXPO_PUBLIC_API_URL,
+  'https://kapit-bisig.onrender.com/api',
+  'AssistedRegistrationScreen API'
+);
 
 const BARANGAYS = [
   'Bolo',
@@ -56,10 +65,10 @@ const DRAFT_FILE = `${FileSystem.documentDirectory || ''}assisted_registration_d
 const OPEN_FLAG_KEY = 'kapit_bisig_assisted_open';
 
 const VULNERABLE_MEMBER_OPTIONS = [
-  { id: 'senior', label: 'Senior Citizen', icon: 'walk-outline' },
-  { id: 'pwd', label: 'PWD', icon: 'accessibility-outline' },
-  { id: 'pregnant', label: 'Pregnant', icon: 'woman-outline' },
-  { id: 'children', label: 'Children (0-5)', icon: 'people-outline' },
+  { id: 'senior', label: 'Senior Citizen', desc: '60+ years old', icon: 'walk-outline' },
+  { id: 'pwd', label: 'PWD', desc: 'Person with Disability', icon: 'accessibility-outline' },
+  { id: 'pregnant', label: 'Pregnant', desc: 'Expecting / Nursing', icon: 'woman-outline' },
+  { id: 'children', label: 'Children (0-5)', desc: 'Infant or Toddler', icon: 'people-outline' },
 ] as const;
 
 interface AssistedRegistrationScreenProps {
@@ -86,6 +95,16 @@ export default function AssistedRegistrationScreen({
 
   // Step 2: Address & Household
   const [barangay, setBarangay] = useState<string>(BARANGAYS[0]);
+  const [householdToken, setHouseholdToken] = useState('');
+  const [tokenValidating, setTokenValidating] = useState(false);
+  const [tokenValidated, setTokenValidated] = useState(false);
+  const [tokenError, setTokenError] = useState<string | null>(null);
+  const [tokenHouseholdInfo, setTokenHouseholdInfo] = useState<{
+    headOfHousehold?: string;
+    address?: string;
+    barangay?: string;
+    expectedMembers?: number;
+  } | null>(null);
   const [streetAddress, setStreetAddress] = useState('');
   const [householdSize, setHouseholdSize] = useState('1');
   const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
@@ -97,17 +116,24 @@ export default function AssistedRegistrationScreen({
   const [frontIdImage, setFrontIdImage] = useState<string>('');
   const [backIdImage, setBackIdImage] = useState<string>('');
   const [attestationReason, setAttestationReason] = useState(
-    'Resident does not possess a mobile phone, SIM card, or standard government-issued identification.'
+    'Resident lacks formal civil registration or standard government identification.'
   );
 
-  // Step 4: Face Photo
+  // Step 4: Face Photo (Live CameraView)
   const [faceImage, setFaceImage] = useState<string>('');
+  const [showFaceScanner, setShowFaceScanner] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [scanStatus, setScanStatus] = useState<'idle' | 'capturing' | 'success' | 'failed'>('idle');
+  const [faceInstructions, setFaceInstructions] = useState('Position face inside the oval');
+  const cameraRef = useRef<CameraView>(null);
 
   // State
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
+  // -------------------------------------------------------------
   // Load draft from disk when modal opens
+  // -------------------------------------------------------------
   useEffect(() => {
     if (!visible) return;
     const loadDraft = async () => {
@@ -126,6 +152,11 @@ export default function AssistedRegistrationScreen({
             if (draft.mobileNumber) setMobileNumber(draft.mobileNumber);
             if (draft.email) setEmail(draft.email);
             if (draft.barangay) setBarangay(draft.barangay);
+            if (draft.householdToken) {
+              setHouseholdToken(draft.householdToken);
+              if (draft.tokenValidated) setTokenValidated(true);
+              if (draft.tokenHouseholdInfo) setTokenHouseholdInfo(draft.tokenHouseholdInfo);
+            }
             if (draft.streetAddress) setStreetAddress(draft.streetAddress);
             if (draft.householdSize) setHouseholdSize(draft.householdSize);
             if (Array.isArray(draft.vulnerableMembers)) setVulnerableMembers(draft.vulnerableMembers);
@@ -146,7 +177,9 @@ export default function AssistedRegistrationScreen({
     loadDraft();
   }, [visible]);
 
+  // -------------------------------------------------------------
   // Persist draft whenever inputs change while visible
+  // -------------------------------------------------------------
   useEffect(() => {
     if (!visible) return;
     const saveDraft = async () => {
@@ -161,6 +194,9 @@ export default function AssistedRegistrationScreen({
           mobileNumber,
           email,
           barangay,
+          householdToken,
+          tokenValidated,
+          tokenHouseholdInfo,
           streetAddress,
           householdSize,
           vulnerableMembers,
@@ -191,6 +227,9 @@ export default function AssistedRegistrationScreen({
     mobileNumber,
     email,
     barangay,
+    householdToken,
+    tokenValidated,
+    tokenHouseholdInfo,
     streetAddress,
     householdSize,
     vulnerableMembers,
@@ -203,6 +242,139 @@ export default function AssistedRegistrationScreen({
     faceImage,
   ]);
 
+  // -------------------------------------------------------------
+  // Date of Birth Formatting (MM-DD-YYYY, numbers only)
+  // -------------------------------------------------------------
+  const formatDateInput = (text: string) => {
+    const cleaned = text.replace(/\D/g, '').slice(0, 8);
+    let formatted = '';
+    if (cleaned.length > 0) {
+      formatted = cleaned.substring(0, 2);
+      if (cleaned.length > 2) {
+        formatted += '-' + cleaned.substring(2, 4);
+      }
+      if (cleaned.length > 4) {
+        formatted += '-' + cleaned.substring(4, 8);
+      }
+    }
+    return formatted;
+  };
+
+  const validateDateOfBirth = (dob: string): { valid: boolean; error?: string } => {
+    if (!dob || dob.trim().length !== 10) {
+      return { valid: false, error: 'Complete Date of Birth is required (MM-DD-YYYY).' };
+    }
+    const parts = dob.split('-');
+    if (parts.length !== 3) {
+      return { valid: false, error: 'Invalid date format. Expected MM-DD-YYYY.' };
+    }
+    const month = parseInt(parts[0], 10);
+    const day = parseInt(parts[1], 10);
+    const year = parseInt(parts[2], 10);
+
+    if (isNaN(month) || month < 1 || month > 12) {
+      return { valid: false, error: 'Invalid month in Date of Birth (01-12).' };
+    }
+    if (isNaN(day) || day < 1 || day > 31) {
+      return { valid: false, error: 'Invalid day in Date of Birth (01-31).' };
+    }
+    const currentYear = new Date().getFullYear();
+    if (isNaN(year) || year < 1900 || year > currentYear) {
+      return { valid: false, error: `Invalid year in Date of Birth (1900-${currentYear}).` };
+    }
+    const birthDate = new Date(year, month - 1, day);
+    if (birthDate > new Date()) {
+      return { valid: false, error: 'Date of Birth cannot be in the future.' };
+    }
+    return { valid: true };
+  };
+
+  // -------------------------------------------------------------
+  // Household Token Handling (XXXX-XXXX-XXXX)
+  // -------------------------------------------------------------
+  const handleTokenChange = (raw: string) => {
+    const cleaned = raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+    const parts: string[] = [];
+    for (let i = 0; i < cleaned.length; i += 4) {
+      parts.push(cleaned.slice(i, i + 4));
+    }
+    setHouseholdToken(parts.join('-'));
+    setTokenValidated(false);
+    setTokenError(null);
+    setTokenHouseholdInfo(null);
+  };
+
+  const handleBarangayChange = (b: string) => {
+    setBarangay(b);
+    setTokenValidated(false);
+    setTokenError(null);
+    setTokenHouseholdInfo(null);
+  };
+
+  const validateHouseholdToken = async () => {
+    const code = householdToken.trim().toUpperCase();
+    if (!code || code.length !== 14) {
+      setTokenError('Please enter a valid household code (XXXX-XXXX-XXXX).');
+      return false;
+    }
+    if (!barangay.trim()) {
+      setTokenError('Please select a barangay first.');
+      return false;
+    }
+
+    setTokenValidating(true);
+    setTokenError(null);
+    setTokenValidated(false);
+    setTokenHouseholdInfo(null);
+
+    try {
+      const response = await fetch(`${API_URL}/household/validate-token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: code, barangay }),
+      });
+      const data = await response.json();
+      setTokenValidating(false);
+
+      if (data.success && data.valid) {
+        if (
+          data.householdInfo?.barangay &&
+          data.householdInfo.barangay.toLowerCase() !== barangay.toLowerCase()
+        ) {
+          setTokenValidated(false);
+          setTokenError(
+            `This household code belongs to Barangay ${data.householdInfo.barangay}, not ${barangay}.`
+          );
+          return false;
+        }
+        setTokenValidated(true);
+        setTokenHouseholdInfo(data.householdInfo || null);
+        setTokenError(null);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        return true;
+      } else {
+        setTokenValidated(false);
+        if (data.errorCode === 'TOKEN_ALREADY_USED') {
+          setTokenError('This household registration code has already been claimed.');
+        } else if (data.errorCode === 'TOKEN_EXPIRED') {
+          setTokenError('This household registration code has expired.');
+        } else {
+          setTokenError(data.message || 'Invalid household code.');
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        return false;
+      }
+    } catch (err: any) {
+      setTokenValidating(false);
+      setTokenValidated(false);
+      setTokenError('Network error while validating household code.');
+      return false;
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Vulnerable Members Assessment
+  // -------------------------------------------------------------
   const toggleVulnerableMember = (id: string) => {
     setVulnerableMembers((prev) => {
       if (prev.includes(id)) {
@@ -226,6 +398,9 @@ export default function AssistedRegistrationScreen({
     });
   };
 
+  // -------------------------------------------------------------
+  // Reset & Discard
+  // -------------------------------------------------------------
   const resetForm = async () => {
     setCurrentStep(1);
     setFirstName('');
@@ -236,6 +411,11 @@ export default function AssistedRegistrationScreen({
     setMobileNumber('');
     setEmail('');
     setBarangay(BARANGAYS[0]);
+    setHouseholdToken('');
+    setTokenValidating(false);
+    setTokenValidated(false);
+    setTokenError(null);
+    setTokenHouseholdInfo(null);
     setStreetAddress('');
     setHouseholdSize('1');
     setVulnerableMembers([]);
@@ -245,7 +425,7 @@ export default function AssistedRegistrationScreen({
     setFrontIdImage('');
     setBackIdImage('');
     setAttestationReason(
-      'Resident does not possess a mobile phone, SIM card, or standard government-issued identification.'
+      'Resident lacks formal civil registration or standard government identification.'
     );
     setFaceImage('');
     setErrorMessage('');
@@ -257,17 +437,51 @@ export default function AssistedRegistrationScreen({
     } catch (_) {}
   };
 
-  const handleClose = () => {
-    resetForm();
-    onClose();
+  const hasUnsavedChanges = (): boolean => {
+    return (
+      currentStep > 1 ||
+      firstName.trim().length > 0 ||
+      lastName.trim().length > 0 ||
+      dateOfBirth.trim().length > 0 ||
+      householdToken.trim().length > 0 ||
+      streetAddress.trim().length > 0 ||
+      faceImage.length > 0 ||
+      frontIdImage.length > 0 ||
+      mobileNumber.trim().length > 0
+    );
   };
 
-  const pickImage = async (setter: (base64: string) => void, useCamera: boolean) => {
+  const handlePressClose = () => {
+    if (hasUnsavedChanges()) {
+      Alert.alert(
+        'Discard Registration?',
+        'You have unsaved beneficiary details. Are you sure you want to exit? Your progress will be discarded.',
+        [
+          { text: 'Keep Editing', style: 'cancel' },
+          {
+            text: 'Discard & Exit',
+            style: 'destructive',
+            onPress: () => {
+              resetForm();
+              onClose();
+            },
+          },
+        ]
+      );
+    } else {
+      resetForm();
+      onClose();
+    }
+  };
+
+  // -------------------------------------------------------------
+  // ID Image Picker (Step 3)
+  // -------------------------------------------------------------
+  const pickIdImage = async (setter: (base64: string) => void, useCamera: boolean) => {
     try {
       const options: ImagePicker.ImagePickerOptions = {
         mediaTypes: ['images'],
         allowsEditing: true,
-        aspect: [1, 1],
         quality: 0.7,
         base64: true,
       };
@@ -293,11 +507,61 @@ export default function AssistedRegistrationScreen({
         setter(`data:image/jpeg;base64,${result.assets[0].base64}`);
       }
     } catch (err) {
-      console.error('[AssistedRegistration] Image pick error:', err);
-      Alert.alert('Error', 'Failed to capture or select image.');
+      console.error('[AssistedRegistration] ID Image pick error:', err);
+      Alert.alert('Error', 'Failed to capture or select document image.');
     }
   };
 
+  // -------------------------------------------------------------
+  // Face Scanner Controls (Step 4)
+  // -------------------------------------------------------------
+  const startFaceScan = async () => {
+    if (!cameraPermission?.granted) {
+      const perm = await requestCameraPermission();
+      if (!perm.granted) {
+        Alert.alert('Camera Permission Required', 'Camera access is required to take the resident portrait.');
+        return;
+      }
+    }
+    setScanStatus('idle');
+    setFaceInstructions('Center face inside the oval and look straight at the camera');
+    setShowFaceScanner(true);
+  };
+
+  const handleCaptureFacePhoto = async () => {
+    if (!cameraRef.current || scanStatus === 'capturing') return;
+    try {
+      setScanStatus('capturing');
+      setFaceInstructions('Capturing portrait...');
+
+      const photo = await cameraRef.current.takePictureAsync({
+        quality: 0.8,
+        base64: true,
+      });
+
+      if (!photo?.base64) {
+        throw new Error('Failed to capture face photo from camera.');
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      setFaceImage(`data:image/jpeg;base64,${photo.base64}`);
+      setScanStatus('success');
+
+      setTimeout(() => {
+        setShowFaceScanner(false);
+        setScanStatus('idle');
+      }, 700);
+    } catch (err: any) {
+      console.warn('[AssistedRegistration] Face capture error:', err);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+      setScanStatus('failed');
+      setFaceInstructions(err.message || 'Failed to capture photo. Please try again.');
+    }
+  };
+
+  // -------------------------------------------------------------
+  // Step Validation & Navigation
+  // -------------------------------------------------------------
   const validateStep = (step: number): boolean => {
     setErrorMessage('');
     if (step === 1) {
@@ -305,8 +569,9 @@ export default function AssistedRegistrationScreen({
         setErrorMessage('First and last name are required.');
         return false;
       }
-      if (!dateOfBirth.trim()) {
-        setErrorMessage('Date of birth is required (YYYY-MM-DD).');
+      const dobCheck = validateDateOfBirth(dateOfBirth);
+      if (!dobCheck.valid) {
+        setErrorMessage(dobCheck.error || 'Valid Date of Birth is required.');
         return false;
       }
       if (hasPhone) {
@@ -320,8 +585,16 @@ export default function AssistedRegistrationScreen({
     }
 
     if (step === 2) {
+      if (!householdToken.trim() || householdToken.length !== 14) {
+        setErrorMessage('Unique Household Code (XXXX-XXXX-XXXX) is required.');
+        return false;
+      }
+      if (!tokenValidated) {
+        setErrorMessage('Please validate the household registration code before proceeding.');
+        return false;
+      }
       if (!streetAddress.trim()) {
-        setErrorMessage('Street address is required.');
+        setErrorMessage('Street address or Sitio is required.');
         return false;
       }
       return true;
@@ -330,12 +603,12 @@ export default function AssistedRegistrationScreen({
     if (step === 3) {
       if (idType === 'STAFF_ATTESTATION') {
         if (!attestationReason.trim()) {
-          setErrorMessage('Please specify an attestation reason for residents without ID.');
+          setErrorMessage('Please specify an attestation reason for residents without formal ID.');
           return false;
         }
       } else {
         if (!idNumber.trim()) {
-          setErrorMessage('ID number is required for the selected ID type.');
+          setErrorMessage('ID number is required for the selected document type.');
           return false;
         }
       }
@@ -344,7 +617,7 @@ export default function AssistedRegistrationScreen({
 
     if (step === 4) {
       if (!faceImage) {
-        setErrorMessage('Face photo scan is mandatory for identity verification.');
+        setErrorMessage('Face photo capture is mandatory for identity verification.');
         return false;
       }
       return true;
@@ -364,6 +637,9 @@ export default function AssistedRegistrationScreen({
     setCurrentStep((prev) => Math.max(prev - 1, 1));
   };
 
+  // -------------------------------------------------------------
+  // Final Submission
+  // -------------------------------------------------------------
   const handleSubmit = async () => {
     if (!validateStep(4)) {
       setCurrentStep(4);
@@ -381,6 +657,7 @@ export default function AssistedRegistrationScreen({
       mobileNumber: hasPhone && mobileNumber.trim() ? mobileNumber.trim() : undefined,
       email: email.trim() ? email.trim() : undefined,
       barangay,
+      householdToken: householdToken.trim(),
       streetAddress: streetAddress.trim(),
       city: 'Labrador',
       householdSize: parseInt(householdSize, 10) || 1,
@@ -421,16 +698,16 @@ export default function AssistedRegistrationScreen({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={handleClose}>
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={handlePressClose}>
       <SafeAreaView style={styles.container}>
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {/* Header */}
+          {/* Top Header */}
           <View style={styles.header}>
-            <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
-              <Ionicons name="close" size={24} color="#1E293B" />
+            <TouchableOpacity onPress={handlePressClose} style={styles.closeBtn} activeOpacity={0.7}>
+              <Ionicons name="close" size={24} color="#0F172A" />
             </TouchableOpacity>
             <View style={styles.headerTextWrapper}>
               <Text style={styles.headerTitle}>Walk-In Assisted Registration</Text>
@@ -458,7 +735,7 @@ export default function AssistedRegistrationScreen({
               <View style={styles.stepContainer}>
                 <Text style={styles.stepTitle}>👤 Personal Information</Text>
                 <Text style={styles.stepDesc}>
-                  Enter the resident's basic personal details. Mobile phone is completely optional.
+                  Enter the beneficiary's basic personal details. Mobile phone is optional for assisted walk-in beneficiaries.
                 </Text>
 
                 <Text style={styles.inputLabel}>First Name *</Text>
@@ -477,12 +754,14 @@ export default function AssistedRegistrationScreen({
                   onChangeText={setLastName}
                 />
 
-                <Text style={styles.inputLabel}>Date of Birth (YYYY-MM-DD) *</Text>
+                <Text style={styles.inputLabel}>Date of Birth (MM-DD-YYYY) *</Text>
                 <TextInput
                   style={styles.input}
-                  placeholder="e.g. 1970-05-15"
+                  placeholder="MM-DD-YYYY"
+                  keyboardType="number-pad"
                   value={dateOfBirth}
-                  onChangeText={setDateOfBirth}
+                  onChangeText={(text) => setDateOfBirth(formatDateInput(text))}
+                  maxLength={10}
                 />
 
                 <Text style={styles.inputLabel}>Gender *</Text>
@@ -555,7 +834,7 @@ export default function AssistedRegistrationScreen({
                   <View style={styles.infoBanner}>
                     <Ionicons name="information-circle-outline" size={18} color="#059669" />
                     <Text style={styles.infoText}>
-                      No phone number required. The resident will be issued a unique Resident Code for logins and distributions.
+                      No mobile number required. The resident will be issued a unique Resident Code for verification and relief collection.
                     </Text>
                   </View>
                 )}
@@ -572,11 +851,13 @@ export default function AssistedRegistrationScreen({
               </View>
             )}
 
-            {/* STEP 2: Address */}
+            {/* STEP 2: Address & Household */}
             {currentStep === 2 && (
               <View style={styles.stepContainer}>
-                <Text style={styles.stepTitle}>📍 Barangay & Address</Text>
-                <Text style={styles.stepDesc}>Specify the resident's home location and household size.</Text>
+                <Text style={styles.stepTitle}>📍 Barangay & Household</Text>
+                <Text style={styles.stepDesc}>
+                  Select the resident's Barangay and enter their unique Household Registration Code.
+                </Text>
 
                 <Text style={styles.inputLabel}>Barangay *</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
@@ -584,7 +865,7 @@ export default function AssistedRegistrationScreen({
                     <TouchableOpacity
                       key={b}
                       style={[styles.chip, barangay === b && styles.chipActive]}
-                      onPress={() => setBarangay(b)}
+                      onPress={() => handleBarangayChange(b)}
                     >
                       <Text style={[styles.chipText, barangay === b && styles.chipTextActive]}>
                         {b}
@@ -592,6 +873,74 @@ export default function AssistedRegistrationScreen({
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
+
+                {/* Unique Household Registration Code */}
+                <Text style={styles.inputLabel}>Household Registration Code (XXXX-XXXX-XXXX) *</Text>
+                <Text style={styles.subLabel}>
+                  Enter the pre-issued 12-character token for this household:
+                </Text>
+                <View style={styles.tokenInputRow}>
+                  <TextInput
+                    style={[
+                      styles.input,
+                      styles.tokenInput,
+                      tokenValidated && styles.tokenInputValidated,
+                      !!tokenError && styles.tokenInputError,
+                    ]}
+                    placeholder="XXXX-XXXX-XXXX"
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    value={householdToken}
+                    onChangeText={handleTokenChange}
+                    maxLength={14}
+                  />
+                  <TouchableOpacity
+                    style={[
+                      styles.validateTokenBtn,
+                      tokenValidating && styles.validateTokenBtnDisabled,
+                      tokenValidated && styles.validateTokenBtnSuccess,
+                    ]}
+                    onPress={validateHouseholdToken}
+                    disabled={tokenValidating}
+                    activeOpacity={0.8}
+                  >
+                    {tokenValidating ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : tokenValidated ? (
+                      <Ionicons name="checkmark" size={18} color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.validateTokenBtnText}>Validate</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+
+                {tokenError && (
+                  <View style={styles.tokenErrorBanner}>
+                    <Ionicons name="alert-circle" size={16} color="#DC2626" />
+                    <Text style={styles.tokenErrorText}>{tokenError}</Text>
+                  </View>
+                )}
+
+                {tokenValidated && tokenHouseholdInfo && (
+                  <View style={styles.tokenSuccessCard}>
+                    <View style={styles.tokenSuccessHeader}>
+                      <Ionicons name="checkmark-circle" size={18} color="#059669" />
+                      <Text style={styles.tokenSuccessTitle}>Household Verified</Text>
+                    </View>
+                    {tokenHouseholdInfo.headOfHousehold && (
+                      <Text style={styles.tokenSuccessItem}>
+                        <Text style={styles.tokenSuccessBold}>Head of Household: </Text>
+                        {tokenHouseholdInfo.headOfHousehold}
+                      </Text>
+                    )}
+                    {tokenHouseholdInfo.address && (
+                      <Text style={styles.tokenSuccessItem}>
+                        <Text style={styles.tokenSuccessBold}>Registered Address: </Text>
+                        {tokenHouseholdInfo.address}
+                      </Text>
+                    )}
+                  </View>
+                )}
 
                 <Text style={styles.inputLabel}>Street Address / Sitio *</Text>
                 <TextInput
@@ -602,26 +951,20 @@ export default function AssistedRegistrationScreen({
                   onChangeText={setStreetAddress}
                 />
 
-                <Text style={styles.inputLabel}>Municipality</Text>
-                <View style={styles.municipalityBadgeContainer}>
-                  <Text style={styles.municipalityText}>Labrador, Pangasinan</Text>
-                  <View style={styles.dedicatedTag}>
-                    <Text style={styles.dedicatedTagText}>Sole Dedicated LGU</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.inputLabel}>Household Size</Text>
+                <Text style={styles.inputLabel}>Household Size *</Text>
                 <TextInput
                   style={styles.input}
                   placeholder="1"
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
                   value={householdSize}
                   onChangeText={setHouseholdSize}
                 />
 
-                {/* Vulnerable Sector Cards */}
-                <Text style={styles.inputLabel}>Vulnerable Members (Optional)</Text>
-                <Text style={styles.subLabel}>Tap to select special needs categories present in this household:</Text>
+                {/* The 4 Priority Assessment Cards */}
+                <Text style={styles.inputLabel}>Household Priority Assessment</Text>
+                <Text style={styles.subLabel}>
+                  Assess if there are vulnerable members present in this household:
+                </Text>
                 <View style={styles.vulnerableGrid}>
                   {VULNERABLE_MEMBER_OPTIONS.map((item) => {
                     const isSelected = vulnerableMembers.includes(item.id);
@@ -642,16 +985,19 @@ export default function AssistedRegistrationScreen({
                           <Ionicons
                             name={item.icon as any}
                             size={20}
-                            color={isSelected ? '#059669' : '#64748B'}
+                            color={isSelected ? '#0F533A' : '#64748B'}
                           />
-                          <Text
-                            style={[
-                              styles.vulnerableCardText,
-                              isSelected && styles.vulnerableCardTextActive,
-                            ]}
-                          >
-                            {item.label}
-                          </Text>
+                          <View style={{ flex: 1 }}>
+                            <Text
+                              style={[
+                                styles.vulnerableCardText,
+                                isSelected && styles.vulnerableCardTextActive,
+                              ]}
+                            >
+                              {item.label}
+                            </Text>
+                            <Text style={styles.vulnerableCardDesc}>{item.desc}</Text>
+                          </View>
                         </TouchableOpacity>
 
                         {isSelected && (
@@ -690,7 +1036,7 @@ export default function AssistedRegistrationScreen({
                 </Text>
 
                 <Text style={styles.inputLabel}>Document / ID Type *</Text>
-                <Text style={styles.subLabel}>Alternative / Assisted Types:</Text>
+                <Text style={styles.subLabel}>Assisted / Alternative Options:</Text>
                 <View style={styles.idChipGroup}>
                   {ALTERNATIVE_ID_TYPES.map((type) => (
                     <TouchableOpacity
@@ -698,8 +1044,10 @@ export default function AssistedRegistrationScreen({
                       style={[styles.idChip, idType === type && styles.idChipActive]}
                       onPress={() => setIdType(type)}
                     >
-                      <Text style={[styles.idChipText, idType === type && styles.idChipTextActive]}>
-                        {type === 'STAFF_ATTESTATION' ? 'Staff Attestation (No ID)' : type}
+                      <Text
+                        style={[styles.idChipText, idType === type && styles.idChipTextActive]}
+                      >
+                        {type === 'STAFF_ATTESTATION' ? 'Staff Attestation (No Physical ID)' : type}
                       </Text>
                     </TouchableOpacity>
                   ))}
@@ -713,7 +1061,9 @@ export default function AssistedRegistrationScreen({
                       style={[styles.idChip, idType === type && styles.idChipActive]}
                       onPress={() => setIdType(type)}
                     >
-                      <Text style={[styles.idChipText, idType === type && styles.idChipTextActive]}>
+                      <Text
+                        style={[styles.idChipText, idType === type && styles.idChipTextActive]}
+                      >
                         {type}
                       </Text>
                     </TouchableOpacity>
@@ -723,25 +1073,24 @@ export default function AssistedRegistrationScreen({
                 {idType === 'STAFF_ATTESTATION' ? (
                   <View style={styles.attestationCard}>
                     <View style={styles.attestationHeader}>
-                      <Ionicons name="shield-checkmark" size={20} color="#059669" />
-                      <Text style={styles.attestationTitle}>Staff Attestation Mode Active</Text>
+                      <Ionicons name="shield-checkmark" size={20} color="#0F533A" />
+                      <Text style={styles.attestationTitle}>Staff Attestation Mode</Text>
                     </View>
                     <Text style={styles.attestationDesc}>
-                      A surrogate identifier (e.g. ATTEST-SJ-2026-XXXXXX) will automatically be assigned. No physical ID card required.
+                      The resident will receive an auto-generated Surrogate ID code with verified staff vouching.
                     </Text>
-
-                    <Text style={styles.inputLabel}>Attestation Reason / Notes *</Text>
+                    <Text style={styles.inputLabel}>Attestation Justification *</Text>
                     <TextInput
-                      style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
-                      placeholder="Explain why the resident lacks formal documents..."
+                      style={[styles.input, { height: 75, textAlignVertical: 'top' }]}
                       multiline
                       value={attestationReason}
                       onChangeText={setAttestationReason}
+                      placeholder="e.g. Resident lacks formal civil registration or government ID"
                     />
                   </View>
                 ) : (
                   <>
-                    <Text style={styles.inputLabel}>ID Number *</Text>
+                    <Text style={styles.inputLabel}>ID / Card Number *</Text>
                     <TextInput
                       style={styles.input}
                       placeholder="e.g. 1234-5678-9012"
@@ -753,16 +1102,16 @@ export default function AssistedRegistrationScreen({
                     <View style={styles.imageActionRow}>
                       <TouchableOpacity
                         style={styles.imageBtn}
-                        onPress={() => pickImage(setFrontIdImage, true)}
+                        onPress={() => pickIdImage(setFrontIdImage, true)}
                       >
-                        <Ionicons name="camera" size={18} color="#059669" />
+                        <Ionicons name="camera" size={18} color="#0F533A" />
                         <Text style={styles.imageBtnText}>Camera</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.imageBtn}
-                        onPress={() => pickImage(setFrontIdImage, false)}
+                        onPress={() => pickIdImage(setFrontIdImage, false)}
                       >
-                        <Ionicons name="images" size={18} color="#059669" />
+                        <Ionicons name="images" size={18} color="#0F533A" />
                         <Text style={styles.imageBtnText}>Gallery</Text>
                       </TouchableOpacity>
                     </View>
@@ -774,16 +1123,16 @@ export default function AssistedRegistrationScreen({
                     <View style={styles.imageActionRow}>
                       <TouchableOpacity
                         style={styles.imageBtn}
-                        onPress={() => pickImage(setBackIdImage, true)}
+                        onPress={() => pickIdImage(setBackIdImage, true)}
                       >
-                        <Ionicons name="camera" size={18} color="#059669" />
+                        <Ionicons name="camera" size={18} color="#0F533A" />
                         <Text style={styles.imageBtnText}>Camera</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.imageBtn}
-                        onPress={() => pickImage(setBackIdImage, false)}
+                        onPress={() => pickIdImage(setBackIdImage, false)}
                       >
-                        <Ionicons name="images" size={18} color="#059669" />
+                        <Ionicons name="images" size={18} color="#0F533A" />
                         <Text style={styles.imageBtnText}>Gallery</Text>
                       </TouchableOpacity>
                     </View>
@@ -795,56 +1144,57 @@ export default function AssistedRegistrationScreen({
               </View>
             )}
 
-            {/* STEP 4: Face Capture */}
+            {/* STEP 4: Face Photo (Identical UI/UX to Self-Registration) */}
             {currentStep === 4 && (
               <View style={styles.stepContainer}>
-                <Text style={styles.stepTitle}>📸 Face Scan & Biometrics</Text>
-                <View style={styles.mandatoryBadge}>
-                  <Ionicons name="lock-closed" size={16} color="#B45309" />
-                  <Text style={styles.mandatoryBadgeText}>Mandatory for all registrations</Text>
+                <View style={styles.faceStepHeader}>
+                  <Text style={styles.stepTitle}>Face Photo</Text>
+                  <Text style={styles.stepDesc}>
+                    Take a clear photo of the resident's face for biometric identity verification.
+                  </Text>
                 </View>
-                <Text style={styles.stepDesc}>
-                  Face capture is required to prevent double-claiming and ensure relief goods reach the genuine individual.
-                </Text>
 
-                {faceImage ? (
-                  <View style={styles.facePreviewWrapper}>
-                    <Image source={{ uri: faceImage }} style={styles.facePreviewImage} />
-                    <TouchableOpacity
-                      style={styles.retakeBtn}
-                      onPress={() => pickImage(setFaceImage, true)}
-                    >
-                      <Ionicons name="camera-reverse" size={18} color="#FFFFFF" />
-                      <Text style={styles.retakeBtnText}>Retake Photo</Text>
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <View style={styles.cameraPromptWrapper}>
-                    <View style={styles.cameraIconCircle}>
-                      <Ionicons name="person" size={54} color="#94A3B8" />
+                {/* Face Photo Card */}
+                <View style={styles.faceScanCard}>
+                  {faceImage ? (
+                    <View style={styles.faceImageContainer}>
+                      <Image source={{ uri: faceImage }} style={styles.faceImage} resizeMode="cover" />
+                      <View style={styles.faceVerifiedBadge}>
+                        <Ionicons name="checkmark-circle" size={24} color="#0F533A" />
+                        <Text style={styles.faceVerifiedText}>Photo Captured</Text>
+                      </View>
                     </View>
-                    <Text style={styles.cameraPromptTitle}>Capture Resident Portrait</Text>
-                    <Text style={styles.cameraPromptDesc}>
-                      Position resident's face inside good lighting without sunglasses or mask.
-                    </Text>
+                  ) : (
+                    <View style={styles.faceScanPlaceholder}>
+                      <View style={styles.faceScanIconContainer}>
+                        <Ionicons name="camera" size={54} color="#0F533A" />
+                      </View>
+                      <Text style={styles.faceScanTitle}>Take Resident Photo</Text>
+                      <Text style={styles.faceScanSubtitle}>
+                        Tap the button below to snap a photo
+                      </Text>
+                    </View>
+                  )}
+                </View>
 
-                    <TouchableOpacity
-                      style={styles.captureMainBtn}
-                      onPress={() => pickImage(setFaceImage, true)}
-                    >
-                      <Ionicons name="camera" size={20} color="#FFFFFF" />
-                      <Text style={styles.captureMainBtnText}>Take Face Photo Now</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={styles.gallerySecondaryBtn}
-                      onPress={() => pickImage(setFaceImage, false)}
-                    >
-                      <Ionicons name="images-outline" size={18} color="#059669" />
-                      <Text style={styles.gallerySecondaryBtnText}>Choose from Gallery</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
+                {/* Snap Photo Button */}
+                <TouchableOpacity
+                  style={[
+                    styles.scanButton,
+                    faceImage ? styles.scanButtonComplete : null,
+                  ]}
+                  onPress={startFaceScan}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={faceImage ? 'refresh' : 'camera'}
+                    size={22}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.scanButtonText}>
+                    {faceImage ? 'Retake Photo' : 'Snap a Photo'}
+                  </Text>
+                </TouchableOpacity>
               </View>
             )}
 
@@ -875,17 +1225,19 @@ export default function AssistedRegistrationScreen({
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Mode</Text>
-                    <Text style={[styles.reviewValue, { color: '#7C3AED', fontWeight: 'bold' }]}>
+                    <Text style={[styles.reviewValue, { color: '#0F533A', fontWeight: 'bold' }]}>
                       Assisted Walk-In (Staff)
                     </Text>
                   </View>
                   <View style={styles.reviewRow}>
-                    <Text style={styles.reviewLabel}>Municipality</Text>
-                    <Text style={styles.reviewValue}>Labrador, Pangasinan</Text>
-                  </View>
-                  <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Barangay</Text>
                     <Text style={styles.reviewValue}>{barangay}</Text>
+                  </View>
+                  <View style={styles.reviewRow}>
+                    <Text style={styles.reviewLabel}>Household Code</Text>
+                    <Text style={[styles.reviewValue, { fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' }]}>
+                      {householdToken}
+                    </Text>
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Address</Text>
@@ -896,7 +1248,7 @@ export default function AssistedRegistrationScreen({
                     <Text style={styles.reviewValue}>{householdSize} Member(s)</Text>
                   </View>
                   <View style={styles.reviewRow}>
-                    <Text style={styles.reviewLabel}>Vulnerable</Text>
+                    <Text style={styles.reviewLabel}>Priority Assessment</Text>
                     <Text style={styles.reviewValue}>
                       {vulnerableMembers.length > 0
                         ? vulnerableMembers
@@ -932,7 +1284,7 @@ export default function AssistedRegistrationScreen({
                 {faceImage ? (
                   <View style={styles.miniFaceRow}>
                     <Image source={{ uri: faceImage }} style={styles.miniFaceImage} />
-                    <Text style={styles.miniFaceText}>Biometric photo ready for verification</Text>
+                    <Text style={styles.miniFaceText}>Biometric face portrait attached and verified</Text>
                   </View>
                 ) : null}
               </View>
@@ -975,6 +1327,105 @@ export default function AssistedRegistrationScreen({
             )}
           </View>
         </KeyboardAvoidingView>
+
+        {/* ======================================================== */}
+        {/* Full-Screen Face Scanner Modal (Identical to Self-Registration) */}
+        {/* ======================================================== */}
+        <Modal
+          visible={showFaceScanner}
+          animationType="slide"
+          onRequestClose={() => setShowFaceScanner(false)}
+        >
+          <SafeAreaView style={styles.faceScannerContainer}>
+            {/* Scanner Header */}
+            <View style={styles.scannerHeader}>
+              <TouchableOpacity
+                onPress={() => setShowFaceScanner(false)}
+                style={styles.scannerCloseButton}
+              >
+                <Ionicons name="close" size={28} color="#FFFFFF" />
+              </TouchableOpacity>
+              <Text style={styles.scannerTitle}>Face Verification</Text>
+              <View style={styles.stepBadge}>
+                <Text style={styles.stepBadgeText}>Live Scan</Text>
+              </View>
+            </View>
+
+            {/* Camera View with Face Oval Overlay */}
+            <View style={styles.cameraContainer}>
+              <CameraView
+                ref={cameraRef}
+                style={styles.camera}
+                facing="front"
+                mirror={true}
+              />
+
+              {/* Face Frame Overlay */}
+              <View style={styles.faceFrameOverlay} pointerEvents="none">
+                <View style={styles.faceFrameTop} />
+                <View style={styles.faceFrameMiddle}>
+                  <View style={styles.faceFrameSide} />
+                  <View
+                    style={[
+                      styles.faceFrameOval,
+                      scanStatus === 'success' && styles.faceFrameOvalDetected,
+                      scanStatus === 'failed' && styles.faceFrameOvalNoFace,
+                    ]}
+                  >
+                    {scanStatus === 'capturing' && (
+                      <View style={styles.faceDetectionIndicator}>
+                        <ActivityIndicator size="large" color="#FFFFFF" />
+                        <Text style={styles.faceDetectionText}>{faceInstructions}</Text>
+                      </View>
+                    )}
+
+                    {scanStatus === 'failed' && (
+                      <View style={styles.noFaceWarning}>
+                        <Ionicons name="close-circle" size={36} color="#EF4444" />
+                        <Text style={styles.noFaceText}>{faceInstructions}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.faceFrameSide} />
+                </View>
+                <View style={styles.faceFrameBottom} />
+              </View>
+
+              {/* Success Overlay */}
+              {scanStatus === 'success' && (
+                <View style={styles.scanSuccessOverlay}>
+                  <View style={styles.scanSuccessIcon}>
+                    <Ionicons name="checkmark-circle" size={80} color="#2ECC71" />
+                  </View>
+                  <Text style={styles.scanSuccessText}>Photo Captured!</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Bottom Actions */}
+            <View style={styles.scannerBottom}>
+              <Text style={styles.scannerInstructions}>
+                {scanStatus === 'capturing'
+                  ? faceInstructions
+                  : scanStatus === 'failed'
+                  ? 'Please retry centering the face in good lighting'
+                  : 'Center resident\'s face inside the oval and tap capture'}
+              </Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.startScanButton,
+                  scanStatus === 'capturing' && styles.startScanButtonDisabled,
+                ]}
+                onPress={handleCaptureFacePhoto}
+                disabled={scanStatus === 'capturing'}
+              >
+                <Ionicons name="camera" size={24} color="#FFFFFF" />
+                <Text style={styles.startScanButtonText}>Capture Photo</Text>
+              </TouchableOpacity>
+            </View>
+          </SafeAreaView>
+        </Modal>
       </SafeAreaView>
     </Modal>
   );
@@ -1018,7 +1469,7 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: '100%',
-    backgroundColor: '#059669',
+    backgroundColor: '#0F533A',
   },
   errorBanner: {
     flexDirection: 'row',
@@ -1061,18 +1512,18 @@ const styles = StyleSheet.create({
   },
   subLabel: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '500',
     color: '#64748B',
-    marginTop: 8,
+    marginTop: 4,
     marginBottom: 6,
   },
   input: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: '#CBD5E1',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
     fontSize: 15,
     color: '#0F172A',
   },
@@ -1087,14 +1538,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
     borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   segmentedBtnActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: '#0F533A',
+    borderColor: '#0F533A',
   },
   segmentedBtnText: {
     fontSize: 14,
@@ -1122,7 +1573,7 @@ const styles = StyleSheet.create({
     gap: 8,
     backgroundColor: '#ECFDF5',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     marginTop: 10,
     borderWidth: 1,
     borderColor: '#A7F3D0',
@@ -1147,8 +1598,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   chipActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: '#0F533A',
+    borderColor: '#0F533A',
   },
   chipText: {
     fontSize: 13,
@@ -1158,6 +1609,163 @@ const styles = StyleSheet.create({
   chipTextActive: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  tokenInputRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'center',
+  },
+  tokenInput: {
+    flex: 1,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    fontWeight: '700',
+    letterSpacing: 1.2,
+  },
+  tokenInputValidated: {
+    borderColor: '#059669',
+    backgroundColor: '#F0FDF4',
+  },
+  tokenInputError: {
+    borderColor: '#DC2626',
+    backgroundColor: '#FEF2F2',
+  },
+  validateTokenBtn: {
+    backgroundColor: '#0F533A',
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: 84,
+  },
+  validateTokenBtnDisabled: {
+    opacity: 0.6,
+  },
+  validateTokenBtnSuccess: {
+    backgroundColor: '#059669',
+  },
+  validateTokenBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  tokenErrorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+  },
+  tokenErrorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '500',
+    flex: 1,
+  },
+  tokenSuccessCard: {
+    backgroundColor: '#F0FDF4',
+    borderWidth: 1,
+    borderColor: '#BBF7D0',
+    borderRadius: 10,
+    padding: 12,
+    marginTop: 8,
+  },
+  tokenSuccessHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  tokenSuccessTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#166534',
+  },
+  tokenSuccessItem: {
+    fontSize: 12,
+    color: '#15803D',
+    marginTop: 2,
+  },
+  tokenSuccessBold: {
+    fontWeight: '700',
+  },
+  vulnerableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  vulnerableCard: {
+    width: '48%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    padding: 12,
+  },
+  vulnerableCardActive: {
+    borderColor: '#0F533A',
+    backgroundColor: '#F0FDF4',
+  },
+  vulnerableCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  vulnerableCardText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  vulnerableCardTextActive: {
+    color: '#0F533A',
+  },
+  vulnerableCardDesc: {
+    fontSize: 11,
+    color: '#64748B',
+    marginTop: 2,
+  },
+  vulnerableCounterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#DCFCE7',
+  },
+  vulnerableCounterLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#065F46',
+  },
+  vulnerableStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+  },
+  stepperBtn: {
+    width: 22,
+    height: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stepperBtnText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#0F533A',
+  },
+  stepperValue: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#065F46',
+    minWidth: 20,
+    textAlign: 'center',
   },
   idChipGroup: {
     flexDirection: 'row',
@@ -1174,8 +1782,8 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   idChipActive: {
-    backgroundColor: '#059669',
-    borderColor: '#059669',
+    backgroundColor: '#0F533A',
+    borderColor: '#0F533A',
   },
   idChipText: {
     fontSize: 13,
@@ -1230,7 +1838,7 @@ const styles = StyleSheet.create({
   imageBtnText: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#059669',
+    color: '#0F533A',
   },
   imagePreview: {
     width: '100%',
@@ -1239,111 +1847,95 @@ const styles = StyleSheet.create({
     marginTop: 8,
     resizeMode: 'cover',
   },
-  mandatoryBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#FEF3C7',
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 8,
+  faceStepHeader: {
+    marginBottom: 16,
   },
-  mandatoryBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#B45309',
-  },
-  cameraPromptWrapper: {
-    alignItems: 'center',
+  faceScanCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     padding: 24,
-    marginTop: 8,
-  },
-  cameraIconCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
-    backgroundColor: '#F1F5F9',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 16,
+    minHeight: 280,
   },
-  cameraPromptTitle: {
-    fontSize: 16,
+  faceScanPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  faceScanIconContainer: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  faceScanTitle: {
+    fontSize: 18,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#1E293B',
     marginBottom: 6,
   },
-  cameraPromptDesc: {
+  faceScanSubtitle: {
     fontSize: 13,
     color: '#64748B',
     textAlign: 'center',
-    lineHeight: 18,
-    marginBottom: 20,
-    paddingHorizontal: 12,
   },
-  captureMainBtn: {
+  faceImageContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  faceImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 4,
+    borderColor: '#0F533A',
+  },
+  faceVerifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginTop: 14,
+  },
+  faceVerifiedText: {
+    color: '#0F533A',
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  scanButton: {
+    backgroundColor: '#0F533A',
+    paddingVertical: 14,
+    borderRadius: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#059669',
-    width: '100%',
-    paddingVertical: 14,
-    borderRadius: 8,
-    marginBottom: 10,
+    shadowColor: '#0F533A',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
   },
-  captureMainBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
-  },
-  gallerySecondaryBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-  },
-  gallerySecondaryBtnText: {
-    fontSize: 13,
-    color: '#059669',
-    fontWeight: '600',
-  },
-  facePreviewWrapper: {
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  facePreviewImage: {
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    borderWidth: 4,
-    borderColor: '#059669',
-  },
-  retakeBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  scanButtonComplete: {
     backgroundColor: '#334155',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 20,
-    marginTop: 16,
   },
-  retakeBtnText: {
+  scanButtonText: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '600',
+    fontSize: 16,
+    fontWeight: '700',
   },
   reviewCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 10,
+    borderRadius: 12,
     padding: 16,
     borderWidth: 1,
     borderColor: '#E2E8F0',
@@ -1373,7 +1965,7 @@ const styles = StyleSheet.create({
     gap: 12,
     backgroundColor: '#ECFDF5',
     padding: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     marginTop: 14,
     borderWidth: 1,
     borderColor: '#A7F3D0',
@@ -1405,7 +1997,7 @@ const styles = StyleSheet.create({
     gap: 6,
     paddingHorizontal: 16,
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
     backgroundColor: '#F1F5F9',
   },
   backBtnText: {
@@ -1419,9 +2011,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#059669',
+    backgroundColor: '#0F533A',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   nextBtnText: {
     fontSize: 15,
@@ -1434,9 +2026,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: '#059669',
+    backgroundColor: '#0F533A',
     paddingVertical: 12,
-    borderRadius: 8,
+    borderRadius: 10,
   },
   submitBtnDisabled: {
     opacity: 0.6,
@@ -1446,110 +2038,157 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
-  municipalityBadgeContainer: {
+
+  // -------------------------------------------------------------
+  // Full-Screen Face Scanner Styles (Matching Self-Registration)
+  // -------------------------------------------------------------
+  faceScannerContainer: {
+    flex: 1,
+    backgroundColor: '#000000',
+  },
+  scannerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 15,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    zIndex: 10,
   },
-  municipalityText: {
-    fontSize: 14,
+  scannerCloseButton: {
+    padding: 5,
+  },
+  scannerTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    color: '#0F172A',
+    color: '#FFFFFF',
   },
-  dedicatedTag: {
-    backgroundColor: '#ECFDF5',
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  stepBadge: {
+    backgroundColor: '#0F533A',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
-  dedicatedTagText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#059669',
-    textTransform: 'uppercase',
-  },
-  vulnerableGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    marginTop: 8,
-    marginBottom: 16,
-  },
-  vulnerableCard: {
-    width: '48%',
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 10,
-    padding: 10,
-  },
-  vulnerableCardActive: {
-    borderColor: '#059669',
-    backgroundColor: '#F0FDF4',
-  },
-  vulnerableCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  vulnerableCardText: {
+  stepBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#475569',
-    flexShrink: 1,
+    color: '#FFFFFF',
   },
-  vulnerableCardTextActive: {
-    color: '#065F46',
+  cameraContainer: {
+    flex: 1,
   },
-  vulnerableCounterRow: {
+  camera: {
+    flex: 1,
+  },
+  faceFrameOverlay: {
+    ...StyleSheet.absoluteFill,
+  },
+  faceFrameTop: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  faceFrameMiddle: {
     flexDirection: 'row',
+    height: 320,
+  },
+  faceFrameSide: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  faceFrameBottom: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+  },
+  faceFrameOval: {
+    width: 250,
+    height: 320,
+    borderRadius: 125,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    position: 'relative',
+    overflow: 'hidden',
+    justifyContent: 'center',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: '#DCFCE7',
   },
-  vulnerableCounterLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#065F46',
+  faceFrameOvalDetected: {
+    borderColor: '#2ECC71',
+    borderWidth: 4,
   },
-  vulnerableStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 6,
-    borderWidth: 1,
-    borderColor: '#A7F3D0',
-    paddingHorizontal: 2,
-    paddingVertical: 1,
+  faceFrameOvalNoFace: {
+    borderColor: '#F39C12',
+    borderWidth: 4,
   },
-  stepperBtn: {
-    width: 20,
-    height: 20,
+  faceDetectionIndicator: {
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stepperBtnText: {
-    fontSize: 13,
-    fontWeight: 'bold',
-    color: '#059669',
-  },
-  stepperValue: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#065F46',
-    minWidth: 18,
+  faceDetectionText: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    marginTop: 10,
     textAlign: 'center',
+  },
+  noFaceWarning: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.82)',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 16,
+    marginHorizontal: 12,
+  },
+  noFaceText: {
+    fontSize: 13,
+    color: '#FFFFFF',
+    marginTop: 8,
+    textAlign: 'center',
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  scanSuccessOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scanSuccessIcon: {
+    marginBottom: 15,
+  },
+  scanSuccessText: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#2ECC71',
+  },
+  scannerBottom: {
+    paddingHorizontal: 30,
+    paddingVertical: 30,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    alignItems: 'center',
+  },
+  scannerInstructions: {
+    fontSize: 15,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  startScanButton: {
+    backgroundColor: '#0F533A',
+    paddingHorizontal: 40,
+    paddingVertical: 16,
+    borderRadius: 30,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
+  },
+  startScanButtonDisabled: {
+    opacity: 0.6,
+  },
+  startScanButtonText: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
 });
