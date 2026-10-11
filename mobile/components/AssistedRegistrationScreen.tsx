@@ -83,12 +83,13 @@ export default function AssistedRegistrationScreen({
   onSuccess,
 }: AssistedRegistrationScreenProps) {
   const [currentStep, setCurrentStep] = useState(1);
+  const totalSteps = 5;
 
   // Step 1: Personal Info
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [dateOfBirth, setDateOfBirth] = useState('');
-  const [gender, setGender] = useState<'Male' | 'Female'>('Male');
+  const [gender, setGender] = useState<'Male' | 'Female' | null>('Male');
   const [hasPhone, setHasPhone] = useState(false);
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
@@ -127,13 +128,17 @@ export default function AssistedRegistrationScreen({
   const [faceInstructions, setFaceInstructions] = useState('Position face inside the oval');
   const cameraRef = useRef<CameraView>(null);
 
-  // State
+  // UI state
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const scrollViewRef = useRef<ScrollView>(null);
 
-  // -------------------------------------------------------------
+  // Scroll to top on step transition
+  useEffect(() => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  }, [currentStep]);
+
   // Load draft from disk when modal opens
-  // -------------------------------------------------------------
   useEffect(() => {
     if (!visible) return;
     const loadDraft = async () => {
@@ -177,9 +182,7 @@ export default function AssistedRegistrationScreen({
     loadDraft();
   }, [visible]);
 
-  // -------------------------------------------------------------
   // Persist draft whenever inputs change while visible
-  // -------------------------------------------------------------
   useEffect(() => {
     if (!visible) return;
     const saveDraft = async () => {
@@ -524,7 +527,7 @@ export default function AssistedRegistrationScreen({
       }
     }
     setScanStatus('idle');
-    setFaceInstructions('Center face inside the oval and look straight at the camera');
+    setFaceInstructions('Position face inside the oval');
     setShowFaceScanner(true);
   };
 
@@ -572,6 +575,10 @@ export default function AssistedRegistrationScreen({
       const dobCheck = validateDateOfBirth(dateOfBirth);
       if (!dobCheck.valid) {
         setErrorMessage(dobCheck.error || 'Valid Date of Birth is required.');
+        return false;
+      }
+      if (!gender) {
+        setErrorMessage('Please select gender.');
         return false;
       }
       if (hasPhone) {
@@ -628,7 +635,7 @@ export default function AssistedRegistrationScreen({
 
   const handleNext = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, 5));
+      setCurrentStep((prev) => Math.min(prev + 1, totalSteps));
     }
   };
 
@@ -653,7 +660,7 @@ export default function AssistedRegistrationScreen({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       dateOfBirth: dateOfBirth.trim(),
-      gender,
+      gender: gender || 'Male',
       mobileNumber: hasPhone && mobileNumber.trim() ? mobileNumber.trim() : undefined,
       email: email.trim() ? email.trim() : undefined,
       barangay,
@@ -704,505 +711,623 @@ export default function AssistedRegistrationScreen({
           style={{ flex: 1 }}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         >
-          {/* Top Header */}
+          {/* Header */}
           <View style={styles.header}>
             <TouchableOpacity onPress={handlePressClose} style={styles.closeBtn} activeOpacity={0.7}>
-              <Ionicons name="close" size={24} color="#0F172A" />
+              <Ionicons name="close" size={26} color="#333" />
             </TouchableOpacity>
-            <View style={styles.headerTextWrapper}>
-              <Text style={styles.headerTitle}>Walk-In Assisted Registration</Text>
-              <Text style={styles.headerSubtitle}>Step {currentStep} of 5</Text>
-            </View>
-            <View style={{ width: 40 }} />
+            <Text style={styles.headerTitle}>Walk-In Assisted Registration</Text>
+            <View style={{ width: 34 }} />
           </View>
 
-          {/* Stepper Progress Bar */}
-          <View style={styles.progressTrack}>
-            <View style={[styles.progressBar, { width: `${(currentStep / 5) * 100}%` }]} />
+          {/* Progress Section (Identical to Self-Registration) */}
+          <View style={styles.progressSection}>
+            <View style={styles.progressTextContainer}>
+              <Text style={styles.stepText}>Step {currentStep} of {totalSteps}</Text>
+            </View>
+            <View style={styles.progressSegmentsRow}>
+              {Array.from({ length: totalSteps }).map((_, index) => {
+                const stepNumber = index + 1;
+                const isCompleted = stepNumber < currentStep;
+                const isCurrent = stepNumber === currentStep;
+
+                return (
+                  <View
+                    key={`progress-segment-${stepNumber}`}
+                    style={[
+                      styles.progressSegment,
+                      index !== totalSteps - 1 && styles.progressSegmentSpacing,
+                      isCompleted && styles.progressSegmentCompleted,
+                      isCurrent && styles.progressSegmentCurrent,
+                    ]}
+                  />
+                );
+              })}
+            </View>
           </View>
 
           {/* Error Banner */}
           {!!errorMessage && (
             <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={18} color="#DC2626" />
+              <Ionicons name="alert-circle" size={18} color="#D32F2F" />
               <Text style={styles.errorText}>{errorMessage}</Text>
             </View>
           )}
 
-          <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <ScrollView
+            ref={scrollViewRef}
+            style={styles.scrollView}
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
             {/* STEP 1: Personal Info */}
             {currentStep === 1 && (
-              <View style={styles.stepContainer}>
-                <Text style={styles.stepTitle}>👤 Personal Information</Text>
-                <Text style={styles.stepDesc}>
-                  Enter the beneficiary's basic personal details. Mobile phone is optional for assisted walk-in beneficiaries.
-                </Text>
-
-                <Text style={styles.inputLabel}>First Name *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Maria"
-                  value={firstName}
-                  onChangeText={setFirstName}
-                />
-
-                <Text style={styles.inputLabel}>Last Name *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="e.g. Santos"
-                  value={lastName}
-                  onChangeText={setLastName}
-                />
-
-                <Text style={styles.inputLabel}>Date of Birth (MM-DD-YYYY) *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="MM-DD-YYYY"
-                  keyboardType="number-pad"
-                  value={dateOfBirth}
-                  onChangeText={(text) => setDateOfBirth(formatDateInput(text))}
-                  maxLength={10}
-                />
-
-                <Text style={styles.inputLabel}>Gender *</Text>
-                <View style={styles.segmentedRow}>
-                  <TouchableOpacity
-                    style={[styles.segmentedBtn, gender === 'Male' && styles.segmentedBtnActive]}
-                    onPress={() => setGender('Male')}
-                  >
-                    <Ionicons
-                      name="male"
-                      size={16}
-                      color={gender === 'Male' ? '#FFFFFF' : '#475569'}
-                    />
-                    <Text
-                      style={[
-                        styles.segmentedBtnText,
-                        gender === 'Male' && styles.segmentedBtnTextActive,
-                      ]}
-                    >
-                      Male
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.segmentedBtn, gender === 'Female' && styles.segmentedBtnActive]}
-                    onPress={() => setGender('Female')}
-                  >
-                    <Ionicons
-                      name="female"
-                      size={16}
-                      color={gender === 'Female' ? '#FFFFFF' : '#475569'}
-                    />
-                    <Text
-                      style={[
-                        styles.segmentedBtnText,
-                        gender === 'Female' && styles.segmentedBtnTextActive,
-                      ]}
-                    >
-                      Female
-                    </Text>
-                  </TouchableOpacity>
+              <View style={styles.formContent}>
+                <View style={styles.headerSection}>
+                  <Text style={styles.title}>
+                    <Text style={styles.titleBlack}>Let's get you </Text>
+                    <Text style={styles.titleGreen}>registered</Text>
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    Please enter your details exactly as they appear on your valid ID to ensure smooth relief distribution.
+                  </Text>
                 </View>
 
-                {/* Mobile Phone Toggle */}
-                <TouchableOpacity
-                  style={styles.toggleRow}
-                  activeOpacity={0.8}
-                  onPress={() => setHasPhone(!hasPhone)}
-                >
-                  <Ionicons
-                    name={hasPhone ? 'checkbox' : 'square-outline'}
-                    size={22}
-                    color={hasPhone ? '#059669' : '#64748B'}
-                  />
-                  <Text style={styles.toggleLabel}>Resident has an active mobile phone</Text>
-                </TouchableOpacity>
-
-                {hasPhone ? (
-                  <>
-                    <Text style={styles.inputLabel}>Mobile Number *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="09XXXXXXXXX"
-                      keyboardType="phone-pad"
-                      value={mobileNumber}
-                      onChangeText={setMobileNumber}
-                      maxLength={11}
-                    />
-                  </>
-                ) : (
-                  <View style={styles.infoBanner}>
-                    <Ionicons name="information-circle-outline" size={18} color="#059669" />
-                    <Text style={styles.infoText}>
-                      No mobile number required. The resident will be issued a unique Resident Code for verification and relief collection.
-                    </Text>
+                <View style={styles.formFields}>
+                  {/* First Name */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>First Name</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Juan"
+                        placeholderTextColor="#999"
+                        value={firstName}
+                        onChangeText={setFirstName}
+                      />
+                      <Ionicons name="person" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                    </View>
                   </View>
-                )}
 
-                <Text style={styles.inputLabel}>Email (Optional)</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="resident@example.com"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  value={email}
-                  onChangeText={setEmail}
-                />
+                  {/* Last Name */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Last Name</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="dela Cruz"
+                        placeholderTextColor="#999"
+                        value={lastName}
+                        onChangeText={setLastName}
+                      />
+                      <Ionicons name="person" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                    </View>
+                  </View>
+
+                  {/* Date of Birth */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Date of Birth</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="mm/dd/yyyy"
+                        placeholderTextColor="#999"
+                        keyboardType="number-pad"
+                        value={dateOfBirth}
+                        onChangeText={(text) => setDateOfBirth(formatDateInput(text))}
+                        maxLength={10}
+                      />
+                      <Ionicons name="calendar" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                    </View>
+                  </View>
+
+                  {/* Gender (Radio buttons) */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Gender</Text>
+                    <View style={styles.genderRadioContainer}>
+                      <TouchableOpacity
+                        style={styles.genderRadioOption}
+                        onPress={() => setGender('Male')}
+                        activeOpacity={0.8}
+                      >
+                        <View style={[styles.radioOuter, gender === 'Male' && styles.radioOuterActive]}>
+                          {gender === 'Male' && <View style={styles.radioInner} />}
+                        </View>
+                        <Text style={[styles.genderRadioText, gender === 'Male' && styles.genderRadioTextActive]}>
+                          Male
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.genderRadioOption}
+                        onPress={() => setGender('Female')}
+                        activeOpacity={0.8}
+                      >
+                        <View style={[styles.radioOuter, gender === 'Female' && styles.radioOuterActive]}>
+                          {gender === 'Female' && <View style={styles.radioInner} />}
+                        </View>
+                        <Text style={[styles.genderRadioText, gender === 'Female' && styles.genderRadioTextActive]}>
+                          Female
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+
+                  {/* Mobile Phone Toggle */}
+                  <TouchableOpacity
+                    style={styles.toggleRow}
+                    activeOpacity={0.8}
+                    onPress={() => setHasPhone(!hasPhone)}
+                  >
+                    <Ionicons
+                      name={hasPhone ? 'checkbox' : 'square-outline'}
+                      size={22}
+                      color={hasPhone ? '#2E7D32' : '#888'}
+                    />
+                    <Text style={styles.toggleLabel}>Resident has an active mobile phone</Text>
+                  </TouchableOpacity>
+
+                  {hasPhone ? (
+                    <View style={styles.fieldContainer}>
+                      <Text style={styles.fieldLabel}>Mobile Number</Text>
+                      <View style={styles.inputContainer}>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="09XXXXXXXXX"
+                          placeholderTextColor="#999"
+                          keyboardType="phone-pad"
+                          value={mobileNumber}
+                          onChangeText={setMobileNumber}
+                          maxLength={11}
+                        />
+                        <Ionicons name="call" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                      </View>
+                      <Text style={styles.fieldHelperText}>Use 09XXXXXXXXX.</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.credentialsInfoBox}>
+                      <Ionicons name="information-circle" size={20} color="#2E7D32" />
+                      <Text style={styles.credentialsInfoText}>
+                        No mobile number required. The resident will be issued a unique Resident Code for verification and relief collection.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Email */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Email (Optional)</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="resident@example.com"
+                        placeholderTextColor="#999"
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        value={email}
+                        onChangeText={setEmail}
+                      />
+                      <Ionicons name="mail" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                    </View>
+                  </View>
+                </View>
               </View>
             )}
 
             {/* STEP 2: Address & Household */}
             {currentStep === 2 && (
-              <View style={styles.stepContainer}>
-                <Text style={styles.stepTitle}>📍 Barangay & Household</Text>
-                <Text style={styles.stepDesc}>
-                  Select the resident's Barangay and enter their unique Household Registration Code.
-                </Text>
-
-                <Text style={styles.inputLabel}>Barangay *</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                  {BARANGAYS.map((b) => (
-                    <TouchableOpacity
-                      key={b}
-                      style={[styles.chip, barangay === b && styles.chipActive]}
-                      onPress={() => handleBarangayChange(b)}
-                    >
-                      <Text style={[styles.chipText, barangay === b && styles.chipTextActive]}>
-                        {b}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-
-                {/* Unique Household Registration Code */}
-                <Text style={styles.inputLabel}>Household Registration Code (XXXX-XXXX-XXXX) *</Text>
-                <Text style={styles.subLabel}>
-                  Enter the pre-issued 12-character token for this household:
-                </Text>
-                <View style={styles.tokenInputRow}>
-                  <TextInput
-                    style={[
-                      styles.input,
-                      styles.tokenInput,
-                      tokenValidated && styles.tokenInputValidated,
-                      !!tokenError && styles.tokenInputError,
-                    ]}
-                    placeholder="XXXX-XXXX-XXXX"
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    value={householdToken}
-                    onChangeText={handleTokenChange}
-                    maxLength={14}
-                  />
-                  <TouchableOpacity
-                    style={[
-                      styles.validateTokenBtn,
-                      tokenValidating && styles.validateTokenBtnDisabled,
-                      tokenValidated && styles.validateTokenBtnSuccess,
-                    ]}
-                    onPress={validateHouseholdToken}
-                    disabled={tokenValidating}
-                    activeOpacity={0.8}
-                  >
-                    {tokenValidating ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : tokenValidated ? (
-                      <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.validateTokenBtnText}>Validate</Text>
-                    )}
-                  </TouchableOpacity>
+              <View style={styles.formContent}>
+                <View style={styles.headerSection}>
+                  <Text style={styles.title}>
+                    <Text style={styles.titleBlack}>Barangay & </Text>
+                    <Text style={styles.titleGreen}>Household</Text>
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    Select the resident's home location and enter their unique household registration code.
+                  </Text>
                 </View>
 
-                {tokenError && (
-                  <View style={styles.tokenErrorBanner}>
-                    <Ionicons name="alert-circle" size={16} color="#DC2626" />
-                    <Text style={styles.tokenErrorText}>{tokenError}</Text>
-                  </View>
-                )}
-
-                {tokenValidated && tokenHouseholdInfo && (
-                  <View style={styles.tokenSuccessCard}>
-                    <View style={styles.tokenSuccessHeader}>
-                      <Ionicons name="checkmark-circle" size={18} color="#059669" />
-                      <Text style={styles.tokenSuccessTitle}>Household Verified</Text>
-                    </View>
-                    {tokenHouseholdInfo.headOfHousehold && (
-                      <Text style={styles.tokenSuccessItem}>
-                        <Text style={styles.tokenSuccessBold}>Head of Household: </Text>
-                        {tokenHouseholdInfo.headOfHousehold}
-                      </Text>
-                    )}
-                    {tokenHouseholdInfo.address && (
-                      <Text style={styles.tokenSuccessItem}>
-                        <Text style={styles.tokenSuccessBold}>Registered Address: </Text>
-                        {tokenHouseholdInfo.address}
-                      </Text>
-                    )}
-                  </View>
-                )}
-
-                <Text style={styles.inputLabel}>Street Address / Sitio *</Text>
-                <TextInput
-                  style={[styles.input, { height: 70, textAlignVertical: 'top' }]}
-                  placeholder="House #, Street name, Sitio"
-                  multiline
-                  value={streetAddress}
-                  onChangeText={setStreetAddress}
-                />
-
-                <Text style={styles.inputLabel}>Household Size *</Text>
-                <TextInput
-                  style={styles.input}
-                  placeholder="1"
-                  keyboardType="number-pad"
-                  value={householdSize}
-                  onChangeText={setHouseholdSize}
-                />
-
-                {/* The 4 Priority Assessment Cards */}
-                <Text style={styles.inputLabel}>Household Priority Assessment</Text>
-                <Text style={styles.subLabel}>
-                  Assess if there are vulnerable members present in this household:
-                </Text>
-                <View style={styles.vulnerableGrid}>
-                  {VULNERABLE_MEMBER_OPTIONS.map((item) => {
-                    const isSelected = vulnerableMembers.includes(item.id);
-                    const count = vulnerableCounts[item.id] || 1;
-                    return (
-                      <View
-                        key={item.id}
-                        style={[
-                          styles.vulnerableCard,
-                          isSelected && styles.vulnerableCardActive,
-                        ]}
-                      >
+                <View style={styles.formFields}>
+                  {/* Barangay */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Barangay</Text>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
+                      {BARANGAYS.map((b) => (
                         <TouchableOpacity
-                          style={styles.vulnerableCardHeader}
-                          onPress={() => toggleVulnerableMember(item.id)}
-                          activeOpacity={0.7}
+                          key={b}
+                          style={[styles.chip, barangay === b && styles.chipActive]}
+                          onPress={() => handleBarangayChange(b)}
                         >
-                          <Ionicons
-                            name={item.icon as any}
-                            size={20}
-                            color={isSelected ? '#0F533A' : '#64748B'}
-                          />
-                          <View style={{ flex: 1 }}>
-                            <Text
-                              style={[
-                                styles.vulnerableCardText,
-                                isSelected && styles.vulnerableCardTextActive,
-                              ]}
-                            >
-                              {item.label}
-                            </Text>
-                            <Text style={styles.vulnerableCardDesc}>{item.desc}</Text>
-                          </View>
+                          <Text style={[styles.chipText, barangay === b && styles.chipTextActive]}>
+                            {b}
+                          </Text>
                         </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  </View>
 
-                        {isSelected && (
-                          <View style={styles.vulnerableCounterRow}>
-                            <Text style={styles.vulnerableCounterLabel}>Count:</Text>
-                            <View style={styles.vulnerableStepper}>
-                              <TouchableOpacity
-                                style={styles.stepperBtn}
-                                onPress={() => updateVulnerableCount(item.id, -1)}
-                              >
-                                <Text style={styles.stepperBtnText}>-</Text>
-                              </TouchableOpacity>
-                              <Text style={styles.stepperValue}>{count}</Text>
-                              <TouchableOpacity
-                                style={styles.stepperBtn}
-                                onPress={() => updateVulnerableCount(item.id, 1)}
-                              >
-                                <Text style={styles.stepperBtnText}>+</Text>
-                              </TouchableOpacity>
-                            </View>
-                          </View>
+                  {/* Unique Household Registration Code */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Household Registration Code (XXXX-XXXX-XXXX)</Text>
+                    <View style={styles.tokenInputRow}>
+                      <View style={[
+                        styles.inputContainer,
+                        styles.tokenInput,
+                        tokenValidated && styles.inputSuccess,
+                        !!tokenError && styles.inputError,
+                      ]}>
+                        <TextInput
+                          style={[styles.input, styles.tokenInputText]}
+                          placeholder="XXXX-XXXX-XXXX"
+                          placeholderTextColor="#999"
+                          autoCapitalize="characters"
+                          autoCorrect={false}
+                          value={householdToken}
+                          onChangeText={handleTokenChange}
+                          maxLength={14}
+                        />
+                        <Ionicons name="key" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                      </View>
+                      <TouchableOpacity
+                        style={[
+                          styles.validateButton,
+                          tokenValidating && styles.validateButtonDisabled,
+                          tokenValidated && styles.validateButtonSuccess,
+                        ]}
+                        onPress={validateHouseholdToken}
+                        disabled={tokenValidating}
+                        activeOpacity={0.8}
+                      >
+                        {tokenValidating ? (
+                          <ActivityIndicator size="small" color="#FFFFFF" />
+                        ) : tokenValidated ? (
+                          <Ionicons name="checkmark" size={20} color="#FFFFFF" />
+                        ) : (
+                          <Text style={styles.validateButtonText}>Validate</Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+
+                    {tokenError && (
+                      <View style={styles.tokenErrorContainer}>
+                        <Ionicons name="alert-circle" size={16} color="#D32F2F" />
+                        <Text style={styles.tokenErrorText}>{tokenError}</Text>
+                      </View>
+                    )}
+
+                    {tokenValidated && tokenHouseholdInfo && (
+                      <View style={styles.tokenSuccessContainer}>
+                        <View style={styles.tokenSuccessHeader}>
+                          <Ionicons name="checkmark-circle" size={20} color="#2E7D32" />
+                          <Text style={styles.tokenSuccessTitle}>Household Verified</Text>
+                        </View>
+                        {tokenHouseholdInfo.headOfHousehold && (
+                          <Text style={styles.tokenInfoRow}>
+                            <Text style={styles.tokenInfoLabel}>Head of Household: </Text>
+                            <Text style={styles.tokenInfoValue}>{tokenHouseholdInfo.headOfHousehold}</Text>
+                          </Text>
+                        )}
+                        {tokenHouseholdInfo.address && (
+                          <Text style={styles.tokenInfoRow}>
+                            <Text style={styles.tokenInfoLabel}>Registered Address: </Text>
+                            <Text style={styles.tokenInfoValue}>{tokenHouseholdInfo.address}</Text>
+                          </Text>
                         )}
                       </View>
-                    );
-                  })}
+                    )}
+                  </View>
+
+                  {/* Street Address / Sitio */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Street Address / Sitio</Text>
+                    <View style={[styles.inputContainer, { alignItems: 'flex-start' }]}>
+                      <TextInput
+                        style={[styles.input, { minHeight: 65, textAlignVertical: 'top' }]}
+                        placeholder="House #, Street name, Sitio"
+                        placeholderTextColor="#999"
+                        multiline
+                        value={streetAddress}
+                        onChangeText={setStreetAddress}
+                      />
+                      <Ionicons name="location" size={20} color="#2E7D32" style={[styles.inputIconRight, { marginTop: 14 }]} />
+                    </View>
+                  </View>
+
+                  {/* Household Size */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Household Size</Text>
+                    <View style={styles.inputContainer}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="1"
+                        placeholderTextColor="#999"
+                        keyboardType="number-pad"
+                        value={householdSize}
+                        onChangeText={setHouseholdSize}
+                      />
+                      <Ionicons name="people" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                    </View>
+                  </View>
+
+                  {/* The 4 Priority Assessment Cards */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Priority Assessment</Text>
+                    <Text style={styles.fieldHint}>
+                      Select any special sectors present in this household:
+                    </Text>
+                    <View style={styles.vulnerableGrid}>
+                      {VULNERABLE_MEMBER_OPTIONS.map((item) => {
+                        const isSelected = vulnerableMembers.includes(item.id);
+                        const count = vulnerableCounts[item.id] || 1;
+                        return (
+                          <View
+                            key={item.id}
+                            style={[
+                              styles.vulnerableCard,
+                              isSelected && styles.vulnerableCardActive,
+                            ]}
+                          >
+                            <TouchableOpacity
+                              style={styles.vulnerableCardHeader}
+                              onPress={() => toggleVulnerableMember(item.id)}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons
+                                name={item.icon as any}
+                                size={22}
+                                color={isSelected ? '#2E7D32' : '#666'}
+                              />
+                              <View style={{ flex: 1 }}>
+                                <Text
+                                  style={[
+                                    styles.vulnerableCardText,
+                                    isSelected && styles.vulnerableCardTextActive,
+                                  ]}
+                                >
+                                  {item.label}
+                                </Text>
+                                <Text style={styles.vulnerableCardDesc}>{item.desc}</Text>
+                              </View>
+                            </TouchableOpacity>
+
+                            {isSelected && (
+                              <View style={styles.vulnerableCounterRow}>
+                                <Text style={styles.vulnerableCounterLabel}>Count:</Text>
+                                <View style={styles.vulnerableStepper}>
+                                  <TouchableOpacity
+                                    style={styles.stepperBtn}
+                                    onPress={() => updateVulnerableCount(item.id, -1)}
+                                  >
+                                    <Text style={styles.stepperBtnText}>-</Text>
+                                  </TouchableOpacity>
+                                  <Text style={styles.stepperValue}>{count}</Text>
+                                  <TouchableOpacity
+                                    style={styles.stepperBtn}
+                                    onPress={() => updateVulnerableCount(item.id, 1)}
+                                  >
+                                    <Text style={styles.stepperBtnText}>+</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              </View>
+                            )}
+                          </View>
+                        );
+                      })}
+                    </View>
+                  </View>
                 </View>
               </View>
             )}
 
             {/* STEP 3: Identification */}
             {currentStep === 3 && (
-              <View style={styles.stepContainer}>
-                <Text style={styles.stepTitle}>🪪 Identity & Documentation</Text>
-                <Text style={styles.stepDesc}>
-                  Select government ID or Staff Attestation for indigent/tribal residents without IDs.
-                </Text>
-
-                <Text style={styles.inputLabel}>Document / ID Type *</Text>
-                <Text style={styles.subLabel}>Assisted / Alternative Options:</Text>
-                <View style={styles.idChipGroup}>
-                  {ALTERNATIVE_ID_TYPES.map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.idChip, idType === type && styles.idChipActive]}
-                      onPress={() => setIdType(type)}
-                    >
-                      <Text
-                        style={[styles.idChipText, idType === type && styles.idChipTextActive]}
-                      >
-                        {type === 'STAFF_ATTESTATION' ? 'Staff Attestation (No Physical ID)' : type}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
+              <View style={styles.formContent}>
+                <View style={styles.headerSection}>
+                  <Text style={styles.title}>
+                    <Text style={styles.titleBlack}>Identity & </Text>
+                    <Text style={styles.titleGreen}>Documentation</Text>
+                  </Text>
+                  <Text style={styles.subtitle}>
+                    Select government ID or Staff Attestation for indigent/tribal residents without IDs.
+                  </Text>
                 </View>
 
-                <Text style={styles.subLabel}>Standard Government IDs:</Text>
-                <View style={styles.idChipGroup}>
-                  {STANDARD_ID_TYPES.map((type) => (
-                    <TouchableOpacity
-                      key={type}
-                      style={[styles.idChip, idType === type && styles.idChipActive]}
-                      onPress={() => setIdType(type)}
-                    >
-                      <Text
-                        style={[styles.idChipText, idType === type && styles.idChipTextActive]}
-                      >
-                        {type}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {idType === 'STAFF_ATTESTATION' ? (
-                  <View style={styles.attestationCard}>
-                    <View style={styles.attestationHeader}>
-                      <Ionicons name="shield-checkmark" size={20} color="#0F533A" />
-                      <Text style={styles.attestationTitle}>Staff Attestation Mode</Text>
+                <View style={styles.formFields}>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Assisted / Alternative Options</Text>
+                    <View style={styles.idChipGroup}>
+                      {ALTERNATIVE_ID_TYPES.map((type) => (
+                        <TouchableOpacity
+                          key={type}
+                          style={[styles.idChip, idType === type && styles.idChipActive]}
+                          onPress={() => setIdType(type)}
+                        >
+                          <Text
+                            style={[styles.idChipText, idType === type && styles.idChipTextActive]}
+                          >
+                            {type === 'STAFF_ATTESTATION' ? 'Staff Attestation (No Physical ID)' : type}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    <Text style={styles.attestationDesc}>
-                      The resident will receive an auto-generated Surrogate ID code with verified staff vouching.
-                    </Text>
-                    <Text style={styles.inputLabel}>Attestation Justification *</Text>
-                    <TextInput
-                      style={[styles.input, { height: 75, textAlignVertical: 'top' }]}
-                      multiline
-                      value={attestationReason}
-                      onChangeText={setAttestationReason}
-                      placeholder="e.g. Resident lacks formal civil registration or government ID"
-                    />
                   </View>
-                ) : (
-                  <>
-                    <Text style={styles.inputLabel}>ID / Card Number *</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. 1234-5678-9012"
-                      value={idNumber}
-                      onChangeText={setIdNumber}
-                    />
 
-                    <Text style={styles.inputLabel}>Front ID Photo (Optional)</Text>
-                    <View style={styles.imageActionRow}>
-                      <TouchableOpacity
-                        style={styles.imageBtn}
-                        onPress={() => pickIdImage(setFrontIdImage, true)}
-                      >
-                        <Ionicons name="camera" size={18} color="#0F533A" />
-                        <Text style={styles.imageBtnText}>Camera</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.imageBtn}
-                        onPress={() => pickIdImage(setFrontIdImage, false)}
-                      >
-                        <Ionicons name="images" size={18} color="#0F533A" />
-                        <Text style={styles.imageBtnText}>Gallery</Text>
-                      </TouchableOpacity>
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Standard Government IDs</Text>
+                    <View style={styles.idChipGroup}>
+                      {STANDARD_ID_TYPES.map((type) => (
+                        <TouchableOpacity
+                          key={type}
+                          style={[styles.idChip, idType === type && styles.idChipActive]}
+                          onPress={() => setIdType(type)}
+                        >
+                          <Text
+                            style={[styles.idChipText, idType === type && styles.idChipTextActive]}
+                          >
+                            {type}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
                     </View>
-                    {!!frontIdImage && (
-                      <Image source={{ uri: frontIdImage }} style={styles.imagePreview} />
-                    )}
+                  </View>
 
-                    <Text style={styles.inputLabel}>Back ID Photo (Optional)</Text>
-                    <View style={styles.imageActionRow}>
-                      <TouchableOpacity
-                        style={styles.imageBtn}
-                        onPress={() => pickIdImage(setBackIdImage, true)}
-                      >
-                        <Ionicons name="camera" size={18} color="#0F533A" />
-                        <Text style={styles.imageBtnText}>Camera</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.imageBtn}
-                        onPress={() => pickIdImage(setBackIdImage, false)}
-                      >
-                        <Ionicons name="images" size={18} color="#0F533A" />
-                        <Text style={styles.imageBtnText}>Gallery</Text>
-                      </TouchableOpacity>
+                  {idType === 'STAFF_ATTESTATION' ? (
+                    <View style={styles.attestationCard}>
+                      <View style={styles.attestationHeader}>
+                        <Ionicons name="shield-checkmark" size={22} color="#2E7D32" />
+                        <Text style={styles.attestationTitle}>Staff Attestation Mode</Text>
+                      </View>
+                      <Text style={styles.attestationDesc}>
+                        The resident will receive an auto-generated Surrogate ID code backed by staff vouching.
+                      </Text>
+                      <Text style={styles.fieldLabel}>Attestation Justification</Text>
+                      <View style={[styles.inputContainer, { alignItems: 'flex-start', minHeight: 75 }]}>
+                        <TextInput
+                          style={[styles.input, { minHeight: 70, textAlignVertical: 'top' }]}
+                          multiline
+                          value={attestationReason}
+                          onChangeText={setAttestationReason}
+                          placeholder="e.g. Resident lacks formal civil registration or government ID"
+                          placeholderTextColor="#999"
+                        />
+                      </View>
                     </View>
-                    {!!backIdImage && (
-                      <Image source={{ uri: backIdImage }} style={styles.imagePreview} />
-                    )}
-                  </>
-                )}
+                  ) : (
+                    <>
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>ID / Card Number</Text>
+                        <View style={styles.inputContainer}>
+                          <TextInput
+                            style={styles.input}
+                            placeholder="e.g. 1234-5678-9012"
+                            placeholderTextColor="#999"
+                            value={idNumber}
+                            onChangeText={setIdNumber}
+                          />
+                          <Ionicons name="card" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                        </View>
+                      </View>
+
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>Front ID Photo (Optional)</Text>
+                        <View style={styles.imageActionRow}>
+                          <TouchableOpacity
+                            style={styles.imageBtn}
+                            onPress={() => pickIdImage(setFrontIdImage, true)}
+                          >
+                            <Ionicons name="camera" size={18} color="#2E7D32" />
+                            <Text style={styles.imageBtnText}>Camera</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.imageBtn}
+                            onPress={() => pickIdImage(setFrontIdImage, false)}
+                          >
+                            <Ionicons name="images" size={18} color="#2E7D32" />
+                            <Text style={styles.imageBtnText}>Gallery</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {!!frontIdImage && (
+                          <Image source={{ uri: frontIdImage }} style={styles.imagePreview} />
+                        )}
+                      </View>
+
+                      <View style={styles.fieldContainer}>
+                        <Text style={styles.fieldLabel}>Back ID Photo (Optional)</Text>
+                        <View style={styles.imageActionRow}>
+                          <TouchableOpacity
+                            style={styles.imageBtn}
+                            onPress={() => pickIdImage(setBackIdImage, true)}
+                          >
+                            <Ionicons name="camera" size={18} color="#2E7D32" />
+                            <Text style={styles.imageBtnText}>Camera</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.imageBtn}
+                            onPress={() => pickIdImage(setBackIdImage, false)}
+                          >
+                            <Ionicons name="images" size={18} color="#2E7D32" />
+                            <Text style={styles.imageBtnText}>Gallery</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {!!backIdImage && (
+                          <Image source={{ uri: backIdImage }} style={styles.imagePreview} />
+                        )}
+                      </View>
+                    </>
+                  )}
+                </View>
               </View>
             )}
 
-            {/* STEP 4: Face Photo (Identical UI/UX to Self-Registration) */}
+            {/* STEP 4: Face Photo (Identical to Self-Registration) */}
             {currentStep === 4 && (
-              <View style={styles.stepContainer}>
-                <View style={styles.faceStepHeader}>
-                  <Text style={styles.stepTitle}>Face Photo</Text>
-                  <Text style={styles.stepDesc}>
+              <View style={styles.formContent}>
+                <View style={styles.headerSection}>
+                  <Text style={styles.title}>
+                    <Text style={styles.titleBlack}>Face </Text>
+                    <Text style={styles.titleGreen}>Photo</Text>
+                  </Text>
+                  <Text style={styles.subtitle}>
                     Take a clear photo of the resident's face for biometric identity verification.
                   </Text>
                 </View>
 
-                {/* Face Photo Card */}
-                <View style={styles.faceScanCard}>
-                  {faceImage ? (
-                    <View style={styles.faceImageContainer}>
-                      <Image source={{ uri: faceImage }} style={styles.faceImage} resizeMode="cover" />
-                      <View style={styles.faceVerifiedBadge}>
-                        <Ionicons name="checkmark-circle" size={24} color="#0F533A" />
-                        <Text style={styles.faceVerifiedText}>Photo Captured</Text>
+                <View style={styles.formFields}>
+                  {/* Face Photo Card */}
+                  <View style={styles.faceScanCard}>
+                    {faceImage ? (
+                      <View style={styles.faceImageContainer}>
+                        <Image source={{ uri: faceImage }} style={styles.faceImage} resizeMode="cover" />
+                        <View style={styles.faceVerifiedBadge}>
+                          <Ionicons name="checkmark-circle" size={24} color="#2E7D32" />
+                          <Text style={styles.faceVerifiedText}>Photo Captured</Text>
+                        </View>
                       </View>
-                    </View>
-                  ) : (
-                    <View style={styles.faceScanPlaceholder}>
-                      <View style={styles.faceScanIconContainer}>
-                        <Ionicons name="camera" size={54} color="#0F533A" />
+                    ) : (
+                      <View style={styles.faceScanPlaceholder}>
+                        <View style={styles.faceScanIconContainer}>
+                          <Ionicons name="camera" size={60} color="#2E7D32" />
+                        </View>
+                        <Text style={styles.faceScanTitle}>Take Resident Photo</Text>
+                        <Text style={styles.faceScanSubtitle}>
+                          Tap the button below to snap a photo
+                        </Text>
                       </View>
-                      <Text style={styles.faceScanTitle}>Take Resident Photo</Text>
-                      <Text style={styles.faceScanSubtitle}>
-                        Tap the button below to snap a photo
-                      </Text>
-                    </View>
-                  )}
-                </View>
+                    )}
+                  </View>
 
-                {/* Snap Photo Button */}
-                <TouchableOpacity
-                  style={[
-                    styles.scanButton,
-                    faceImage ? styles.scanButtonComplete : null,
-                  ]}
-                  onPress={startFaceScan}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons
-                    name={faceImage ? 'refresh' : 'camera'}
-                    size={22}
-                    color="#FFFFFF"
-                  />
-                  <Text style={styles.scanButtonText}>
-                    {faceImage ? 'Retake Photo' : 'Snap a Photo'}
-                  </Text>
-                </TouchableOpacity>
+                  {/* Snap Photo Button */}
+                  <TouchableOpacity
+                    style={[
+                      styles.scanButton,
+                      faceImage ? styles.scanButtonComplete : null,
+                    ]}
+                    onPress={startFaceScan}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={faceImage ? 'refresh' : 'camera'}
+                      size={24}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.scanButtonText}>
+                      {faceImage ? 'Retake Photo' : 'Snap a Photo'}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
 
             {/* STEP 5: Review & Submit */}
             {currentStep === 5 && (
-              <View style={styles.stepContainer}>
-                <Text style={styles.stepTitle}>📝 Review & Submit</Text>
-                <Text style={styles.stepDesc}>Confirm beneficiary information before finalizing registration.</Text>
+              <View style={styles.formContent}>
+                <View style={styles.headerSection}>
+                  <Text style={styles.title}>
+                    <Text style={styles.titleBlack}>Review & </Text>
+                    <Text style={styles.titleGreen}>Submit</Text>
+                  </Text>
+                  <Text style={styles.subtitle}>Confirm beneficiary details before finalizing registration.</Text>
+                </View>
 
                 <View style={styles.reviewCard}>
                   <View style={styles.reviewRow}>
@@ -1225,7 +1350,7 @@ export default function AssistedRegistrationScreen({
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Mode</Text>
-                    <Text style={[styles.reviewValue, { color: '#0F533A', fontWeight: 'bold' }]}>
+                    <Text style={[styles.reviewValue, { color: '#2E7D32', fontWeight: 'bold' }]}>
                       Assisted Walk-In (Staff)
                     </Text>
                   </View>
@@ -1275,7 +1400,7 @@ export default function AssistedRegistrationScreen({
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Face Photo</Text>
-                    <Text style={[styles.reviewValue, { color: faceImage ? '#059669' : '#DC2626' }]}>
+                    <Text style={[styles.reviewValue, { color: faceImage ? '#2E7D32' : '#D32F2F' }]}>
                       {faceImage ? 'Captured ✓' : 'Missing ✗'}
                     </Text>
                   </View>
@@ -1291,46 +1416,47 @@ export default function AssistedRegistrationScreen({
             )}
           </ScrollView>
 
-          {/* Footer Controls */}
-          <View style={styles.footer}>
-            {currentStep > 1 && (
+          {/* Bottom Dual Pill Action Buttons (Identical to Self-Registration) */}
+          <View style={styles.bottomActions}>
+            <View style={styles.bottomButtonsRow}>
               <TouchableOpacity
-                style={styles.backBtn}
-                onPress={handleBack}
+                style={[
+                  styles.bottomButtonCancel,
+                  currentStep > 1 && styles.bottomButtonBack,
+                ]}
+                onPress={currentStep === 1 ? handlePressClose : handleBack}
                 disabled={submitting}
               >
-                <Ionicons name="arrow-back" size={18} color="#475569" />
-                <Text style={styles.backBtnText}>Back</Text>
+                <Text style={styles.bottomButtonCancelText}>
+                  {currentStep === 1 ? 'Cancel' : 'Back'}
+                </Text>
               </TouchableOpacity>
-            )}
 
-            {currentStep < 5 ? (
-              <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
-                <Text style={styles.nextBtnText}>Continue</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-              </TouchableOpacity>
-            ) : (
               <TouchableOpacity
-                style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
-                onPress={handleSubmit}
+                style={[styles.bottomButtonNext, submitting && styles.bottomButtonNextDisabled]}
+                onPress={currentStep === 5 ? handleSubmit : handleNext}
                 disabled={submitting}
               >
                 {submitting ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <ActivityIndicator size="small" color="#FFF" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                    <Text style={styles.submitBtnText}>Submit Registration</Text>
+                    <Text style={styles.bottomButtonNextText}>
+                      {currentStep === 5 ? 'Submit Registration' : 'Next Step'}
+                    </Text>
+                    <Ionicons
+                      name={currentStep === 5 ? 'checkmark-circle' : 'arrow-forward'}
+                      size={20}
+                      color="#FFF"
+                    />
                   </>
                 )}
               </TouchableOpacity>
-            )}
+            </View>
           </View>
         </KeyboardAvoidingView>
 
-        {/* ======================================================== */}
         {/* Full-Screen Face Scanner Modal (Identical to Self-Registration) */}
-        {/* ======================================================== */}
         <Modal
           visible={showFaceScanner}
           animationType="slide"
@@ -1434,154 +1560,215 @@ export default function AssistedRegistrationScreen({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#F8FAFC',
+    backgroundColor: '#F5F7F5',
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
     backgroundColor: '#FFFFFF',
   },
   closeBtn: {
-    padding: 6,
-  },
-  headerTextWrapper: {
-    alignItems: 'center',
+    padding: 5,
   },
   headerTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#0F172A',
+    color: '#333',
   },
-  headerSubtitle: {
-    fontSize: 12,
-    color: '#64748B',
-    marginTop: 2,
+  progressSection: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    backgroundColor: '#FFFFFF',
   },
-  progressTrack: {
-    height: 4,
-    backgroundColor: '#E2E8F0',
-    width: '100%',
+  progressTextContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  progressBar: {
-    height: '100%',
-    backgroundColor: '#0F533A',
+  stepText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2E7D32',
+  },
+  progressSegmentsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  progressSegment: {
+    flex: 1,
+    height: 10,
+    backgroundColor: '#D7E7D9',
+    borderRadius: 999,
+  },
+  progressSegmentSpacing: {
+    marginRight: 6,
+  },
+  progressSegmentCompleted: {
+    backgroundColor: '#66A96B',
+  },
+  progressSegmentCurrent: {
+    backgroundColor: '#2E7D32',
   },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
-    paddingHorizontal: 16,
+    backgroundColor: '#FFEBEE',
+    paddingHorizontal: 20,
     paddingVertical: 10,
     gap: 8,
   },
   errorText: {
     fontSize: 13,
-    color: '#DC2626',
+    color: '#D32F2F',
+    flex: 1,
+  },
+  scrollView: {
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 40,
+    paddingBottom: 30,
   },
-  stepContainer: {
-    flex: 1,
+  formContent: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
-  stepTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#0F172A',
-    marginBottom: 4,
+  headerSection: {
+    marginBottom: 25,
   },
-  stepDesc: {
-    fontSize: 14,
-    color: '#64748B',
-    marginBottom: 16,
-    lineHeight: 20,
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
   },
-  inputLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#334155',
-    marginBottom: 6,
-    marginTop: 12,
+  titleBlack: {
+    color: '#333',
   },
-  subLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    color: '#64748B',
-    marginTop: 4,
-    marginBottom: 6,
+  titleGreen: {
+    color: '#2E7D32',
   },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderWidth: 1,
-    borderColor: '#CBD5E1',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+  subtitle: {
     fontSize: 15,
-    color: '#0F172A',
+    color: '#666',
+    lineHeight: 22,
   },
-  segmentedRow: {
-    flexDirection: 'row',
-    gap: 12,
+  formFields: {
+    gap: 20,
   },
-  segmentedBtn: {
-    flex: 1,
+  fieldContainer: {
+    marginBottom: 5,
+  },
+  fieldLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 10,
+  },
+  fieldHint: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 8,
+    marginTop: -6,
+  },
+  inputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 15,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8E8E8',
   },
-  segmentedBtnActive: {
-    backgroundColor: '#0F533A',
-    borderColor: '#0F533A',
+  input: {
+    flex: 1,
+    paddingVertical: 16,
+    fontSize: 16,
+    color: '#333',
   },
-  segmentedBtnText: {
-    fontSize: 14,
+  inputIconRight: {
+    marginLeft: 10,
+  },
+  inputSuccess: {
+    borderColor: '#2E7D32',
+    borderWidth: 2,
+  },
+  inputError: {
+    borderColor: '#E53935',
+    borderWidth: 2,
+  },
+  fieldHelperText: {
+    fontSize: 12,
+    color: '#5F6B62',
+    marginTop: 6,
+    marginLeft: 5,
+  },
+  genderRadioContainer: {
+    flexDirection: 'row',
+    gap: 32,
+    paddingVertical: 8,
+  },
+  genderRadioOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  radioOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#E8E8E8',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  radioOuterActive: {
+    borderColor: '#2E7D32',
+  },
+  radioInner: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#2E7D32',
+  },
+  genderRadioText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  genderRadioTextActive: {
+    color: '#2E7D32',
     fontWeight: '600',
-    color: '#475569',
-  },
-  segmentedBtnTextActive: {
-    color: '#FFFFFF',
   },
   toggleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    marginTop: 18,
+    marginTop: 6,
     marginBottom: 6,
   },
   toggleLabel: {
     fontSize: 14,
-    color: '#1E293B',
+    color: '#333',
     fontWeight: '500',
   },
-  infoBanner: {
+  credentialsInfoBox: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 8,
-    backgroundColor: '#ECFDF5',
-    padding: 12,
-    borderRadius: 10,
-    marginTop: 10,
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#C8E6C9',
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  infoText: {
-    fontSize: 13,
-    color: '#065F46',
+  credentialsInfoText: {
     flex: 1,
+    fontSize: 13,
+    color: '#2E7D32',
     lineHeight: 18,
   },
   chipScroll: {
@@ -1589,21 +1776,21 @@ const styles = StyleSheet.create({
     marginVertical: 4,
   },
   chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     borderRadius: 20,
-    backgroundColor: '#F1F5F9',
+    backgroundColor: '#FFFFFF',
     marginRight: 8,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8E8E8',
   },
   chipActive: {
-    backgroundColor: '#0F533A',
-    borderColor: '#0F533A',
+    backgroundColor: '#2E7D32',
+    borderColor: '#2E7D32',
   },
   chipText: {
-    fontSize: 13,
-    color: '#475569',
+    fontSize: 14,
+    color: '#555',
     fontWeight: '500',
   },
   chipTextActive: {
@@ -1612,100 +1799,95 @@ const styles = StyleSheet.create({
   },
   tokenInputRow: {
     flexDirection: 'row',
-    gap: 10,
     alignItems: 'center',
+    gap: 10,
   },
   tokenInput: {
     flex: 1,
+  },
+  tokenInputText: {
     fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
     fontWeight: '700',
     letterSpacing: 1.2,
   },
-  tokenInputValidated: {
-    borderColor: '#059669',
-    backgroundColor: '#F0FDF4',
-  },
-  tokenInputError: {
-    borderColor: '#DC2626',
-    backgroundColor: '#FEF2F2',
-  },
-  validateTokenBtn: {
-    backgroundColor: '#0F533A',
-    paddingHorizontal: 18,
-    paddingVertical: 12,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
+  validateButton: {
+    backgroundColor: '#2E7D32',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderRadius: 12,
     minWidth: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  validateTokenBtnDisabled: {
-    opacity: 0.6,
+  validateButtonDisabled: {
+    backgroundColor: '#9E9E9E',
   },
-  validateTokenBtnSuccess: {
-    backgroundColor: '#059669',
+  validateButtonSuccess: {
+    backgroundColor: '#2E7D32',
   },
-  validateTokenBtnText: {
+  validateButtonText: {
     color: '#FFFFFF',
-    fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '600',
+    fontSize: 14,
   },
-  tokenErrorBanner: {
+  tokenErrorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginTop: 8,
     gap: 6,
-    marginTop: 6,
   },
   tokenErrorText: {
-    color: '#DC2626',
-    fontSize: 12,
-    fontWeight: '500',
+    color: '#D32F2F',
+    fontSize: 13,
     flex: 1,
   },
-  tokenSuccessCard: {
-    backgroundColor: '#F0FDF4',
-    borderWidth: 1,
-    borderColor: '#BBF7D0',
-    borderRadius: 10,
+  tokenSuccessContainer: {
+    backgroundColor: '#E8F5E9',
+    borderRadius: 12,
     padding: 12,
-    marginTop: 8,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
   },
   tokenSuccessHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    marginBottom: 8,
     gap: 6,
-    marginBottom: 4,
   },
   tokenSuccessTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#2E7D32',
+  },
+  tokenInfoRow: {
     fontSize: 13,
-    fontWeight: '700',
-    color: '#166534',
+    marginTop: 4,
   },
-  tokenSuccessItem: {
-    fontSize: 12,
-    color: '#15803D',
-    marginTop: 2,
+  tokenInfoLabel: {
+    color: '#666',
   },
-  tokenSuccessBold: {
-    fontWeight: '700',
+  tokenInfoValue: {
+    color: '#333',
+    fontWeight: '600',
   },
   vulnerableGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 10,
-    marginTop: 8,
-    marginBottom: 16,
+    marginTop: 6,
   },
   vulnerableCard: {
     width: '48%',
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8E8E8',
     borderRadius: 12,
     padding: 12,
   },
   vulnerableCardActive: {
-    borderColor: '#0F533A',
-    backgroundColor: '#F0FDF4',
+    borderColor: '#2E7D32',
+    backgroundColor: '#F3FBF4',
   },
   vulnerableCardHeader: {
     flexDirection: 'row',
@@ -1715,14 +1897,14 @@ const styles = StyleSheet.create({
   vulnerableCardText: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#334155',
+    color: '#333',
   },
   vulnerableCardTextActive: {
-    color: '#0F533A',
+    color: '#2E7D32',
   },
   vulnerableCardDesc: {
     fontSize: 11,
-    color: '#64748B',
+    color: '#666',
     marginTop: 2,
   },
   vulnerableCounterRow: {
@@ -1732,12 +1914,12 @@ const styles = StyleSheet.create({
     marginTop: 10,
     paddingTop: 8,
     borderTopWidth: 1,
-    borderTopColor: '#DCFCE7',
+    borderTopColor: '#E8E8E8',
   },
   vulnerableCounterLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#065F46',
+    color: '#2E7D32',
   },
   vulnerableStepper: {
     flexDirection: 'row',
@@ -1745,25 +1927,25 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     borderRadius: 6,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#C8E6C9',
     paddingHorizontal: 2,
     paddingVertical: 1,
   },
   stepperBtn: {
-    width: 22,
-    height: 22,
+    width: 24,
+    height: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },
   stepperBtnText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: 'bold',
-    color: '#0F533A',
+    color: '#2E7D32',
   },
   stepperValue: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#065F46',
+    color: '#2E7D32',
     minWidth: 20,
     textAlign: 'center',
   },
@@ -1771,35 +1953,35 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   idChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8E8E8',
   },
   idChipActive: {
-    backgroundColor: '#0F533A',
-    borderColor: '#0F533A',
+    backgroundColor: '#2E7D32',
+    borderColor: '#2E7D32',
   },
   idChipText: {
     fontSize: 13,
-    color: '#334155',
+    color: '#555',
   },
   idChipTextActive: {
     color: '#FFFFFF',
     fontWeight: '600',
   },
   attestationCard: {
-    backgroundColor: '#F0FDF4',
+    backgroundColor: '#F3FBF4',
     borderWidth: 1,
-    borderColor: '#BBF7D0',
-    borderRadius: 10,
+    borderColor: '#C8E6C9',
+    borderRadius: 12,
     padding: 14,
-    marginTop: 12,
+    marginTop: 8,
   },
   attestationHeader: {
     flexDirection: 'row',
@@ -1810,11 +1992,11 @@ const styles = StyleSheet.create({
   attestationTitle: {
     fontSize: 15,
     fontWeight: '700',
-    color: '#166534',
+    color: '#2E7D32',
   },
   attestationDesc: {
     fontSize: 13,
-    color: '#15803D',
+    color: '#388E3C',
     lineHeight: 18,
     marginBottom: 10,
   },
@@ -1829,32 +2011,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#F1F5F9',
-    paddingVertical: 10,
-    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 12,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#CBD5E1',
+    borderColor: '#E8E8E8',
   },
   imageBtnText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#0F533A',
+    color: '#2E7D32',
   },
   imagePreview: {
     width: '100%',
     height: 160,
-    borderRadius: 8,
+    borderRadius: 10,
     marginTop: 8,
     resizeMode: 'cover',
-  },
-  faceStepHeader: {
-    marginBottom: 16,
   },
   faceScanCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8E8E8',
     padding: 24,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1877,12 +2056,12 @@ const styles = StyleSheet.create({
   faceScanTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#1E293B',
+    color: '#333',
     marginBottom: 6,
   },
   faceScanSubtitle: {
     fontSize: 13,
-    color: '#64748B',
+    color: '#666',
     textAlign: 'center',
   },
   faceImageContainer: {
@@ -1894,7 +2073,7 @@ const styles = StyleSheet.create({
     height: 200,
     borderRadius: 100,
     borderWidth: 4,
-    borderColor: '#0F533A',
+    borderColor: '#2E7D32',
   },
   faceVerifiedBadge: {
     flexDirection: 'row',
@@ -1907,54 +2086,54 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   faceVerifiedText: {
-    color: '#0F533A',
+    color: '#2E7D32',
     fontWeight: '700',
     fontSize: 13,
   },
   scanButton: {
-    backgroundColor: '#0F533A',
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: '#2E7D32',
+    paddingVertical: 16,
+    borderRadius: 30,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    shadowColor: '#0F533A',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
     elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   scanButtonComplete: {
-    backgroundColor: '#334155',
+    backgroundColor: '#555',
   },
   scanButtonText: {
     color: '#FFFFFF',
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
   },
   reviewCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    padding: 16,
+    borderRadius: 14,
+    padding: 18,
     borderWidth: 1,
-    borderColor: '#E2E8F0',
+    borderColor: '#E8E8E8',
   },
   reviewRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
+    borderBottomColor: '#F5F5F5',
   },
   reviewLabel: {
     fontSize: 13,
-    color: '#64748B',
+    color: '#666',
     fontWeight: '500',
   },
   reviewValue: {
     fontSize: 13,
-    color: '#0F172A',
+    color: '#333',
     fontWeight: '600',
     maxWidth: '60%',
     textAlign: 'right',
@@ -1963,12 +2142,12 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: '#ECFDF5',
+    backgroundColor: '#E8F5E9',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 12,
     marginTop: 14,
     borderWidth: 1,
-    borderColor: '#A7F3D0',
+    borderColor: '#C8E6C9',
   },
   miniFaceImage: {
     width: 44,
@@ -1977,71 +2156,68 @@ const styles = StyleSheet.create({
   },
   miniFaceText: {
     fontSize: 13,
-    color: '#065F46',
+    color: '#2E7D32',
     fontWeight: '500',
     flex: 1,
   },
-  footer: {
-    flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+
+  // Dual Pill Bottom Action Buttons
+  bottomActions: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+    paddingBottom: 16,
+    backgroundColor: '#F5F7F5',
     borderTopWidth: 1,
-    borderTopColor: '#E2E8F0',
-    backgroundColor: '#FFFFFF',
+    borderTopColor: '#E3E9E5',
+  },
+  bottomButtonsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
   },
-  backBtn: {
-    flexDirection: 'row',
+  bottomButtonCancel: {
+    flex: 0.4,
+    paddingVertical: 16,
+    borderRadius: 30,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#FECDD3',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: '#F1F5F9',
   },
-  backBtnText: {
-    fontSize: 14,
+  bottomButtonBack: {
+    borderColor: '#E8E8E8',
+  },
+  bottomButtonCancelText: {
+    fontSize: 16,
     fontWeight: '600',
-    color: '#475569',
+    color: '#333',
   },
-  nextBtn: {
-    flex: 1,
+  bottomButtonNext: {
+    flex: 0.6,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#0F533A',
-    paddingVertical: 12,
-    borderRadius: 10,
+    backgroundColor: '#2ECC71',
+    paddingVertical: 16,
+    borderRadius: 30,
+    gap: 10,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  nextBtnText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#FFFFFF',
+  bottomButtonNextDisabled: {
+    opacity: 0.7,
   },
-  submitBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#0F533A',
-    paddingVertical: 12,
-    borderRadius: 10,
-  },
-  submitBtnDisabled: {
-    opacity: 0.6,
-  },
-  submitBtnText: {
-    fontSize: 15,
+  bottomButtonNextText: {
+    fontSize: 18,
     fontWeight: '600',
     color: '#FFFFFF',
   },
 
-  // -------------------------------------------------------------
-  // Full-Screen Face Scanner Styles (Matching Self-Registration)
-  // -------------------------------------------------------------
+  // Face Scanner Modal Styles
   faceScannerContainer: {
     flex: 1,
     backgroundColor: '#000000',
@@ -2064,7 +2240,7 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   stepBadge: {
-    backgroundColor: '#0F533A',
+    backgroundColor: '#2E7D32',
     paddingHorizontal: 12,
     paddingVertical: 4,
     borderRadius: 12,
@@ -2173,7 +2349,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   startScanButton: {
-    backgroundColor: '#0F533A',
+    backgroundColor: '#2ECC71',
     paddingHorizontal: 40,
     paddingVertical: 16,
     borderRadius: 30,
