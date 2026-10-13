@@ -766,6 +766,11 @@ export default function SplashScreen({
           </TouchableOpacity>
 
           <View style={styles.welcomeContainer}>
+            <Image
+              source={require('../assets/logo.png')}
+              style={styles.welcomeLogo}
+              resizeMode="contain"
+            />
             <Text style={styles.welcomeText}>
               <Text style={styles.welcomeGreen}>Welcome </Text>
               <Text style={styles.welcomeYellow}>Back!</Text>
@@ -778,7 +783,7 @@ export default function SplashScreen({
               <Ionicons name="call-outline" size={20} color="#888" style={styles.inputIcon} />
               <TextInput
                 style={styles.input}
-                placeholder="Mobile (09XXXXXXXXX) or Resident Code"
+                placeholder="Mobile Number or Resident Code"
                 placeholderTextColor="#888"
                 value={loginIdentifier}
                 onChangeText={setLoginIdentifier}
@@ -861,8 +866,8 @@ export default function SplashScreen({
 
   // Initial Login/Registration Screen (shows after onboarding slides)
   if (showInitialSplash) {
-    const logoWidth = Math.min(windowWidth * 0.9, 360);
-    const logoHeight = Math.min(windowHeight * 0.28, 220);
+    const logoWidth = Math.min(windowWidth * 0.8, 280);
+    const logoHeight = Math.min(windowHeight * 0.12, 70);
     return (
       <View
         style={[
@@ -874,6 +879,11 @@ export default function SplashScreen({
         ]}
       >
         <View style={styles.initialLogoWrapper}>
+          <Image
+            source={require('../assets/logo.png')}
+            style={styles.initialLogoImage}
+            resizeMode="contain"
+          />
           <Image
             source={require('../assets/textual.png')}
             style={{ width: logoWidth, height: logoHeight }}
@@ -1207,6 +1217,11 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     alignItems: 'center',
   },
+  welcomeLogo: {
+    width: 84,
+    height: 84,
+    marginBottom: 10,
+  },
   welcomeText: {
     fontSize: 32,
     fontWeight: 'bold',
@@ -1453,6 +1468,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 30,
+  },
+  initialLogoImage: {
+    width: 90,
+    height: 90,
+    marginBottom: 8,
   },
   initialSubtitle: {
     marginTop: 8,

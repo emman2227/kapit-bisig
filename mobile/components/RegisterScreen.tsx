@@ -2670,48 +2670,14 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
           <Text style={styles.fieldLabel}>Barangay</Text>
           <TouchableOpacity
             style={[styles.inputContainer, styles.selectContainer, showErrors && step2Errors.barangay && styles.inputError]}
-            onPress={() => setShowBarangayDropdown(!showBarangayDropdown)}
+            onPress={() => setShowBarangayDropdown(true)}
+            activeOpacity={0.7}
           >
             <Text style={barangay ? styles.selectText : styles.selectPlaceholder}>
               {barangay || 'Select Barangay'}
             </Text>
-            <Ionicons name={showBarangayDropdown ? "chevron-up" : "chevron-down"} size={22} color="#2E7D32" />
+            <Ionicons name="chevron-down" size={22} color="#2E7D32" />
           </TouchableOpacity>
-          {showBarangayDropdown && (
-            <View style={styles.dropdownContainer}>
-              {barangayOptions.map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.dropdownItem,
-                    barangay === option && styles.dropdownItemActive,
-                  ]}
-                  onPress={() => {
-                    const previousBarangay = barangay;
-                    setBarangay(option);
-                    setCity('Labrador');
-                    setShowBarangayDropdown(false);
-                    if (showErrors) setStep2Errors(prev => ({ ...prev, barangay: false }));
-
-                    // Reset token validation if barangay changes
-                    if (previousBarangay && previousBarangay !== option && tokenValidated) {
-                      setTokenValidated(false);
-                      setTokenError(null);
-                      setTokenHouseholdInfo(null);
-                      setHouseholdToken('');
-                    }
-                  }}
-                >
-                  <Text style={[
-                    styles.dropdownItemText,
-                    barangay === option && styles.dropdownItemTextActive,
-                  ]}>
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
         </View>
 
         {/* House No. / Street Name */}
@@ -2967,40 +2933,14 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
           <Text style={styles.fieldLabel}>Select ID Type</Text>
           <TouchableOpacity
             style={[styles.inputContainer, styles.selectContainer, showErrors && step3Errors.idType && styles.inputError]}
-            onPress={() => setShowIdTypeDropdown(!showIdTypeDropdown)}
+            onPress={() => setShowIdTypeDropdown(true)}
+            activeOpacity={0.7}
           >
             <Text style={idType ? styles.selectText : styles.selectPlaceholder}>
               {idType || 'Select an ID type'}
             </Text>
-            <Ionicons name={showIdTypeDropdown ? "chevron-up" : "chevron-down"} size={22} color="#2E7D32" />
+            <Ionicons name="chevron-down" size={22} color="#2E7D32" />
           </TouchableOpacity>
-          {showIdTypeDropdown && (
-            <View style={styles.dropdownContainer}>
-              {idTypeOptions.map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.dropdownItem,
-                    idType === option && styles.dropdownItemActive,
-                  ]}
-                  onPress={() => {
-                    setIdType(option);
-                    setIdNumber(''); // Clear ID number when type changes
-                    setShowIdTypeDropdown(false);
-                    resetStep3ScreeningState();
-                    if (showErrors) setStep3Errors(prev => ({ ...prev, idType: false, idNumber: false }));
-                  }}
-                >
-                  <Text style={[
-                    styles.dropdownItemText,
-                    idType === option && styles.dropdownItemTextActive,
-                  ]}>
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
         </View>
 
         {/* ID Number */}
@@ -4063,6 +4003,108 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
             </View>
           </SafeAreaView>
         </Modal>
+
+        {/* Barangay Picker Modal (Bottom-Sheet) */}
+        <Modal
+          visible={showBarangayDropdown}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowBarangayDropdown(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowBarangayDropdown(false)}
+          >
+            <View style={styles.pickerModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Select Barangay</Text>
+                <TouchableOpacity onPress={() => setShowBarangayDropdown(false)} style={styles.pickerCloseBtn}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                {barangayOptions.map((option) => {
+                  const isSelected = barangay === option;
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+                      onPress={() => {
+                        const previousBarangay = barangay;
+                        setBarangay(option);
+                        setCity('Labrador');
+                        setShowBarangayDropdown(false);
+                        if (showErrors) setStep2Errors((prev) => ({ ...prev, barangay: false }));
+
+                        // Reset token validation if barangay changes
+                        if (previousBarangay && previousBarangay !== option && tokenValidated) {
+                          setTokenValidated(false);
+                          setTokenError(null);
+                          setTokenHouseholdInfo(null);
+                          setHouseholdToken('');
+                        }
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
+                        {option}
+                      </Text>
+                      {isSelected && <Ionicons name="checkmark-circle" size={22} color="#2E7D32" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ID Type Picker Modal (Bottom-Sheet) */}
+        <Modal
+          visible={showIdTypeDropdown}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowIdTypeDropdown(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowIdTypeDropdown(false)}
+          >
+            <View style={styles.pickerModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Select ID Type</Text>
+                <TouchableOpacity onPress={() => setShowIdTypeDropdown(false)} style={styles.pickerCloseBtn}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                {idTypeOptions.map((option) => {
+                  const isSelected = idType === option;
+                  return (
+                    <TouchableOpacity
+                      key={option}
+                      style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+                      onPress={() => {
+                        setIdType(option);
+                        setIdNumber(''); // Clear ID number when type changes
+                        setShowIdTypeDropdown(false);
+                        resetStep3ScreeningState();
+                        if (showErrors) setStep3Errors((prev) => ({ ...prev, idType: false, idNumber: false }));
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
+                        {option}
+                      </Text>
+                      {isSelected && <Ionicons name="checkmark-circle" size={22} color="#2E7D32" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </SafeAreaView>
     </KeyboardAvoidingView>
   );
@@ -5102,6 +5144,55 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     borderBottomWidth: 1,
     borderBottomColor: '#F0F0F0',
+  },
+  pickerModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingHorizontal: 20,
+    maxHeight: '80%',
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  pickerModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  pickerCloseBtn: {
+    padding: 4,
+  },
+  pickerScroll: {
+    marginTop: 8,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginVertical: 2,
+  },
+  pickerItemActive: {
+    backgroundColor: '#E8F5E9',
+  },
+  pickerItemText: {
+    fontSize: 15,
+    color: '#333333',
+    fontWeight: '500',
+  },
+  pickerItemTextActive: {
+    color: '#2E7D32',
+    fontWeight: '700',
   },
   modalOptionIcon: {
     width: 50,
