@@ -61,6 +61,17 @@ export const trimmedString = (min = 1, max = 64) =>
     .max(max)
     .refine((v) => SAFE_ASCII_TEXT.test(v), 'Only standard characters are allowed');
 
+const NAME_TEXT_REGEX = /^[A-Za-z\u00C0-\u024F\s.'-]+$/;
+
+/** Name string permitting letters, Latin-extended accents/tilde (e.g. Ñ, ñ), spaces, hyphens, periods, and apostrophes */
+export const nameString = (min = 2, max = 100) =>
+  z
+    .string()
+    .trim()
+    .min(min, `Must be at least ${min} characters`)
+    .max(max, `Must be at most ${max} characters`)
+    .refine((v) => NAME_TEXT_REGEX.test(v), 'Only letters, spaces, hyphens, periods, and apostrophes are allowed');
+
 /** Email format */
 export const email = z
   .string()

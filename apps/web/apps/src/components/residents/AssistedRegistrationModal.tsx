@@ -435,6 +435,11 @@ export default function AssistedRegistrationModal({
           setErrorMsg('Attestation reason is required for residents without government ID.');
           return false;
         }
+      } else if (['Barangay Certification', 'Certificate of Indigency', 'Tribal / NCIP Endorsement'].includes(idType)) {
+        if (!frontIdImage) {
+          setErrorMsg('Document photo of the certificate is required.');
+          return false;
+        }
       } else {
         if (!idNumber.trim()) {
           setErrorMsg('ID number is required for the chosen ID type.');
@@ -997,25 +1002,33 @@ export default function AssistedRegistrationModal({
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-                        ID Number <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        value={idNumber}
-                        onChange={(e) => setIdNumber(e.target.value)}
-                        placeholder="Enter ID number"
-                        className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
-                      />
-                    </div>
+                    {(() => {
+                      const isAlt = ['Barangay Certification', 'Certificate of Indigency', 'Tribal / NCIP Endorsement'].includes(idType);
+                      return (
+                        <>
+                          <div>
+                            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                              ID Number {!isAlt && <span className="text-red-500">*</span>}
+                            </label>
+                            <input
+                              type="text"
+                              disabled={isAlt}
+                              value={isAlt ? '' : idNumber}
+                              onChange={(e) => setIdNumber(e.target.value)}
+                              placeholder={isAlt ? 'Not applicable for this document type' : 'Enter ID number'}
+                              className={`w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none transition-colors ${
+                                isAlt
+                                  ? 'bg-slate-100 dark:bg-slate-800/60 cursor-not-allowed opacity-75'
+                                  : 'bg-white dark:bg-slate-800 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500'
+                              }`}
+                            />
+                          </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-                          Front ID Photo (Optional)
-                        </label>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                                {isAlt ? 'Certificate Photo (Required)' : 'Front ID Photo (Optional)'}
+                              </label>
                         <label className="flex flex-col items-center justify-center p-3.5 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl hover:border-emerald-500 cursor-pointer bg-slate-50 dark:bg-slate-800/50 transition-colors">
                           <Upload className="w-5 h-5 text-slate-400 mb-1" />
                           <span className="text-xs text-slate-600 dark:text-slate-400 font-semibold">
@@ -1058,10 +1071,13 @@ export default function AssistedRegistrationModal({
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
-              </div>
-            )}
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
             {/* STEP 4: Face Photo (Mandatory Biometric) */}
             {currentStep === 4 && (

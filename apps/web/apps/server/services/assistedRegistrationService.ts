@@ -13,6 +13,7 @@ import {
   normalizePhilippineMobileNumber,
 } from '../utils/mobileNumber';
 import {
+  isAssistedIdType,
   normalizeIdNumber,
   validateIdType,
   validateIdNumberFormat,
@@ -135,7 +136,25 @@ export async function registerAssistedResident(
     }
 
     let finalIdNumber = '';
-    if (data.idType !== 'STAFF_ATTESTATION') {
+    if (isAssistedIdType(data.idType)) {
+      if (data.idType === 'STAFF_ATTESTATION') {
+        if (!data.attestationReason || data.attestationReason.trim().length === 0) {
+          return await abortWithLockRelease(
+            'Please provide an attestation reason for residents without documents.',
+            'MISSING_ATTESTATION_REASON'
+          );
+        }
+      } else {
+        // Alternative certificate: Front photo of certificate required
+        if (!data.frontIdImage || data.frontIdImage.trim().length === 0) {
+          return await abortWithLockRelease(
+            'Document photo of the certificate is required.',
+            'MISSING_DOCUMENT_PHOTO'
+          );
+        }
+      }
+      finalIdNumber = data.idNumber ? normalizeIdNumber(data.idType, data.idNumber) : '';
+    } else {
       if (!data.idNumber || data.idNumber.trim() === '') {
         return await abortWithLockRelease(
           'ID number is required for the selected ID type.',
@@ -154,14 +173,6 @@ export async function registerAssistedResident(
         return await abortWithLockRelease(
           'This ID number is already registered in the system.',
           'DUPLICATE_ID'
-        );
-      }
-    } else {
-      // For STAFF_ATTESTATION, attestationReason is required
-      if (!data.attestationReason || data.attestationReason.trim().length === 0) {
-        return await abortWithLockRelease(
-          'Please provide an attestation reason for residents without documents.',
-          'MISSING_ATTESTATION_REASON'
         );
       }
     }

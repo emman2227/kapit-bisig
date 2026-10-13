@@ -40,6 +40,7 @@ export interface AssistedRegistrationPayload {
 export interface AssistedResult {
   success: boolean;
   message: string;
+  errors?: Array<{ field?: string; message: string }>;
   residentCode?: string;
   residentId?: string;
   qrToken?: string;
@@ -69,9 +70,17 @@ export async function submitAssistedRegistration(
 
     const json = await response.json();
     if (!response.ok || !json.success) {
+      let displayMessage = json.message || 'Registration failed.';
+      if (json.errors && Array.isArray(json.errors) && json.errors.length > 0) {
+        const errorDetails = json.errors
+          .map((e: { field?: string; message: string }) => e.message || `${e.field}: Invalid input`)
+          .join('\n• ');
+        displayMessage = `${json.message || 'Validation failed'}:\n• ${errorDetails}`;
+      }
       return {
         success: false,
-        message: json.message || 'Registration failed.',
+        message: displayMessage,
+        errors: json.errors,
       };
     }
 

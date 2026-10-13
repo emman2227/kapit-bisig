@@ -25,6 +25,7 @@ import {
   AssistedRegistrationPayload,
 } from '../services/api/AssistedRegistrationService';
 import { resolveApiBaseUrl } from '../services/config/apiSecurity';
+import { getIdFormatInfo, isStep3IdNumberFormatValid } from '../utils/idFormat';
 
 const API_URL = resolveApiBaseUrl(
   process.env.EXPO_PUBLIC_API_URL,
@@ -131,7 +132,14 @@ export default function AssistedRegistrationScreen({
   // UI state
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
+  const [touchedFields, setTouchedFields] = useState<Record<string, boolean>>({});
+  const [showBarangayPicker, setShowBarangayPicker] = useState(false);
+  const [showIdTypePicker, setShowIdTypePicker] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const isAlternativeDocument = ALTERNATIVE_ID_TYPES.includes(idType);
+  const idFormatInfo = getIdFormatInfo(idType);
 
   // Scroll to top on step transition
   useEffect(() => {
@@ -292,6 +300,59 @@ export default function AssistedRegistrationScreen({
     return { valid: true };
   };
 
+  const NAME_REGEX = /^[A-Za-z\u00C0-\u024F\s.'-]+$/;
+
+  const validateName = (name: string, fieldLabel: string): { valid: boolean; error?: string } => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      return { valid: false, error: `${fieldLabel} is required.` };
+    }
+    if (trimmed.length < 2) {
+      return { valid: false, error: `${fieldLabel} must be at least 2 characters.` };
+    }
+    if (trimmed.length > 100) {
+      return { valid: false, error: `${fieldLabel} cannot exceed 100 characters.` };
+    }
+    if (!NAME_REGEX.test(trimmed)) {
+      return {
+        valid: false,
+        error: `${fieldLabel} can only contain letters, spaces, hyphens, and apostrophes.`,
+      };
+    }
+    return { valid: true };
+  };
+
+  const validateMobileNumber = (mobile: string): { valid: boolean; error?: string } => {
+    const clean = mobile.replace(/\D/g, '');
+    if (!clean) {
+      return { valid: false, error: 'Mobile number is required.' };
+    }
+    if (!/^09\d{9}$/.test(clean)) {
+      return {
+        valid: false,
+        error: 'Enter a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
+      };
+    }
+    return { valid: true };
+  };
+
+  const markFieldTouched = (field: string) => {
+    setTouchedFields((prev) => ({ ...prev, [field]: true }));
+  };
+
+  const clearFieldError = (field: string) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const setFieldError = (field: string, error: string) => {
+    setFieldErrors((prev) => ({ ...prev, [field]: error }));
+  };
+
   // -------------------------------------------------------------
   // Household Token Handling (XXXX-XXXX-XXXX)
   // -------------------------------------------------------------
@@ -432,6 +493,10 @@ export default function AssistedRegistrationScreen({
     );
     setFaceImage('');
     setErrorMessage('');
+    setFieldErrors({});
+    setTouchedFields({});
+    setShowBarangayPicker(false);
+    setShowIdTypePicker(false);
     setSubmitting(false);
 
     try {
@@ -567,41 +632,59 @@ export default function AssistedRegistrationScreen({
   // -------------------------------------------------------------
   const validateStep = (step: number): boolean => {
     setErrorMessage('');
+    const newErrors: Record<string, string> = {};
+
     if (step === 1) {
-      if (!firstName.trim() || !lastName.trim()) {
-        setErrorMessage('First and last name are required.');
-        return false;
-      }
+      markFieldTouched('firstName');
+      markFieldTouched('lastName');
+      markFieldTouched('dateOfBirth');
+      markFieldTouched('gender');
+      if (hasPhone) markFieldTouched('mobileNumber');
+
+      const firstCheck = validateName(firstName, 'First name');
+      if (!firstCheck.valid) newErrors.firstName = firstCheck.error!;
+
+      const lastCheck = validateName(lastName, 'Last name');
+      if (!lastCheck.valid) newErrors.lastName = lastCheck.error!;
+
       const dobCheck = validateDateOfBirth(dateOfBirth);
-      if (!dobCheck.valid) {
-        setErrorMessage(dobCheck.error || 'Valid Date of Birth is required.');
-        return false;
-      }
-      if (!gender) {
-        setErrorMessage('Please select gender.');
-        return false;
-      }
+      if (!dobCheck.valid) newErrors.dateOfBirth = dobCheck.error!;
+
+      if (!gender) newErrors.gender = 'Please select gender.';
+
       if (hasPhone) {
-        const cleanMobile = mobileNumber.replace(/\D/g, '');
-        if (!/^09\d{9}$/.test(cleanMobile) && !/^9\d{9}$/.test(cleanMobile)) {
-          setErrorMessage('Please enter a valid Philippine mobile number (09XXXXXXXXX).');
-          return false;
-        }
+        const mobCheck = validateMobileNumber(mobileNumber);
+        if (!mobCheck.valid) newErrors.mobileNumber = mobCheck.error!;
+      }
+
+      setFieldErrors((prev) => ({ ...prev, ...newErrors }));
+      if (Object.keys(newErrors).length > 0) {
+        setErrorMessage('Please fix the highlighted fields to proceed.');
+        return false;
       }
       return true;
     }
 
     if (step === 2) {
+      markFieldTouched('barangay');
+      markFieldTouched('householdToken');
+      markFieldTouched('streetAddress');
+
+      if (!barangay) newErrors.barangay = 'Please select a barangay.';
+
       if (!householdToken.trim() || householdToken.length !== 14) {
-        setErrorMessage('Unique Household Code (XXXX-XXXX-XXXX) is required.');
-        return false;
+        newErrors.householdToken = 'Household Registration Code (XXXX-XXXX-XXXX) is required.';
+      } else if (!tokenValidated) {
+        newErrors.householdToken = 'Please validate the household registration code before proceeding.';
       }
-      if (!tokenValidated) {
-        setErrorMessage('Please validate the household registration code before proceeding.');
-        return false;
-      }
+
       if (!streetAddress.trim()) {
-        setErrorMessage('Street address or Sitio is required.');
+        newErrors.streetAddress = 'Street address or Sitio is required.';
+      }
+
+      setFieldErrors((prev) => ({ ...prev, ...newErrors }));
+      if (Object.keys(newErrors).length > 0) {
+        setErrorMessage('Please fix the highlighted fields to proceed.');
         return false;
       }
       return true;
@@ -609,15 +692,28 @@ export default function AssistedRegistrationScreen({
 
     if (step === 3) {
       if (idType === 'STAFF_ATTESTATION') {
+        markFieldTouched('attestationReason');
         if (!attestationReason.trim()) {
-          setErrorMessage('Please specify an attestation reason for residents without formal ID.');
-          return false;
+          newErrors.attestationReason = 'Please specify an attestation reason for residents without formal ID.';
+        }
+      } else if (isAlternativeDocument) {
+        markFieldTouched('frontIdImage');
+        if (!frontIdImage) {
+          newErrors.frontIdImage = 'Document photo of the certificate is required.';
         }
       } else {
+        markFieldTouched('idNumber');
         if (!idNumber.trim()) {
-          setErrorMessage('ID number is required for the selected document type.');
-          return false;
+          newErrors.idNumber = 'ID number is required for the selected document type.';
+        } else if (!isStep3IdNumberFormatValid(idType, idNumber)) {
+          newErrors.idNumber = `Invalid ID format for ${idType}.`;
         }
+      }
+
+      setFieldErrors((prev) => ({ ...prev, ...newErrors }));
+      if (Object.keys(newErrors).length > 0) {
+        setErrorMessage('Please fix the highlighted fields to proceed.');
+        return false;
       }
       return true;
     }
@@ -671,7 +767,7 @@ export default function AssistedRegistrationScreen({
       vulnerableMembers,
       vulnerableCounts,
       idType,
-      idNumber: idType !== 'STAFF_ATTESTATION' ? idNumber.trim() : undefined,
+      idNumber: !isAlternativeDocument && idNumber.trim() ? idNumber.trim() : undefined,
       frontIdImage: frontIdImage || undefined,
       backIdImage: backIdImage || undefined,
       faceImage,
@@ -682,6 +778,13 @@ export default function AssistedRegistrationScreen({
     setSubmitting(false);
 
     if (!result.success) {
+      if (result.errors && result.errors.length > 0) {
+        const serverFieldErrors: Record<string, string> = {};
+        result.errors.forEach((e) => {
+          if (e.field) serverFieldErrors[e.field] = e.message;
+        });
+        setFieldErrors((prev) => ({ ...prev, ...serverFieldErrors }));
+      }
       setErrorMessage(result.message || 'Failed to complete registration.');
       return;
     }
@@ -777,58 +880,133 @@ export default function AssistedRegistrationScreen({
                 <View style={styles.formFields}>
                   {/* First Name */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>First Name</Text>
-                    <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>
+                      First Name <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
+                    <View style={[styles.inputContainer, fieldErrors.firstName && styles.inputError]}>
                       <TextInput
                         style={styles.input}
                         placeholder="Juan"
                         placeholderTextColor="#999"
                         value={firstName}
-                        onChangeText={setFirstName}
+                        onChangeText={(val) => {
+                          setFirstName(val);
+                          if (touchedFields.firstName) {
+                            const res = validateName(val, 'First name');
+                            if (!res.valid) setFieldError('firstName', res.error!);
+                            else clearFieldError('firstName');
+                          }
+                        }}
+                        onBlur={() => {
+                          markFieldTouched('firstName');
+                          const res = validateName(firstName, 'First name');
+                          if (!res.valid) setFieldError('firstName', res.error!);
+                          else clearFieldError('firstName');
+                        }}
                       />
-                      <Ionicons name="person" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                      <Ionicons
+                        name="person"
+                        size={20}
+                        color={fieldErrors.firstName ? '#E53935' : '#2E7D32'}
+                        style={styles.inputIconRight}
+                      />
                     </View>
+                    {fieldErrors.firstName ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.firstName}</Text>
+                    ) : null}
                   </View>
 
                   {/* Last Name */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Last Name</Text>
-                    <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>
+                      Last Name <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
+                    <View style={[styles.inputContainer, fieldErrors.lastName && styles.inputError]}>
                       <TextInput
                         style={styles.input}
                         placeholder="dela Cruz"
                         placeholderTextColor="#999"
                         value={lastName}
-                        onChangeText={setLastName}
+                        onChangeText={(val) => {
+                          setLastName(val);
+                          if (touchedFields.lastName) {
+                            const res = validateName(val, 'Last name');
+                            if (!res.valid) setFieldError('lastName', res.error!);
+                            else clearFieldError('lastName');
+                          }
+                        }}
+                        onBlur={() => {
+                          markFieldTouched('lastName');
+                          const res = validateName(lastName, 'Last name');
+                          if (!res.valid) setFieldError('lastName', res.error!);
+                          else clearFieldError('lastName');
+                        }}
                       />
-                      <Ionicons name="person" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                      <Ionicons
+                        name="person"
+                        size={20}
+                        color={fieldErrors.lastName ? '#E53935' : '#2E7D32'}
+                        style={styles.inputIconRight}
+                      />
                     </View>
+                    {fieldErrors.lastName ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.lastName}</Text>
+                    ) : null}
                   </View>
 
                   {/* Date of Birth */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Date of Birth</Text>
-                    <View style={styles.inputContainer}>
+                    <Text style={styles.fieldLabel}>
+                      Date of Birth <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
+                    <View style={[styles.inputContainer, fieldErrors.dateOfBirth && styles.inputError]}>
                       <TextInput
                         style={styles.input}
                         placeholder="mm/dd/yyyy"
                         placeholderTextColor="#999"
                         keyboardType="number-pad"
                         value={dateOfBirth}
-                        onChangeText={(text) => setDateOfBirth(formatDateInput(text))}
+                        onChangeText={(text) => {
+                          const formatted = formatDateInput(text);
+                          setDateOfBirth(formatted);
+                          if (touchedFields.dateOfBirth && formatted.length === 10) {
+                            const res = validateDateOfBirth(formatted);
+                            if (!res.valid) setFieldError('dateOfBirth', res.error!);
+                            else clearFieldError('dateOfBirth');
+                          }
+                        }}
+                        onBlur={() => {
+                          markFieldTouched('dateOfBirth');
+                          const res = validateDateOfBirth(dateOfBirth);
+                          if (!res.valid) setFieldError('dateOfBirth', res.error!);
+                          else clearFieldError('dateOfBirth');
+                        }}
                         maxLength={10}
                       />
-                      <Ionicons name="calendar" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                      <Ionicons
+                        name="calendar"
+                        size={20}
+                        color={fieldErrors.dateOfBirth ? '#E53935' : '#2E7D32'}
+                        style={styles.inputIconRight}
+                      />
                     </View>
+                    {fieldErrors.dateOfBirth ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.dateOfBirth}</Text>
+                    ) : null}
                   </View>
 
                   {/* Gender (Radio buttons) */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Gender</Text>
+                    <Text style={styles.fieldLabel}>
+                      Gender <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
                     <View style={styles.genderRadioContainer}>
                       <TouchableOpacity
                         style={styles.genderRadioOption}
-                        onPress={() => setGender('Male')}
+                        onPress={() => {
+                          setGender('Male');
+                          clearFieldError('gender');
+                        }}
                         activeOpacity={0.8}
                       >
                         <View style={[styles.radioOuter, gender === 'Male' && styles.radioOuterActive]}>
@@ -841,7 +1019,10 @@ export default function AssistedRegistrationScreen({
 
                       <TouchableOpacity
                         style={styles.genderRadioOption}
-                        onPress={() => setGender('Female')}
+                        onPress={() => {
+                          setGender('Female');
+                          clearFieldError('gender');
+                        }}
                         activeOpacity={0.8}
                       >
                         <View style={[styles.radioOuter, gender === 'Female' && styles.radioOuterActive]}>
@@ -852,13 +1033,20 @@ export default function AssistedRegistrationScreen({
                         </Text>
                       </TouchableOpacity>
                     </View>
+                    {fieldErrors.gender ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.gender}</Text>
+                    ) : null}
                   </View>
 
                   {/* Mobile Phone Toggle */}
                   <TouchableOpacity
                     style={styles.toggleRow}
                     activeOpacity={0.8}
-                    onPress={() => setHasPhone(!hasPhone)}
+                    onPress={() => {
+                      const nextHasPhone = !hasPhone;
+                      setHasPhone(nextHasPhone);
+                      if (!nextHasPhone) clearFieldError('mobileNumber');
+                    }}
                   >
                     <Ionicons
                       name={hasPhone ? 'checkbox' : 'square-outline'}
@@ -870,20 +1058,44 @@ export default function AssistedRegistrationScreen({
 
                   {hasPhone ? (
                     <View style={styles.fieldContainer}>
-                      <Text style={styles.fieldLabel}>Mobile Number</Text>
-                      <View style={styles.inputContainer}>
+                      <Text style={styles.fieldLabel}>
+                        Mobile Number <Text style={styles.requiredAsterisk}>*</Text>
+                      </Text>
+                      <View style={[styles.inputContainer, fieldErrors.mobileNumber && styles.inputError]}>
                         <TextInput
                           style={styles.input}
                           placeholder="09XXXXXXXXX"
                           placeholderTextColor="#999"
                           keyboardType="phone-pad"
                           value={mobileNumber}
-                          onChangeText={setMobileNumber}
+                          onChangeText={(val) => {
+                            setMobileNumber(val);
+                            if (touchedFields.mobileNumber) {
+                              const res = validateMobileNumber(val);
+                              if (!res.valid) setFieldError('mobileNumber', res.error!);
+                              else clearFieldError('mobileNumber');
+                            }
+                          }}
+                          onBlur={() => {
+                            markFieldTouched('mobileNumber');
+                            const res = validateMobileNumber(mobileNumber);
+                            if (!res.valid) setFieldError('mobileNumber', res.error!);
+                            else clearFieldError('mobileNumber');
+                          }}
                           maxLength={11}
                         />
-                        <Ionicons name="call" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                        <Ionicons
+                          name="call"
+                          size={20}
+                          color={fieldErrors.mobileNumber ? '#E53935' : '#2E7D32'}
+                          style={styles.inputIconRight}
+                        />
                       </View>
-                      <Text style={styles.fieldHelperText}>Use 09XXXXXXXXX.</Text>
+                      {fieldErrors.mobileNumber ? (
+                        <Text style={styles.fieldErrorText}>{fieldErrors.mobileNumber}</Text>
+                      ) : (
+                        <Text style={styles.fieldHelperText}>Use 09XXXXXXXXX.</Text>
+                      )}
                     </View>
                   ) : (
                     <View style={styles.credentialsInfoBox}>
@@ -930,31 +1142,36 @@ export default function AssistedRegistrationScreen({
                 <View style={styles.formFields}>
                   {/* Barangay */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Barangay</Text>
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroll}>
-                      {BARANGAYS.map((b) => (
-                        <TouchableOpacity
-                          key={b}
-                          style={[styles.chip, barangay === b && styles.chipActive]}
-                          onPress={() => handleBarangayChange(b)}
-                        >
-                          <Text style={[styles.chipText, barangay === b && styles.chipTextActive]}>
-                            {b}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
+                    <Text style={styles.fieldLabel}>
+                      Barangay <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={[styles.dropdownSelector, fieldErrors.barangay && styles.dropdownSelectorError]}
+                      onPress={() => setShowBarangayPicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.dropdownSelectorContent}>
+                        <Ionicons name="location" size={20} color="#2E7D32" style={{ marginRight: 10 }} />
+                        <Text style={styles.dropdownSelectorText}>{barangay}</Text>
+                      </View>
+                      <Ionicons name="chevron-down" size={20} color="#666" />
+                    </TouchableOpacity>
+                    {fieldErrors.barangay ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.barangay}</Text>
+                    ) : null}
                   </View>
 
                   {/* Unique Household Registration Code */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Household Registration Code (XXXX-XXXX-XXXX)</Text>
+                    <Text style={styles.fieldLabel}>
+                      Household Registration Code (XXXX-XXXX-XXXX) <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
                     <View style={styles.tokenInputRow}>
                       <View style={[
                         styles.inputContainer,
                         styles.tokenInput,
                         tokenValidated && styles.inputSuccess,
-                        !!tokenError && styles.inputError,
+                        (!!tokenError || !!fieldErrors.householdToken) && styles.inputError,
                       ]}>
                         <TextInput
                           style={[styles.input, styles.tokenInputText]}
@@ -963,7 +1180,10 @@ export default function AssistedRegistrationScreen({
                           autoCapitalize="characters"
                           autoCorrect={false}
                           value={householdToken}
-                          onChangeText={handleTokenChange}
+                          onChangeText={(raw) => {
+                            handleTokenChange(raw);
+                            clearFieldError('householdToken');
+                          }}
                           maxLength={14}
                         />
                         <Ionicons name="key" size={20} color="#2E7D32" style={styles.inputIconRight} />
@@ -988,12 +1208,14 @@ export default function AssistedRegistrationScreen({
                       </TouchableOpacity>
                     </View>
 
-                    {tokenError && (
+                    {fieldErrors.householdToken ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.householdToken}</Text>
+                    ) : tokenError ? (
                       <View style={styles.tokenErrorContainer}>
                         <Ionicons name="alert-circle" size={16} color="#D32F2F" />
                         <Text style={styles.tokenErrorText}>{tokenError}</Text>
                       </View>
-                    )}
+                    ) : null}
 
                     {tokenValidated && tokenHouseholdInfo && (
                       <View style={styles.tokenSuccessContainer}>
@@ -1019,18 +1241,45 @@ export default function AssistedRegistrationScreen({
 
                   {/* Street Address / Sitio */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Street Address / Sitio</Text>
-                    <View style={[styles.inputContainer, { alignItems: 'flex-start' }]}>
+                    <Text style={styles.fieldLabel}>
+                      Street Address / Sitio <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
+                    <View
+                      style={[
+                        styles.inputContainer,
+                        { alignItems: 'flex-start' },
+                        fieldErrors.streetAddress && styles.inputError,
+                      ]}
+                    >
                       <TextInput
                         style={[styles.input, { minHeight: 65, textAlignVertical: 'top' }]}
                         placeholder="House #, Street name, Sitio"
                         placeholderTextColor="#999"
                         multiline
                         value={streetAddress}
-                        onChangeText={setStreetAddress}
+                        onChangeText={(val) => {
+                          setStreetAddress(val);
+                          if (touchedFields.streetAddress) {
+                            if (!val.trim()) setFieldError('streetAddress', 'Street address or Sitio is required.');
+                            else clearFieldError('streetAddress');
+                          }
+                        }}
+                        onBlur={() => {
+                          markFieldTouched('streetAddress');
+                          if (!streetAddress.trim()) setFieldError('streetAddress', 'Street address or Sitio is required.');
+                          else clearFieldError('streetAddress');
+                        }}
                       />
-                      <Ionicons name="location" size={20} color="#2E7D32" style={[styles.inputIconRight, { marginTop: 14 }]} />
+                      <Ionicons
+                        name="location"
+                        size={20}
+                        color={fieldErrors.streetAddress ? '#E53935' : '#2E7D32'}
+                        style={[styles.inputIconRight, { marginTop: 14 }]}
+                      />
                     </View>
+                    {fieldErrors.streetAddress ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.streetAddress}</Text>
+                    ) : null}
                   </View>
 
                   {/* Household Size */}
@@ -1133,42 +1382,29 @@ export default function AssistedRegistrationScreen({
                 </View>
 
                 <View style={styles.formFields}>
+                  {/* ID / Document Type Dropdown */}
                   <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Assisted / Alternative Options</Text>
-                    <View style={styles.idChipGroup}>
-                      {ALTERNATIVE_ID_TYPES.map((type) => (
-                        <TouchableOpacity
-                          key={type}
-                          style={[styles.idChip, idType === type && styles.idChipActive]}
-                          onPress={() => setIdType(type)}
-                        >
-                          <Text
-                            style={[styles.idChipText, idType === type && styles.idChipTextActive]}
-                          >
-                            {type === 'STAFF_ATTESTATION' ? 'Staff Attestation (No Physical ID)' : type}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
-                  </View>
-
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Standard Government IDs</Text>
-                    <View style={styles.idChipGroup}>
-                      {STANDARD_ID_TYPES.map((type) => (
-                        <TouchableOpacity
-                          key={type}
-                          style={[styles.idChip, idType === type && styles.idChipActive]}
-                          onPress={() => setIdType(type)}
-                        >
-                          <Text
-                            style={[styles.idChipText, idType === type && styles.idChipTextActive]}
-                          >
-                            {type}
-                          </Text>
-                        </TouchableOpacity>
-                      ))}
-                    </View>
+                    <Text style={styles.fieldLabel}>
+                      ID / Document Type <Text style={styles.requiredAsterisk}>*</Text>
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.dropdownSelector}
+                      onPress={() => setShowIdTypePicker(true)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={styles.dropdownSelectorContent}>
+                        <Ionicons
+                          name={isAlternativeDocument ? 'shield-checkmark' : 'card'}
+                          size={20}
+                          color="#2E7D32"
+                          style={{ marginRight: 10 }}
+                        />
+                        <Text style={styles.dropdownSelectorText}>
+                          {idType === 'STAFF_ATTESTATION' ? 'Staff Attestation (No Physical ID)' : idType}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-down" size={20} color="#666" />
+                    </TouchableOpacity>
                   </View>
 
                   {idType === 'STAFF_ATTESTATION' ? (
@@ -1180,79 +1416,159 @@ export default function AssistedRegistrationScreen({
                       <Text style={styles.attestationDesc}>
                         The resident will receive an auto-generated Surrogate ID code backed by staff vouching.
                       </Text>
-                      <Text style={styles.fieldLabel}>Attestation Justification</Text>
-                      <View style={[styles.inputContainer, { alignItems: 'flex-start', minHeight: 75 }]}>
+                      <Text style={styles.fieldLabel}>
+                        Attestation Justification <Text style={styles.requiredAsterisk}>*</Text>
+                      </Text>
+                      <View
+                        style={[
+                          styles.inputContainer,
+                          { alignItems: 'flex-start', minHeight: 75 },
+                          fieldErrors.attestationReason && styles.inputError,
+                        ]}
+                      >
                         <TextInput
                           style={[styles.input, { minHeight: 70, textAlignVertical: 'top' }]}
                           multiline
                           value={attestationReason}
-                          onChangeText={setAttestationReason}
+                          onChangeText={(val) => {
+                            setAttestationReason(val);
+                            if (val.trim()) clearFieldError('attestationReason');
+                          }}
                           placeholder="e.g. Resident lacks formal civil registration or government ID"
                           placeholderTextColor="#999"
                         />
                       </View>
+                      {fieldErrors.attestationReason ? (
+                        <Text style={styles.fieldErrorText}>{fieldErrors.attestationReason}</Text>
+                      ) : null}
                     </View>
                   ) : (
                     <>
+                      {/* ID / Card Number */}
                       <View style={styles.fieldContainer}>
-                        <Text style={styles.fieldLabel}>ID / Card Number</Text>
-                        <View style={styles.inputContainer}>
+                        <Text style={styles.fieldLabel}>
+                          ID / Card Number {!isAlternativeDocument && <Text style={styles.requiredAsterisk}>*</Text>}
+                        </Text>
+                        <View
+                          style={[
+                            styles.inputContainer,
+                            isAlternativeDocument && styles.inputContainerDisabled,
+                            fieldErrors.idNumber && styles.inputError,
+                          ]}
+                        >
                           <TextInput
-                            style={styles.input}
-                            placeholder="e.g. 1234-5678-9012"
+                            style={[styles.input, isAlternativeDocument && styles.inputDisabled]}
+                            placeholder={
+                              isAlternativeDocument
+                                ? 'Not applicable for this document type'
+                                : idFormatInfo.placeholder || 'e.g. 1234-5678-9012'
+                            }
                             placeholderTextColor="#999"
-                            value={idNumber}
-                            onChangeText={setIdNumber}
+                            value={isAlternativeDocument ? '' : idNumber}
+                            onChangeText={(val) => {
+                              if (!isAlternativeDocument) {
+                                setIdNumber(val);
+                                if (touchedFields.idNumber) {
+                                  if (!val.trim()) setFieldError('idNumber', 'ID number is required.');
+                                  else if (!isStep3IdNumberFormatValid(idType, val))
+                                    setFieldError('idNumber', `Invalid ID format for ${idType}`);
+                                  else clearFieldError('idNumber');
+                                }
+                              }
+                            }}
+                            onBlur={() => {
+                              if (!isAlternativeDocument) {
+                                markFieldTouched('idNumber');
+                                if (!idNumber.trim()) setFieldError('idNumber', 'ID number is required.');
+                                else if (!isStep3IdNumberFormatValid(idType, idNumber))
+                                  setFieldError('idNumber', `Invalid ID format for ${idType}`);
+                                else clearFieldError('idNumber');
+                              }
+                            }}
+                            editable={!isAlternativeDocument}
+                            keyboardType={isAlternativeDocument ? 'default' : idFormatInfo.keyboardType}
                           />
-                          <Ionicons name="card" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                          <Ionicons
+                            name="card"
+                            size={20}
+                            color={isAlternativeDocument ? '#999' : fieldErrors.idNumber ? '#E53935' : '#2E7D32'}
+                            style={styles.inputIconRight}
+                          />
                         </View>
+                        {fieldErrors.idNumber ? (
+                          <Text style={styles.fieldErrorText}>{fieldErrors.idNumber}</Text>
+                        ) : isAlternativeDocument ? (
+                          <Text style={styles.fieldNote}>Note: Alternative options do not have an ID card number.</Text>
+                        ) : null}
                       </View>
 
+                      {/* Front Photo */}
                       <View style={styles.fieldContainer}>
-                        <Text style={styles.fieldLabel}>Front ID Photo (Optional)</Text>
+                        <Text style={styles.fieldLabel}>
+                          {isAlternativeDocument
+                            ? 'Certificate / Endorsement Photo (Required)'
+                            : 'Front ID Photo (Optional)'}
+                          {isAlternativeDocument && <Text style={styles.requiredAsterisk}> *</Text>}
+                        </Text>
                         <View style={styles.imageActionRow}>
                           <TouchableOpacity
                             style={styles.imageBtn}
-                            onPress={() => pickIdImage(setFrontIdImage, true)}
+                            onPress={() => {
+                              pickIdImage((uri) => {
+                                setFrontIdImage(uri);
+                                clearFieldError('frontIdImage');
+                              }, true);
+                            }}
                           >
                             <Ionicons name="camera" size={18} color="#2E7D32" />
                             <Text style={styles.imageBtnText}>Camera</Text>
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.imageBtn}
-                            onPress={() => pickIdImage(setFrontIdImage, false)}
+                            onPress={() => {
+                              pickIdImage((uri) => {
+                                setFrontIdImage(uri);
+                                clearFieldError('frontIdImage');
+                              }, false);
+                            }}
                           >
                             <Ionicons name="images" size={18} color="#2E7D32" />
                             <Text style={styles.imageBtnText}>Gallery</Text>
                           </TouchableOpacity>
                         </View>
+                        {fieldErrors.frontIdImage ? (
+                          <Text style={styles.fieldErrorText}>{fieldErrors.frontIdImage}</Text>
+                        ) : null}
                         {!!frontIdImage && (
                           <Image source={{ uri: frontIdImage }} style={styles.imagePreview} />
                         )}
                       </View>
 
-                      <View style={styles.fieldContainer}>
-                        <Text style={styles.fieldLabel}>Back ID Photo (Optional)</Text>
-                        <View style={styles.imageActionRow}>
-                          <TouchableOpacity
-                            style={styles.imageBtn}
-                            onPress={() => pickIdImage(setBackIdImage, true)}
-                          >
-                            <Ionicons name="camera" size={18} color="#2E7D32" />
-                            <Text style={styles.imageBtnText}>Camera</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={styles.imageBtn}
-                            onPress={() => pickIdImage(setBackIdImage, false)}
-                          >
-                            <Ionicons name="images" size={18} color="#2E7D32" />
-                            <Text style={styles.imageBtnText}>Gallery</Text>
-                          </TouchableOpacity>
+                      {/* Back Photo (Standard ID only) */}
+                      {!isAlternativeDocument && (
+                        <View style={styles.fieldContainer}>
+                          <Text style={styles.fieldLabel}>Back ID Photo (Optional)</Text>
+                          <View style={styles.imageActionRow}>
+                            <TouchableOpacity
+                              style={styles.imageBtn}
+                              onPress={() => pickIdImage(setBackIdImage, true)}
+                            >
+                              <Ionicons name="camera" size={18} color="#2E7D32" />
+                              <Text style={styles.imageBtnText}>Camera</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={styles.imageBtn}
+                              onPress={() => pickIdImage(setBackIdImage, false)}
+                            >
+                              <Ionicons name="images" size={18} color="#2E7D32" />
+                              <Text style={styles.imageBtnText}>Gallery</Text>
+                            </TouchableOpacity>
+                          </View>
+                          {!!backIdImage && (
+                            <Image source={{ uri: backIdImage }} style={styles.imagePreview} />
+                          )}
                         </View>
-                        {!!backIdImage && (
-                          <Image source={{ uri: backIdImage }} style={styles.imagePreview} />
-                        )}
-                      </View>
+                      )}
                     </>
                   )}
                 </View>
@@ -1551,6 +1867,130 @@ export default function AssistedRegistrationScreen({
               </TouchableOpacity>
             </View>
           </SafeAreaView>
+        </Modal>
+
+        {/* Barangay Picker Modal */}
+        <Modal
+          visible={showBarangayPicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowBarangayPicker(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowBarangayPicker(false)}
+          >
+            <View style={styles.pickerModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Select Barangay</Text>
+                <TouchableOpacity onPress={() => setShowBarangayPicker(false)} style={styles.pickerCloseBtn}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                {BARANGAYS.map((b) => {
+                  const isSelected = barangay === b;
+                  return (
+                    <TouchableOpacity
+                      key={b}
+                      style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+                      onPress={() => {
+                        handleBarangayChange(b);
+                        clearFieldError('barangay');
+                        setShowBarangayPicker(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
+                        {b}
+                      </Text>
+                      {isSelected && <Ionicons name="checkmark-circle" size={22} color="#2E7D32" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
+        {/* ID / Document Type Picker Modal */}
+        <Modal
+          visible={showIdTypePicker}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowIdTypePicker(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowIdTypePicker(false)}
+          >
+            <View style={styles.pickerModalContent} onStartShouldSetResponder={() => true}>
+              <View style={styles.pickerModalHeader}>
+                <Text style={styles.pickerModalTitle}>Select Document / ID Type</Text>
+                <TouchableOpacity onPress={() => setShowIdTypePicker(false)} style={styles.pickerCloseBtn}>
+                  <Ionicons name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.pickerScroll} showsVerticalScrollIndicator={false}>
+                <Text style={styles.pickerSectionHeader}>Assisted / Alternative Options</Text>
+                {ALTERNATIVE_ID_TYPES.map((type) => {
+                  const isSelected = idType === type;
+                  const displayLabel = type === 'STAFF_ATTESTATION' ? 'Staff Attestation (No Physical ID)' : type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+                      onPress={() => {
+                        setIdType(type);
+                        clearFieldError('idNumber');
+                        clearFieldError('frontIdImage');
+                        clearFieldError('attestationReason');
+                        setShowIdTypePicker(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
+                          {displayLabel}
+                        </Text>
+                        <Text style={styles.pickerItemSubtext}>Alternative certificate / attestation</Text>
+                      </View>
+                      {isSelected && <Ionicons name="checkmark-circle" size={22} color="#2E7D32" />}
+                    </TouchableOpacity>
+                  );
+                })}
+
+                <Text style={[styles.pickerSectionHeader, { marginTop: 16 }]}>Standard Government IDs</Text>
+                {STANDARD_ID_TYPES.map((type) => {
+                  const isSelected = idType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[styles.pickerItem, isSelected && styles.pickerItemActive]}
+                      onPress={() => {
+                        setIdType(type);
+                        clearFieldError('idNumber');
+                        clearFieldError('frontIdImage');
+                        clearFieldError('attestationReason');
+                        setShowIdTypePicker(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextActive]}>
+                          {type}
+                        </Text>
+                        <Text style={styles.pickerItemSubtext}>Requires card / ID number</Text>
+                      </View>
+                      {isSelected && <Ionicons name="checkmark-circle" size={22} color="#2E7D32" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
         </Modal>
       </SafeAreaView>
     </Modal>
@@ -2366,5 +2806,125 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: '700',
     color: '#FFFFFF',
+  },
+  requiredAsterisk: {
+    color: '#E53935',
+    fontWeight: '700',
+  },
+  fieldErrorText: {
+    fontSize: 12,
+    color: '#E53935',
+    marginTop: 6,
+    marginLeft: 4,
+    fontWeight: '500',
+  },
+  fieldNote: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 6,
+    marginLeft: 4,
+    fontStyle: 'italic',
+  },
+  inputContainerDisabled: {
+    backgroundColor: '#F0F2F0',
+    borderColor: '#DDDDDD',
+  },
+  inputDisabled: {
+    color: '#888888',
+  },
+  dropdownSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E8E8E8',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  dropdownSelectorError: {
+    borderColor: '#E53935',
+    borderWidth: 2,
+    backgroundColor: '#FFF8F8',
+  },
+  dropdownSelectorContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  dropdownSelectorText: {
+    fontSize: 16,
+    color: '#333333',
+    fontWeight: '500',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    justifyContent: 'flex-end',
+  },
+  pickerModalContent: {
+    backgroundColor: '#FFFFFF',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingTop: 20,
+    paddingBottom: Platform.OS === 'ios' ? 36 : 24,
+    paddingHorizontal: 20,
+    maxHeight: '80%',
+  },
+  pickerModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EEEEEE',
+  },
+  pickerModalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1A1A1A',
+  },
+  pickerCloseBtn: {
+    padding: 4,
+  },
+  pickerScroll: {
+    marginTop: 8,
+  },
+  pickerSectionHeader: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#2E7D32',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 12,
+    marginBottom: 6,
+    paddingHorizontal: 4,
+  },
+  pickerItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginVertical: 2,
+  },
+  pickerItemActive: {
+    backgroundColor: '#E8F5E9',
+  },
+  pickerItemText: {
+    fontSize: 15,
+    color: '#333333',
+    fontWeight: '500',
+  },
+  pickerItemTextActive: {
+    color: '#2E7D32',
+    fontWeight: '700',
+  },
+  pickerItemSubtext: {
+    fontSize: 12,
+    color: '#888888',
+    marginTop: 2,
   },
 });

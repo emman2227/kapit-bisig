@@ -464,12 +464,20 @@ ResidentSchema.pre('save', async function (next) {
   }
 });
 
-// Surrogate ID hook for staff attestation (residents with no government ID)
+// Surrogate ID hook for staff attestation and alternative documents (residents without standard government ID)
 ResidentSchema.pre('save', async function (next) {
   const currentId = this.idNumber as string | undefined;
-  if (this.idType === 'STAFF_ATTESTATION' && (!currentId || currentId.trim() === '')) {
-    const code = this.residentCode || `ATTEST-${Date.now()}`;
-    this.idNumber = `ATTEST-${code}`;
+  if (!currentId || currentId.trim() === '') {
+    const code = this.residentCode || `${Date.now()}`;
+    if (this.idType === 'STAFF_ATTESTATION') {
+      this.idNumber = `ATTEST-${code}`;
+    } else if (this.idType === 'Certificate of Indigency') {
+      this.idNumber = `INDIGENCY-${code}`;
+    } else if (this.idType === 'Barangay Certification') {
+      this.idNumber = `BRGYCERT-${code}`;
+    } else if (this.idType === 'Tribal / NCIP Endorsement') {
+      this.idNumber = `TRIBAL-${code}`;
+    }
   }
   next();
 });
