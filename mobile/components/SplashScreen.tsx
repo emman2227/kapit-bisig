@@ -866,8 +866,7 @@ export default function SplashScreen({
 
   // Initial Login/Registration Screen (shows after onboarding slides)
   if (showInitialSplash) {
-    const logoWidth = Math.min(windowWidth * 0.8, 280);
-    const logoHeight = Math.min(windowHeight * 0.12, 70);
+    const initialLogoSize = Math.min(windowWidth * 0.55, windowHeight * 0.28, 190);
     return (
       <View
         style={[
@@ -881,12 +880,7 @@ export default function SplashScreen({
         <View style={styles.initialLogoWrapper}>
           <Image
             source={require('../assets/logo.png')}
-            style={styles.initialLogoImage}
-            resizeMode="contain"
-          />
-          <Image
-            source={require('../assets/textual.png')}
-            style={{ width: logoWidth, height: logoHeight }}
+            style={[styles.initialLogoImage, { width: initialLogoSize, height: initialLogoSize }]}
             resizeMode="contain"
           />
           <Text style={styles.initialSubtitle}>Choose how you want to continue</Text>
@@ -1218,9 +1212,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   welcomeLogo: {
-    width: 84,
-    height: 84,
-    marginBottom: 10,
+    width: 135,
+    height: 135,
+    marginBottom: 12,
   },
   welcomeText: {
     fontSize: 32,
@@ -1470,9 +1464,9 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   initialLogoImage: {
-    width: 90,
-    height: 90,
-    marginBottom: 8,
+    width: 180,
+    height: 180,
+    marginBottom: 16,
   },
   initialSubtitle: {
     marginTop: 8,
