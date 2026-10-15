@@ -328,4 +328,19 @@ export async function sendProfileUpdateOtpSms(
   return sendSms(mobileNumber, message);
 }
 
+/**
+ * Send assisted walk-in registration credentials SMS.
+ */
+export async function sendAssistedRegistrationCredentialsSms(
+  mobileNumber: string,
+  fullName: string,
+  residentCode: string,
+  tempPassword?: string,
+): Promise<void> {
+  const passText = tempPassword ? ` Temporary Password: ${tempPassword}` : '';
+  const message = `[${APP_NAME}] Hi ${fullName}, you have been registered via assisted walk-in! Resident Code: ${residentCode}.${passText} Keep this safe to log in.`;
+  return sendSms(mobileNumber, message);
+}
+
+
 

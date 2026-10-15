@@ -12,7 +12,15 @@ export const assistedRegistrationBody = z.object({
   gender: z.enum(['Male', 'Female']),
   mobileNumber: z.string().max(20).optional(),
   email: z.string().trim().toLowerCase().email('Invalid email format').max(254).optional(),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(200).optional(),
+  password: z
+    .string()
+    .min(8, 'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.')
+    .regex(
+      /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;':",./<>?`~\\])/,
+      'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.'
+    )
+    .optional()
+    .or(z.literal('')),
   barangay: barangayEnum,
   streetAddress: trimmedString(1, 500),
   householdToken: z.string().trim().regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i, 'Invalid household token format (XXXX-XXXX-XXXX)'),

@@ -94,6 +94,8 @@ export default function AssistedRegistrationScreen({
   const [hasPhone, setHasPhone] = useState(false);
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   // Step 2: Address & Household
   const [barangay, setBarangay] = useState<string>(BARANGAYS[0]);
@@ -164,6 +166,7 @@ export default function AssistedRegistrationScreen({
             if (typeof draft.hasPhone === 'boolean') setHasPhone(draft.hasPhone);
             if (draft.mobileNumber) setMobileNumber(draft.mobileNumber);
             if (draft.email) setEmail(draft.email);
+            if (draft.password) setPassword(draft.password);
             if (draft.barangay) setBarangay(draft.barangay);
             if (draft.householdToken) {
               setHouseholdToken(draft.householdToken);
@@ -204,6 +207,7 @@ export default function AssistedRegistrationScreen({
           hasPhone,
           mobileNumber,
           email,
+          password,
           barangay,
           householdToken,
           tokenValidated,
@@ -237,6 +241,7 @@ export default function AssistedRegistrationScreen({
     hasPhone,
     mobileNumber,
     email,
+    password,
     barangay,
     householdToken,
     tokenValidated,
@@ -331,6 +336,29 @@ export default function AssistedRegistrationScreen({
       return {
         valid: false,
         error: 'Enter a valid 11-digit Philippine mobile number (09XXXXXXXXX).',
+      };
+    }
+    return { valid: true };
+  };
+
+  const PASSWORD_SPECIAL_CHAR_REGEX = /[!@#$%^&*()_+\-=[\]{}|;':",./<>?`~\\]/;
+
+  const validatePassword = (pwd: string): { valid: boolean; error?: string } => {
+    const trimmed = pwd.trim();
+    if (!trimmed) return { valid: true };
+    if (/\s/.test(pwd)) {
+      return { valid: false, error: 'Password must not contain spaces.' };
+    }
+    const hasComplexity =
+      /[A-Z]/.test(trimmed) &&
+      /[a-z]/.test(trimmed) &&
+      /[0-9]/.test(trimmed) &&
+      PASSWORD_SPECIAL_CHAR_REGEX.test(trimmed);
+    if (trimmed.length < 8 || !hasComplexity) {
+      return {
+        valid: false,
+        error:
+          'Password must be at least 8 characters and include uppercase, lowercase, number, and special character.',
       };
     }
     return { valid: true };
@@ -474,6 +502,8 @@ export default function AssistedRegistrationScreen({
     setHasPhone(false);
     setMobileNumber('');
     setEmail('');
+    setPassword('');
+    setShowPassword(false);
     setBarangay(BARANGAYS[0]);
     setHouseholdToken('');
     setTokenValidating(false);
@@ -515,7 +545,8 @@ export default function AssistedRegistrationScreen({
       streetAddress.trim().length > 0 ||
       faceImage.length > 0 ||
       frontIdImage.length > 0 ||
-      mobileNumber.trim().length > 0
+      mobileNumber.trim().length > 0 ||
+      password.trim().length > 0
     );
   };
 
@@ -657,6 +688,12 @@ export default function AssistedRegistrationScreen({
         if (!mobCheck.valid) newErrors.mobileNumber = mobCheck.error!;
       }
 
+      if (password.trim()) {
+        markFieldTouched('password');
+        const pwdCheck = validatePassword(password);
+        if (!pwdCheck.valid) newErrors.password = pwdCheck.error!;
+      }
+
       setFieldErrors((prev) => ({ ...prev, ...newErrors }));
       if (Object.keys(newErrors).length > 0) {
         setErrorMessage('Please fix the highlighted fields to proceed.');
@@ -759,6 +796,7 @@ export default function AssistedRegistrationScreen({
       gender: gender || 'Male',
       mobileNumber: hasPhone && mobileNumber.trim() ? mobileNumber.trim() : undefined,
       email: email.trim() ? email.trim() : undefined,
+      password: password.trim() ? password.trim() : undefined,
       barangay,
       householdToken: householdToken.trim(),
       streetAddress: streetAddress.trim(),
@@ -794,7 +832,7 @@ export default function AssistedRegistrationScreen({
 
     Alert.alert(
       'Registration Complete! 🎉',
-      `Resident Code: ${code}\nTemporary Password: ${tempPass}\n\nPlease take note of these credentials for the resident.`,
+      `Resident Code: ${code}\nAccount Password: ${tempPass}\n\nPlease take note of these credentials for the resident.`,
       [
         {
           text: 'Done',
@@ -1121,6 +1159,59 @@ export default function AssistedRegistrationScreen({
                       />
                       <Ionicons name="mail" size={20} color="#2E7D32" style={styles.inputIconRight} />
                     </View>
+                  </View>
+
+                  {/* Account Password (Optional) */}
+                  <View style={styles.fieldContainer}>
+                    <Text style={styles.fieldLabel}>Account Password (Optional)</Text>
+                    <View style={[styles.inputContainer, fieldErrors.password && styles.inputError]}>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Leave blank to auto-generate"
+                        placeholderTextColor="#999"
+                        value={password}
+                        onChangeText={(val) => {
+                          const sanitized = val.replace(/\s/g, '');
+                          setPassword(sanitized);
+                          if (touchedFields.password) {
+                            const res = validatePassword(sanitized);
+                            if (!res.valid) setFieldError('password', res.error!);
+                            else clearFieldError('password');
+                          }
+                        }}
+                        onBlur={() => {
+                          if (password.trim()) {
+                            markFieldTouched('password');
+                            const res = validatePassword(password);
+                            if (!res.valid) setFieldError('password', res.error!);
+                            else clearFieldError('password');
+                          } else {
+                            clearFieldError('password');
+                          }
+                        }}
+                        secureTextEntry={!showPassword}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                      />
+                      <TouchableOpacity
+                        onPress={() => setShowPassword(!showPassword)}
+                        style={styles.inputIconRight}
+                        activeOpacity={0.7}
+                      >
+                        <Ionicons
+                          name={showPassword ? 'eye-off' : 'eye'}
+                          size={20}
+                          color={fieldErrors.password ? '#E53935' : '#2E7D32'}
+                        />
+                      </TouchableOpacity>
+                    </View>
+                    {fieldErrors.password ? (
+                      <Text style={styles.fieldErrorText}>{fieldErrors.password}</Text>
+                    ) : (
+                      <Text style={styles.fieldHelperText}>
+                        Min 8 characters with upper, lower, number, and special character. If left blank, a temporary password is automatically generated.
+                      </Text>
+                    )}
                   </View>
                 </View>
               </View>

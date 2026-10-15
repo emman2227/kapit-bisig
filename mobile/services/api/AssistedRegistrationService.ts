@@ -21,6 +21,7 @@ export interface AssistedRegistrationPayload {
   gender: 'Male' | 'Female';
   mobileNumber?: string;
   email?: string;
+  password?: string;
   barangay: string;
   householdToken: string;
   streetAddress: string;

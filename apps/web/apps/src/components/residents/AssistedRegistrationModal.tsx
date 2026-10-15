@@ -17,6 +17,10 @@ import {
   Loader2,
   Video,
   RefreshCw,
+  Copy,
+  Check,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import api, { BARANGAY_OPTIONS } from '@/lib/api';
 import SelectDropdown from '@/components/ui/SelectDropdown';
@@ -75,6 +79,15 @@ export default function AssistedRegistrationModal({
   const [hasPhone, setHasPhone] = useState(false);
   const [mobileNumber, setMobileNumber] = useState('');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [credentialsModal, setCredentialsModal] = useState<{
+    residentCode: string;
+    password?: string;
+    mobileNumber?: string;
+    email?: string;
+  } | null>(null);
+  const [copiedField, setCopiedField] = useState<'code' | 'password' | 'all' | null>(null);
 
   // Step 2: Address & Household
   const [barangay, setBarangay] = useState<string>(BARANGAY_OPTIONS[0]);
@@ -126,6 +139,10 @@ export default function AssistedRegistrationModal({
     setHasPhone(false);
     setMobileNumber('');
     setEmail('');
+    setPassword('');
+    setShowPassword(false);
+    setCredentialsModal(null);
+    setCopiedField(null);
     setBarangay(BARANGAY_OPTIONS[0]);
     setHouseholdToken('');
     setTokenValidating(false);
@@ -410,6 +427,20 @@ export default function AssistedRegistrationModal({
           return false;
         }
       }
+      if (password.trim()) {
+        if (password.trim().length < 8) {
+          setErrorMsg('Password must be at least 8 characters.');
+          return false;
+        }
+        const hasUpper = /[A-Z]/.test(password);
+        const hasLower = /[a-z]/.test(password);
+        const hasDigit = /\d/.test(password);
+        const hasSpecial = /[!@#$%^&*()_+\-=\[\]{}|;':",./<>?`~\\]/.test(password);
+        if (!hasUpper || !hasLower || !hasDigit || !hasSpecial) {
+          setErrorMsg('Password must include uppercase, lowercase, number, and special character.');
+          return false;
+        }
+      }
       return true;
     }
 
@@ -493,6 +524,7 @@ export default function AssistedRegistrationModal({
       gender,
       mobileNumber: hasPhone && mobileNumber.trim() ? mobileNumber.trim() : undefined,
       email: email.trim() || undefined,
+      password: password.trim() || undefined,
       barangay,
       householdToken: householdToken.trim(),
       streetAddress: streetAddress.trim(),
@@ -521,8 +553,13 @@ export default function AssistedRegistrationModal({
       }
 
       const generatedCode = response.data?.residentCode || 'Generated';
-      resetForm();
-      onSuccess(generatedCode);
+      const assignedPassword = response.data?.tempPassword || password.trim() || 'Auto-generated';
+      setCredentialsModal({
+        residentCode: generatedCode,
+        password: assignedPassword,
+        mobileNumber: hasPhone && mobileNumber.trim() ? mobileNumber.trim() : undefined,
+        email: email.trim() || undefined,
+      });
     } catch (err: any) {
       setSubmitting(false);
       setErrorMsg(err.message || 'Network error occurred during registration.');
@@ -537,15 +574,116 @@ export default function AssistedRegistrationModal({
         {/* Backdrop */}
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
-          onClick={handleRequestClose}
+          onClick={credentialsModal ? undefined : handleRequestClose}
         />
 
-        {/* Modal Card */}
-        <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
-          {/* Top Brand Accent Line */}
-          <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 overflow-hidden shrink-0">
-            <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-[#0F533A] shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
+        {credentialsModal ? (
+          <div className="relative w-full max-w-lg bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col p-6 animate-in fade-in zoom-in-95 duration-200">
+            <div className="text-center mb-6">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 mb-3 border border-emerald-100 dark:border-emerald-800">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black text-gray-900 dark:text-slate-100">
+                Registration Successful!
+              </h3>
+              <p className="text-xs text-gray-500 dark:text-slate-400 mt-1">
+                The resident account has been created. Take note of these login credentials:
+              </p>
+            </div>
+
+            <div className="space-y-3 mb-6">
+              {/* Resident Code */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">Resident Code</span>
+                  <span className="text-base font-black font-mono text-[#0F533A] dark:text-emerald-400">
+                    {credentialsModal.residentCode}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(credentialsModal.residentCode);
+                    setCopiedField('code');
+                    setTimeout(() => setCopiedField(null), 2000);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
+                >
+                  {copiedField === 'code' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                  <span>{copiedField === 'code' ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+
+              {/* Password */}
+              <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-2xl border border-slate-200/80 dark:border-slate-700/80 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">Account Password</span>
+                  <span className="text-base font-black font-mono text-[#0F533A] dark:text-emerald-400">
+                    {credentialsModal.password || 'Auto-generated'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(credentialsModal.password || '');
+                    setCopiedField('password');
+                    setTimeout(() => setCopiedField(null), 2000);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-50 flex items-center gap-1.5 transition-colors"
+                >
+                  {copiedField === 'password' ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-400" />}
+                  <span>{copiedField === 'password' ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+
+              {credentialsModal.mobileNumber && (
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 px-1">
+                  <span>📱</span> Credentials dispatched via SMS to {credentialsModal.mobileNumber}.
+                </p>
+              )}
+              {credentialsModal.email && (
+                <p className="text-[11px] text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 px-1">
+                  <span>✉️</span> Credentials sent via Brevo email to {credentialsModal.email}.
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `Resident Code: ${credentialsModal.residentCode}\nPassword: ${credentialsModal.password || ''}`;
+                  navigator.clipboard.writeText(text);
+                  setCopiedField('all');
+                  setTimeout(() => setCopiedField(null), 2000);
+                }}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center justify-center gap-2 transition-colors"
+              >
+                {copiedField === 'all' ? <Check className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+                <span>{copiedField === 'all' ? 'All Copied!' : 'Copy All'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const code = credentialsModal.residentCode;
+                  setCredentialsModal(null);
+                  resetForm();
+                  onSuccess(code);
+                }}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold bg-[#0F533A] hover:bg-[#0c432f] text-white flex items-center justify-center gap-2 shadow-lg shadow-emerald-900/20 transition-all"
+              >
+                <span>Done & Close</span>
+              </button>
+            </div>
           </div>
+        ) : (
+          /* Modal Card */
+          <div className="relative w-full max-w-2xl bg-white dark:bg-slate-900 rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800 overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-200">
+            {/* Top Brand Accent Line */}
+            <div className="w-full bg-slate-100 dark:bg-slate-800 h-1.5 overflow-hidden shrink-0">
+              <div className="h-full bg-gradient-to-r from-emerald-500 via-teal-500 to-[#0F533A] shadow-[0_0_12px_rgba(16,185,129,0.5)]" />
+            </div>
 
           {/* Header */}
           <div className="border-b border-gray-100 dark:border-slate-800 px-6 pt-5 pb-4 shrink-0 bg-slate-50/50 dark:bg-slate-900/50">
@@ -730,6 +868,32 @@ export default function AssistedRegistrationModal({
                     placeholder="resident@example.com"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
                   />
+                </div>
+
+                {/* Account Password (Optional) */}
+                <div className="pt-3 border-t border-gray-100 dark:border-slate-800">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
+                    Account Password (Optional)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Leave blank to auto-generate secure password"
+                      className="w-full px-3.5 py-2.5 pr-10 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                    >
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                    If set, requires 8+ chars with uppercase, lowercase, number & special char. Leave blank to auto-generate.
+                  </p>
                 </div>
               </div>
             )}
@@ -1432,6 +1596,7 @@ export default function AssistedRegistrationModal({
             )}
           </div>
         </div>
+        )}
       </div>
 
       {/* Confirmation Modal on Discard / Exit */}

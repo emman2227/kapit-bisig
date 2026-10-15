@@ -347,3 +347,60 @@ export async function sendProfileUpdateOtpEmail(
   await sendEmail({ to, subject, html, text });
 }
 
+/**
+ * Send assisted walk-in registration credentials email via Brevo / SMTP.
+ */
+export async function sendAssistedRegistrationCredentialsEmail(
+  to: string,
+  fullName: string,
+  residentCode: string,
+  tempPassword?: string,
+): Promise<void> {
+  if (process.env.NODE_ENV === 'test') {
+    return;
+  }
+
+  const subject = `${APP_NAME} — Your Resident Account Credentials`;
+
+  const html = `
+    <div style="font-family: Arial, Helvetica, sans-serif; max-width: 500px; margin: 0 auto; padding: 24px; border: 1px solid #e5e7eb; border-radius: 16px;">
+      <h2 style="color: #0F533A; margin-bottom: 8px;">${APP_NAME}</h2>
+      <p style="color: #374151; font-size: 15px; font-weight: bold;">Kumusta, ${fullName}!</p>
+      <p style="color: #4b5563; font-size: 14px; line-height: 1.5;">You have been registered via assisted walk-in registration. Below are your account credentials to log in to the mobile app:</p>
+
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 18px; margin: 20px 0;">
+        <div style="margin-bottom: 12px;">
+          <span style="display: block; font-size: 12px; font-weight: bold; color: #166534; text-transform: uppercase;">Resident Code</span>
+          <span style="font-size: 20px; font-weight: bold; color: #0F533A; font-family: monospace;">${residentCode}</span>
+        </div>
+        ${tempPassword ? `
+        <div>
+          <span style="display: block; font-size: 12px; font-weight: bold; color: #166534; text-transform: uppercase;">Password</span>
+          <span style="font-size: 18px; font-weight: bold; color: #0F533A; font-family: monospace;">${tempPassword}</span>
+        </div>
+        ` : ''}
+      </div>
+
+      <p style="color: #6b7280; font-size: 13px;">Please keep these credentials safe. You can log in using either your mobile number or your Resident Code.</p>
+
+      <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 20px 0;" />
+      <p style="color: #9ca3af; font-size: 11px; text-align: center;">&copy; ${new Date().getFullYear()} ${APP_NAME}. All rights reserved.</p>
+    </div>
+  `;
+
+  const text = [
+    `${APP_NAME} — Your Resident Account Credentials`,
+    '',
+    `Kumusta, ${fullName}!`,
+    'You have been registered via assisted walk-in registration.',
+    '',
+    `Resident Code: ${residentCode}`,
+    tempPassword ? `Password: ${tempPassword}` : '',
+    '',
+    'Please keep these credentials safe to log in or claim relief goods.',
+  ].filter(Boolean).join('\n');
+
+  await sendEmail({ to, subject, html, text });
+}
+
+

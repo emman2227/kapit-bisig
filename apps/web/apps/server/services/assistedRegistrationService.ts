@@ -22,6 +22,8 @@ import { persistVerificationImage } from '../utils/imageStorage';
 import { buildResidentQrToken } from './residentQrService';
 import { checkDuplicateFace } from './duplicateFaceService';
 import { householdTokenService, generateRequestId } from './householdTokenService';
+import { sendAssistedRegistrationCredentialsSms } from '../utils/smsService';
+import { sendAssistedRegistrationCredentialsEmail } from '../utils/mailer';
 import mongoose from 'mongoose';
 
 export interface AssistedStaffUser {
@@ -126,6 +128,18 @@ export async function registerAssistedResident(
         return await abortWithLockRelease(
           'This mobile number is already registered.',
           'DUPLICATE_MOBILE'
+        );
+      }
+    }
+
+    let normalizedEmail = '';
+    if (data.email && data.email.trim().length > 0) {
+      normalizedEmail = data.email.trim().toLowerCase();
+      const existingEmail = await Resident.findOne({ emailLower: normalizedEmail });
+      if (existingEmail) {
+        return await abortWithLockRelease(
+          'This email address is already registered.',
+          'DUPLICATE_EMAIL'
         );
       }
     }
@@ -284,6 +298,25 @@ export async function registerAssistedResident(
     // 8. Generate QR token
     const qrToken = buildResidentQrToken(resident.residentCode, resident.qrVersion, resident.createdAt);
 
+    // 9. Dispatch credentials via SMS and/or Brevo Email (non-blocking)
+    const fullName = `${data.firstName} ${data.lastName}`.trim();
+    if (normalizedMobile) {
+      sendAssistedRegistrationCredentialsSms(
+        normalizedMobile,
+        fullName,
+        resident.residentCode,
+        plainPassword
+      ).catch((smsErr) => console.warn('[AssistedRegistration] SMS credentials dispatch warning:', smsErr.message));
+    }
+    if (normalizedEmail) {
+      sendAssistedRegistrationCredentialsEmail(
+        normalizedEmail,
+        fullName,
+        resident.residentCode,
+        plainPassword
+      ).catch((mailErr) => console.warn('[AssistedRegistration] Brevo email credentials dispatch warning:', mailErr.message));
+    }
+
     return {
       success: true,
       message: 'Resident successfully registered via assisted registration.',
@@ -315,6 +348,13 @@ export async function registerAssistedResident(
           success: false,
           message: 'This mobile number is already registered.',
           errorCode: 'DUPLICATE_MOBILE',
+        };
+      }
+      if (keyPattern.email || keyPattern.emailLower || ('email' in keyValue) || ('emailLower' in keyValue)) {
+        return {
+          success: false,
+          message: 'This email address is already registered.',
+          errorCode: 'DUPLICATE_EMAIL',
         };
       }
       if (keyPattern.idNumber || ('idNumber' in keyValue)) {
