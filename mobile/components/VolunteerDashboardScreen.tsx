@@ -107,9 +107,8 @@ export default function VolunteerDashboardScreen({
   const [selectedDistributionForModal, setSelectedDistributionForModal] = useState<DistributionData | null>(null);
   const [showAssistedRegistration, setShowAssistedRegistration] = useState(false);
 
-  const displayName = volunteerUser
-    ? `${volunteerUser.firstName || ''} ${volunteerUser.lastName || ''}`.trim() || 'Staff Member'
-    : 'Staff Member';
+  const staffFirstName = volunteerUser?.firstName?.trim();
+  const greetingText = staffFirstName ? `Welcome, ${staffFirstName}` : 'Welcome';
 
   const progressPercentage = stats.totalHouseholds > 0
     ? Math.round((stats.verifiedHouseholds / stats.totalHouseholds) * 100)
@@ -387,7 +386,7 @@ export default function VolunteerDashboardScreen({
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
           style={styles.premiumBanner}
-          accessibilityLabel={`Staff dashboard. Hello, ${displayName}.`}
+          accessibilityLabel={`Staff dashboard. ${greetingText}.`}
         >
           <View style={styles.bannerGoldAccent} />
           <View style={styles.bannerWatermark} pointerEvents="none">
@@ -402,7 +401,7 @@ export default function VolunteerDashboardScreen({
               </Text>
             </View>
           </View>
-          <Text style={styles.bannerGreeting} numberOfLines={1}>Hello, {displayName}</Text>
+          <Text style={styles.bannerGreeting} numberOfLines={1}>{greetingText}</Text>
           <Text style={styles.bannerSubtitle} numberOfLines={2}>Here's your operations overview.</Text>
           {stats.scopedBarangays.length > 0 ? (
             <View style={styles.bannerLocationPill}>
@@ -414,36 +413,11 @@ export default function VolunteerDashboardScreen({
           ) : null}
         </LinearGradient>
 
-        {/* ── QR Scanner Action ── */}
+        {/* ── Quick Actions ── */}
         <View style={styles.section}>
-          <TouchableOpacity style={styles.premiumCardShadow} activeOpacity={0.86} onPress={() => onNavigate?.('qr')}>
-            <LinearGradient
-              colors={[sc.brandDark, sc.brand]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.qrActionCard}
-            >
-              <View style={styles.cardGoldAccent} />
-              <View style={styles.qrWatermark} pointerEvents="none">
-                <Ionicons name="qr-code-outline" size={92} color="rgba(255, 255, 255, 0.045)" />
-              </View>
-              <View style={styles.darkIconTile}>
-                <Ionicons name="qr-code-outline" size={23} color={sc.accent} />
-              </View>
-              <View style={styles.premiumCardCopy}>
-                <Text style={styles.darkCardEyebrow}>VERIFICATION</Text>
-                <Text style={styles.darkCardTitle}>Scan resident QR</Text>
-                <Text style={styles.darkCardDescription}>Open the scanner to verify resident identity.</Text>
-              </View>
-              <View style={styles.darkArrowButton}>
-                <Ionicons name="arrow-forward" size={18} color={sc.accent} />
-              </View>
-            </LinearGradient>
-          </TouchableOpacity>
-
           {/* ── Walk-In Registration Card ── */}
           <TouchableOpacity
-            style={[styles.premiumCardShadow, { marginTop: 12 }]}
+            style={styles.premiumCardShadow}
             activeOpacity={0.86}
             onPress={() => setShowAssistedRegistration(true)}
           >

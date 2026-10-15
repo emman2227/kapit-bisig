@@ -16,7 +16,6 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as ImagePicker from 'expo-image-picker';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   changeResidentPassword,
@@ -27,7 +26,6 @@ import {
   requestResidentChangePasswordOtp,
   ResidentProfile,
   updateResidentProfile,
-  uploadResidentAvatar,
 } from '../services/api/ResidentQrService';
 import {
   mobileAuthService,
@@ -298,16 +296,12 @@ export default function ProfileScreen({
   const [isRequestingChangePasswordOtp, setIsRequestingChangePasswordOtp] = useState(false);
   const [isConfirmingChangePassword, setIsConfirmingChangePassword] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [firstNameInput, setFirstNameInput] = useState('');
   const [lastNameInput, setLastNameInput] = useState('');
   const [mobileInput, setMobileInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
   const [streetAddressInput, setStreetAddressInput] = useState('');
   const [cityInput, setCityInput] = useState('');
-  const [avatarUri, setAvatarUri] = useState<string | null>(
-    residentProfile?.avatarUrl?.trim() || null,
-  );
 
   const residentName = useMemo(() => {
     return formatResidentFullName({
@@ -391,9 +385,6 @@ export default function ProfileScreen({
     };
   }, [isVolunteer, residentProfile, volunteerUser]);
 
-  useEffect(() => {
-    setAvatarUri(isVolunteer ? null : residentProfile?.avatarUrl?.trim() || null);
-  }, [isVolunteer, residentProfile?.avatarUrl]);
 
   const cooldownHoursRemaining = useMemo(() => {
     if (!residentProfile?.lastProfileUpdateAt) return 0;
@@ -450,53 +441,6 @@ export default function ProfileScreen({
     }
   };
 
-  const handleResidentAvatarPick = async () => {
-    if (isVolunteer || isUploadingAvatar) return;
-
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please allow photo library access to update your profile photo.');
-      return;
-    }
-
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.85,
-    });
-
-    if (result.canceled || !result.assets?.length) return;
-
-    const previousAvatarUri = avatarUri;
-    const selectedUri = result.assets[0].uri;
-    setAvatarUri(selectedUri);
-    setIsUploadingAvatar(true);
-
-    try {
-      const token = await getResidentToken();
-      if (!token) {
-        setAvatarUri(previousAvatarUri);
-        Alert.alert('Session expired', 'Please log in again.');
-        return;
-      }
-
-      const uploadResult = await uploadResidentAvatar(token, selectedUri);
-      if (!uploadResult.success || !uploadResult.avatarUrl) {
-        setAvatarUri(previousAvatarUri);
-        Alert.alert('Upload failed', uploadResult.message || 'Unable to save profile photo.');
-        return;
-      }
-
-      setAvatarUri(uploadResult.avatarUrl);
-      if (residentProfile) {
-        onResidentProfileUpdated?.({ ...residentProfile, avatarUrl: uploadResult.avatarUrl });
-      }
-      Alert.alert('Photo updated', 'Your profile photo was saved successfully.');
-    } finally {
-      setIsUploadingAvatar(false);
-    }
-  };
 
   const handleProceedFromForm = async () => {
     if (isSaving || isSendingOtp) return;
@@ -913,29 +857,9 @@ export default function ProfileScreen({
         <View style={[styles.profileCard, styles.residentCard]}>
           <View style={styles.identityAccent} />
           <View style={styles.avatarContainer}>
-            {avatarUri ? (
-              <Image source={{ uri: avatarUri }} style={[styles.avatar, styles.residentAvatar]} accessibilityLabel={`${displayName}'s profile photo`} />
-            ) : (
-              <View style={[styles.avatarFallback, styles.residentAvatarFallback]} accessibilityLabel={`${displayName}'s initials`}>
-                <Typography variant="h2" weight="bold" color={residentColors.ink}>{initials}</Typography>
-              </View>
-            )}
-
-            {!isVolunteer ? (
-              <TouchableOpacity
-                style={[styles.cameraButton, styles.residentCameraButton]}
-                onPress={handleResidentAvatarPick}
-                disabled={isUploadingAvatar}
-                accessibilityRole="button"
-                accessibilityLabel="Change profile photo"
-              >
-                {isUploadingAvatar ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <Ionicons name="camera" size={15} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
-            ) : null}
+            <View style={[styles.avatarFallback, styles.residentAvatarFallback]} accessibilityLabel={`${displayName}'s initials`}>
+              <Typography variant="h2" weight="bold" color={residentColors.ink}>{initials}</Typography>
+            </View>
           </View>
 
           <View style={styles.identityCopy}>
