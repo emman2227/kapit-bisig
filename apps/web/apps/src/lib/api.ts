@@ -1184,6 +1184,35 @@ export const api = {
     });
     return handleResponse(response);
   },
+
+  /**
+   * Real-time biometric face detection, multiple face detection, and anti-spoofing check
+   */
+  async detectFace(
+    image: string,
+    sessionKey?: string
+  ): Promise<{
+    has_face: boolean;
+    face_count: number;
+    is_centered?: boolean;
+    face_size_ok?: boolean;
+    is_real_image?: boolean;
+    image_quality?: string;
+    is_valid: boolean;
+    message?: string;
+    validation_details?: Record<string, any>;
+  }> {
+    const response = await fetchWithCsrfRetry(`${API_URL}/face/detect`, {
+      method: 'POST',
+      headers: createHeaders('POST'),
+      credentials: 'include',
+      body: JSON.stringify({
+        image,
+        session_key: sessionKey || 'web-assisted-registration',
+      }),
+    });
+    return handleResponse<any>(response);
+  },
 };
 
 export default api;

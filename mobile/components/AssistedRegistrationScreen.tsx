@@ -33,6 +33,12 @@ const API_URL = resolveApiBaseUrl(
   'AssistedRegistrationScreen API'
 );
 
+const FACE_API_URL = resolveApiBaseUrl(
+  process.env.EXPO_PUBLIC_FACE_API_URL,
+  'https://kapit-bisig.onrender.com',
+  'AssistedRegistrationScreen Face API'
+);
+
 const BARANGAYS = [
   'Bolo',
   'Bongalon',
@@ -642,6 +648,69 @@ export default function AssistedRegistrationScreen({
         throw new Error('Failed to capture face photo from camera.');
       }
 
+      setFaceInstructions('Analyzing face quality & liveness...');
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 12000);
+
+      let detectResponse: Response | null = null;
+      try {
+        const detectUrl = FACE_API_URL 
+          ? `${FACE_API_URL}/api/face/detect`
+          : `${API_URL}/face/detect`;
+
+        detectResponse = await fetch(detectUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image: photo.base64,
+            session_key: householdToken || mobileNumber || 'assisted-registration',
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+      } catch (fetchErr: any) {
+        clearTimeout(timeout);
+        // Fallback to API_URL/face/detect if FACE_API_URL failed
+        if (FACE_API_URL) {
+          try {
+            const fallbackController = new AbortController();
+            const fallbackTimeout = setTimeout(() => fallbackController.abort(), 10000);
+            detectResponse = await fetch(`${API_URL}/face/detect`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                image: photo.base64,
+                session_key: householdToken || mobileNumber || 'assisted-registration',
+              }),
+              signal: fallbackController.signal,
+            });
+            clearTimeout(fallbackTimeout);
+          } catch {
+            // timeout
+          }
+        }
+      }
+
+      if (!detectResponse || !detectResponse.ok) {
+        let errMsg = 'Face analysis service timed out. Please try again.';
+        if (detectResponse) {
+          const errData = await detectResponse.json().catch(() => ({}));
+          errMsg = errData.detail || errData.message || `Face analysis failed (${detectResponse.status})`;
+        }
+        throw new Error(errMsg);
+      }
+
+      const result = await detectResponse.json();
+
+      if (!result.has_face || !result.is_valid) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        setScanStatus('failed');
+        setFaceInstructions(result.message || 'Face validation failed. Please ensure face is centered and clearly visible.');
+        return;
+      }
+
+      // Valid face!
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       setFaceImage(`data:image/jpeg;base64,${photo.base64}`);
       setScanStatus('success');
@@ -649,7 +718,7 @@ export default function AssistedRegistrationScreen({
       setTimeout(() => {
         setShowFaceScanner(false);
         setScanStatus('idle');
-      }, 700);
+      }, 900);
     } catch (err: any) {
       console.warn('[AssistedRegistration] Face capture error:', err);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});

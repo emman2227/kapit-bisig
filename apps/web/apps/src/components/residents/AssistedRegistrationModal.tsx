@@ -120,6 +120,8 @@ export default function AssistedRegistrationModal({
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState('');
+  const [validatingFace, setValidatingFace] = useState(false);
+  const [faceValidationError, setFaceValidationError] = useState<string | null>(null);
   const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -291,9 +293,39 @@ export default function AssistedRegistrationModal({
     }
   };
 
+  // Real-time Biometric Face Validation
+  const validateFacePhoto = async (base64: string): Promise<boolean> => {
+    setValidatingFace(true);
+    setFaceValidationError(null);
+    try {
+      const res = await api.detectFace(
+        base64,
+        householdToken || mobileNumber || 'assisted-registration'
+      );
+      if (!res.has_face || !res.is_valid) {
+        setFaceValidationError(
+          res.message || 'Face validation failed. Please ensure the resident face is centered, clearly visible, and not covered.'
+        );
+        setValidatingFace(false);
+        return false;
+      }
+      setFaceValidationError(null);
+      setValidatingFace(false);
+      return true;
+    } catch (err: any) {
+      console.warn('[AssistedRegistration] Face validation error:', err);
+      setFaceValidationError(
+        err.message || 'Face analysis failed. Please ensure the image is clear and try again.'
+      );
+      setValidatingFace(false);
+      return false;
+    }
+  };
+
   // Webcam Controls
   const startCamera = async () => {
     setCameraError('');
+    setFaceValidationError(null);
     setCameraLoading(true);
     setVideoReady(false);
     try {
@@ -345,8 +377,8 @@ export default function AssistedRegistrationModal({
     }
   }, [cameraActive]);
 
-  const capturePhoto = () => {
-    if (!videoRef.current) return;
+  const capturePhoto = async () => {
+    if (!videoRef.current || validatingFace) return;
     const video = videoRef.current;
     const canvas = document.createElement('canvas');
     const size = Math.min(video.videoWidth || 640, video.videoHeight || 640);
@@ -363,9 +395,46 @@ export default function AssistedRegistrationModal({
     ctx.drawImage(video, sx, sy, size, size, 0, 0, size, size);
 
     const base64 = canvas.toDataURL('image/jpeg', 0.88);
+
+    // Validate face real-time via OpenCV + MiniFASNet anti-spoofing
+    const isValid = await validateFacePhoto(base64);
+    if (!isValid) {
+      // Keep webcam active so staff can immediately adjust lighting/angle and retake!
+      return;
+    }
+
     setFaceImage(base64);
     setVideoReady(false);
     stopCamera();
+  };
+
+  const handleFaceFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      setErrorMsg('Please select a valid image file (JPG, PNG, WebP).');
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setErrorMsg('Image size must be less than 5MB.');
+      return;
+    }
+
+    setErrorMsg('');
+    const reader = new FileReader();
+    reader.onload = async () => {
+      if (typeof reader.result === 'string') {
+        const base64 = reader.result;
+        const isValid = await validateFacePhoto(base64);
+        if (isValid) {
+          setFaceImage(base64);
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   // Stop camera when navigating away from Step 4
@@ -1254,7 +1323,7 @@ export default function AssistedRegistrationModal({
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 rounded-2xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
                   <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-600 mt-0.5" />
                   <span>
-                    <strong>Face capture is mandatory.</strong> This photo creates the resident&apos;s biometric profile for duplicate prevention and secure QR verification at relief relief sites.
+                    <strong>Face capture is mandatory.</strong> This photo creates the resident&apos;s biometric profile for duplicate prevention and secure QR verification at relief sites.
                   </span>
                 </div>
 
@@ -1264,6 +1333,7 @@ export default function AssistedRegistrationModal({
                     type="button"
                     onClick={() => {
                       setCameraMode('webcam');
+                      setFaceValidationError(null);
                       if (!faceImage && !cameraActive) startCamera();
                     }}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-xl transition-all ${
@@ -1279,6 +1349,7 @@ export default function AssistedRegistrationModal({
                     type="button"
                     onClick={() => {
                       setCameraMode('upload');
+                      setFaceValidationError(null);
                       stopCamera();
                     }}
                     className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-bold rounded-xl transition-all ${
@@ -1296,6 +1367,16 @@ export default function AssistedRegistrationModal({
                   <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2">
                     <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
                     <span>{cameraError}</span>
+                  </div>
+                )}
+
+                {faceValidationError && (
+                  <div className="p-3.5 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2.5 animate-fadeIn">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                    <div className="flex-1">
+                      <span className="font-bold block text-rose-800 dark:text-rose-200">Face Check Issue</span>
+                      <span className="text-[11px] leading-relaxed">{faceValidationError}</span>
+                    </div>
                   </div>
                 )}
 
@@ -1319,6 +1400,7 @@ export default function AssistedRegistrationModal({
                             type="button"
                             onClick={() => {
                               setFaceImage('');
+                              setFaceValidationError(null);
                               startCamera();
                             }}
                             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 transition-colors shadow-xs"
@@ -1332,7 +1414,7 @@ export default function AssistedRegistrationModal({
                               type="file"
                               accept="image/*"
                               className="hidden"
-                              onChange={(e) => handleFileUpload(e, setFaceImage)}
+                              onChange={handleFaceFileUpload}
                             />
                           </label>
                         )}
@@ -1342,7 +1424,9 @@ export default function AssistedRegistrationModal({
                     <div className="flex flex-col items-center space-y-4">
                       {cameraActive ? (
                         <>
-                          <div className="relative w-56 h-56 rounded-full overflow-hidden border-4 border-[#0F533A] shadow-xl bg-slate-900 flex items-center justify-center">
+                          <div className={`relative w-56 h-56 rounded-full overflow-hidden border-4 shadow-xl bg-slate-900 flex items-center justify-center transition-all ${
+                            faceValidationError ? 'border-rose-500 ring-4 ring-rose-500/20' : 'border-[#0F533A]'
+                          }`}>
                             <video
                               ref={videoRef}
                               autoPlay
@@ -1354,7 +1438,7 @@ export default function AssistedRegistrationModal({
                                 videoReady ? 'opacity-100' : 'opacity-0'
                               }`}
                             />
-                            {!videoReady && (
+                            {!videoReady && !validatingFace && (
                               <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 text-slate-300 p-4 text-center">
                                 <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
                                 <span className="text-[11px] font-bold tracking-wide uppercase text-slate-200">
@@ -1365,25 +1449,51 @@ export default function AssistedRegistrationModal({
                                 </span>
                               </div>
                             )}
+                            {validatingFace && (
+                              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/65 backdrop-blur-xs text-white p-4 text-center z-10 animate-fadeIn">
+                                <Loader2 className="w-8 h-8 animate-spin text-emerald-400 mb-2" />
+                                <span className="text-xs font-bold tracking-wide uppercase">
+                                  Analyzing Face...
+                                </span>
+                                <span className="text-[10px] text-slate-300 mt-0.5">
+                                  Checking centering, quality & liveness
+                                </span>
+                              </div>
+                            )}
                             {/* Face Alignment Ring Overlay */}
-                            <div className="pointer-events-none absolute inset-4 rounded-full border-2 border-dashed border-white/60 animate-pulse" />
+                            <div className={`pointer-events-none absolute inset-4 rounded-full border-2 border-dashed ${
+                              faceValidationError ? 'border-rose-400 animate-pulse' : 'border-white/60 animate-pulse'
+                            }`} />
                           </div>
-                          <p className="text-[11px] text-gray-500 dark:text-slate-400 font-medium">
-                            Position the resident&apos;s face inside the circle
+                          <p className={`text-[11px] font-medium transition-colors ${
+                            faceValidationError ? 'text-rose-600 dark:text-rose-400 font-semibold' : 'text-gray-500 dark:text-slate-400'
+                          }`}>
+                            {faceValidationError ? 'Face issue detected. Please adjust position and retake.' : "Position the resident's face inside the circle"}
                           </p>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
                               onClick={capturePhoto}
-                              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F533A] hover:bg-[#0c4430] text-white text-xs font-bold shadow-md shadow-emerald-900/20 transition-all cursor-pointer"
+                              disabled={validatingFace || !videoReady}
+                              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#0F533A] hover:bg-[#0c4430] text-white text-xs font-bold shadow-md shadow-emerald-900/20 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <Camera className="w-4 h-4" />
-                              <span>Capture Photo</span>
+                              {validatingFace ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                  <span>Validating Face...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Camera className="w-4 h-4" />
+                                  <span>Capture Photo</span>
+                                </>
+                              )}
                             </button>
                             <button
                               type="button"
                               onClick={stopCamera}
-                              className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:bg-gray-50 transition-colors"
+                              disabled={validatingFace}
+                              className="px-3 py-2.5 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs font-semibold text-gray-600 dark:text-slate-300 hover:bg-gray-50 transition-colors disabled:opacity-50"
                             >
                               Cancel Camera
                             </button>
@@ -1418,6 +1528,16 @@ export default function AssistedRegistrationModal({
                         </div>
                       )}
                     </div>
+                  ) : validatingFace ? (
+                    <div className="flex flex-col items-center space-y-3 py-8">
+                      <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
+                      <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                        Validating Face Photo...
+                      </span>
+                      <span className="text-[11px] text-slate-400">
+                        Checking centering, lighting, multiple faces & anti-spoofing
+                      </span>
+                    </div>
                   ) : (
                     <label className="flex flex-col items-center cursor-pointer space-y-3 py-4">
                       <div className="w-20 h-20 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center text-[#0F533A] dark:text-emerald-400">
@@ -1436,7 +1556,7 @@ export default function AssistedRegistrationModal({
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={(e) => handleFileUpload(e, setFaceImage)}
+                        onChange={handleFaceFileUpload}
                       />
                     </label>
                   )}

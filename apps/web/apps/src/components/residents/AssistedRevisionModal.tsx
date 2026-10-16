@@ -13,6 +13,7 @@ import {
   ShieldAlert,
   CheckCircle2,
   Video,
+  Loader2,
 } from 'lucide-react'
 import api, { ResidentRecord } from '@/lib/api'
 import SelectDropdown from '@/components/ui/SelectDropdown'
@@ -58,6 +59,8 @@ export default function AssistedRevisionModal({
   const [activeCameraTarget, setActiveCameraTarget] = useState<'face' | 'frontId' | 'backId' | null>(null)
   const [cameraLoading, setCameraLoading] = useState(false)
   const [cameraError, setCameraError] = useState('')
+  const [validatingFace, setValidatingFace] = useState(false)
+  const [faceValidationError, setFaceValidationError] = useState<string | null>(null)
   const [videoReady, setVideoReady] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -80,6 +83,8 @@ export default function AssistedRevisionModal({
       setFrontIdImage('')
       setBackIdImage('')
       setErrorMsg('')
+      setFaceValidationError(null)
+      setValidatingFace(false)
     }
   }, [resident])
 
@@ -102,12 +107,42 @@ export default function AssistedRevisionModal({
     onClose()
   }
 
+  // Real-time Biometric Face Validation
+  const validateFacePhoto = async (base64: string): Promise<boolean> => {
+    setValidatingFace(true)
+    setFaceValidationError(null)
+    try {
+      const res = await api.detectFace(
+        base64,
+        resident?.householdToken || resident?.mobileNumber || 'assisted-revision'
+      )
+      if (!res.has_face || !res.is_valid) {
+        setFaceValidationError(
+          res.message || 'Face validation failed. Please ensure face is centered, clearly visible, and not covered.'
+        )
+        setValidatingFace(false)
+        return false
+      }
+      setFaceValidationError(null)
+      setValidatingFace(false)
+      return true
+    } catch (err: any) {
+      console.warn('[AssistedRevision] Face validation error:', err)
+      setFaceValidationError(
+        err.message || 'Face analysis failed. Please ensure the image is clear and try again.'
+      )
+      setValidatingFace(false)
+      return false
+    }
+  }
+
   // Start webcam for a specific target
   const startCameraFor = async (target: 'face' | 'frontId' | 'backId') => {
     stopCamera()
     setActiveCameraTarget(target)
     setCameraLoading(true)
     setCameraError('')
+    setFaceValidationError(null)
     setVideoReady(false)
 
     try {
@@ -138,8 +173,8 @@ export default function AssistedRevisionModal({
   }
 
   // Capture frame from webcam
-  const capturePhoto = () => {
-    if (!videoRef.current || !activeCameraTarget) return
+  const capturePhoto = async () => {
+    if (!videoRef.current || !activeCameraTarget || validatingFace) return
     try {
       const video = videoRef.current
       const canvas = document.createElement('canvas')
@@ -151,9 +186,18 @@ export default function AssistedRevisionModal({
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
       const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
 
-      if (activeCameraTarget === 'face') setFaceImage(dataUrl)
-      else if (activeCameraTarget === 'frontId') setFrontIdImage(dataUrl)
-      else if (activeCameraTarget === 'backId') setBackIdImage(dataUrl)
+      if (activeCameraTarget === 'face') {
+        const isValid = await validateFacePhoto(dataUrl)
+        if (!isValid) {
+          // Keep camera active so staff can immediately adjust lighting/angle and retake!
+          return
+        }
+        setFaceImage(dataUrl)
+      } else if (activeCameraTarget === 'frontId') {
+        setFrontIdImage(dataUrl)
+      } else if (activeCameraTarget === 'backId') {
+        setBackIdImage(dataUrl)
+      }
 
       stopCamera()
     } catch (err: any) {
@@ -181,14 +225,24 @@ export default function AssistedRevisionModal({
     }
 
     const reader = new FileReader()
-    reader.onload = (event) => {
+    reader.onload = async (event) => {
       const result = event.target?.result as string
-      if (target === 'face') setFaceImage(result)
-      else if (target === 'frontId') setFrontIdImage(result)
-      else if (target === 'backId') setBackIdImage(result)
-      setErrorMsg('')
+      if (target === 'face') {
+        const isValid = await validateFacePhoto(result)
+        if (isValid) {
+          setFaceImage(result)
+          setErrorMsg('')
+        }
+      } else if (target === 'frontId') {
+        setFrontIdImage(result)
+        setErrorMsg('')
+      } else if (target === 'backId') {
+        setBackIdImage(result)
+        setErrorMsg('')
+      }
     }
     reader.readAsDataURL(file)
+    e.target.value = ''
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -326,16 +380,29 @@ export default function AssistedRevisionModal({
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400"
+                  disabled={validatingFace}
+                  className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 disabled:opacity-50"
                 >
                   Cancel Camera
                 </button>
               </div>
 
+              {activeCameraTarget === 'face' && faceValidationError && (
+                <div className="mb-3 p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl text-xs text-rose-700 dark:text-rose-300 flex items-start gap-2 animate-fadeIn">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 mt-0.5" />
+                  <div className="flex-1">
+                    <span className="font-bold block text-rose-800 dark:text-rose-200">Face Check Issue</span>
+                    <span className="text-[11px] leading-relaxed">{faceValidationError}</span>
+                  </div>
+                </div>
+              )}
+
               {cameraError ? (
                 <div className="p-4 text-center text-sm font-medium text-rose-600">{cameraError}</div>
               ) : (
-                <div className="relative mx-auto aspect-video max-w-md overflow-hidden rounded-xl bg-black">
+                <div className={`relative mx-auto aspect-video max-w-md overflow-hidden rounded-xl bg-black border-2 transition-colors ${
+                  activeCameraTarget === 'face' && faceValidationError ? 'border-rose-500' : 'border-transparent'
+                }`}>
                   <video
                     ref={videoRef}
                     autoPlay
@@ -348,6 +415,17 @@ export default function AssistedRevisionModal({
                       Initializing camera...
                     </div>
                   )}
+                  {validatingFace && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/65 backdrop-blur-xs text-white p-4 text-center z-10 animate-fadeIn">
+                      <Loader2 className="w-8 h-8 animate-spin text-indigo-400 mb-2" />
+                      <span className="text-xs font-bold uppercase tracking-wider">
+                        Analyzing Face...
+                      </span>
+                      <span className="text-[10px] text-slate-300 mt-0.5">
+                        Checking centering, quality & anti-spoofing
+                      </span>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -355,16 +433,26 @@ export default function AssistedRevisionModal({
                 <button
                   type="button"
                   onClick={capturePhoto}
-                  disabled={!videoReady}
-                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-700 disabled:opacity-50"
+                  disabled={!videoReady || validatingFace}
+                  className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2 text-sm font-bold text-white shadow-md transition-all hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <Camera className="h-4 w-4" />
-                  <span>Snap Photo</span>
+                  {validatingFace ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>Validating Face...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="h-4 w-4" />
+                      <span>Snap Photo</span>
+                    </>
+                  )}
                 </button>
                 <button
                   type="button"
                   onClick={stopCamera}
-                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                  disabled={validatingFace}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -396,7 +484,14 @@ export default function AssistedRevisionModal({
                 </div>
 
                 <div className="aspect-square w-full rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-800 flex items-center justify-center relative">
-                  {faceImage ? (
+                  {validatingFace && !activeCameraTarget ? (
+                    <div className="flex flex-col items-center justify-center p-3 text-center">
+                      <Loader2 className="h-7 w-7 animate-spin text-indigo-600 mb-1" />
+                      <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                        Validating Photo...
+                      </span>
+                    </div>
+                  ) : faceImage ? (
                     <img src={faceImage} alt="New Face" className="h-full w-full object-cover" />
                   ) : resident.faceImage ? (
                     <img src={resident.faceImage} alt="Current Face" className="h-full w-full object-cover opacity-80" />
@@ -405,11 +500,19 @@ export default function AssistedRevisionModal({
                   )}
                 </div>
 
+                {faceValidationError && !activeCameraTarget && (
+                  <div className="mt-2 p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-lg text-[11px] text-rose-700 dark:text-rose-300 flex items-start gap-1.5 animate-fadeIn">
+                    <AlertCircle className="h-3.5 w-3.5 shrink-0 text-rose-600 mt-0.5" />
+                    <span>{faceValidationError}</span>
+                  </div>
+                )}
+
                 <div className="mt-3 flex gap-2">
                   <button
                     type="button"
                     onClick={() => startCameraFor('face')}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    disabled={validatingFace}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 disabled:opacity-50"
                   >
                     <Camera className="h-3.5 w-3.5" />
                     Camera
