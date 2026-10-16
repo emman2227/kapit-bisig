@@ -288,21 +288,23 @@ export async function registerAssistedResident(
     await resident.save();
 
     // Enroll face embedding post-save with definitive identifiers
-    enrollResidentFaceEmbedding({
-      image: data.faceImage,
-      residentId: resident._id.toString(),
-      residentCode: resident.residentCode,
-      householdToken: data.householdToken.trim(),
-      firstName: resident.firstName,
-      lastName: resident.lastName,
-      mobileNumber: resident.mobileNumber,
-      barangay: resident.barangay,
-      dateOfBirth: resident.dateOfBirth,
-      gender: resident.gender,
-      streetAddress: resident.streetAddress,
-    }).catch((err) => {
+    try {
+      await enrollResidentFaceEmbedding({
+        image: data.faceImage,
+        residentId: resident._id.toString(),
+        residentCode: resident.residentCode,
+        householdToken: data.householdToken.trim(),
+        firstName: resident.firstName,
+        lastName: resident.lastName,
+        mobileNumber: resident.mobileNumber,
+        barangay: resident.barangay,
+        dateOfBirth: resident.dateOfBirth,
+        gender: resident.gender,
+        streetAddress: resident.streetAddress,
+      });
+    } catch (err: any) {
       console.warn('[AssistedRegistration] Face enrollment warning:', err?.message || err);
-    });
+    }
 
     // 7. Complete token registration
     await householdTokenService.completeRegistration(

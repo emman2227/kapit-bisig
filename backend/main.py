@@ -1579,30 +1579,14 @@ async def check_duplicate_face(request: DuplicateCheckRequest, http_request: Req
             if not stored_embedding or len(stored_embedding) != len(embedding):
                 continue
 
-            # Composite Self-Exclusion: Check if applicant is retrying registration or revising
-            stored_mobile = str(resident.get("mobile_number", "")).strip()
-            stored_token = str(resident.get("household_token", "")).strip()
-            stored_res_id = str(resident.get("resident_id", "")).strip()
-            stored_fname = str(resident.get("first_name", "")).strip().lower()
-            stored_lname = str(resident.get("last_name", "")).strip().lower()
-            stored_dob = str(resident.get("date_of_birth", "")).strip()
-            stored_brgy = str(resident.get("barangay", "")).strip().lower()
-
+            # Self-Exclusion: Only applies during active revision of an existing record (where resident_id is explicitly passed)
+            stored_res_id = str(resident.get("resident_id") or resident.get("_id") or "").strip()
             is_self = False
             if applicant_resident_id and stored_res_id and applicant_resident_id == stored_res_id:
                 is_self = True
-            elif applicant_mobile and stored_mobile and applicant_mobile == stored_mobile:
-                is_self = True
-            elif applicant_token and stored_token and applicant_token == stored_token:
-                is_self = True
-            elif (applicant_first_name and stored_fname and applicant_first_name == stored_fname and
-                  applicant_last_name and stored_lname and applicant_last_name == stored_lname and
-                  applicant_dob and stored_dob and applicant_dob == stored_dob and
-                  applicant_barangay and stored_brgy and applicant_barangay == stored_brgy):
-                is_self = True
 
             if is_self:
-                print(f"  Skipping self-match for applicant: {stored_res_id or applicant_mobile or applicant_token or applicant_last_name}")
+                print(f"  Skipping self-match for resident revision: {stored_res_id}")
                 continue
 
             valid_records.append(resident)
