@@ -9,7 +9,7 @@
 import mongoose from 'mongoose';
 
 // Configuration
-const DUPLICATE_THRESHOLD = 0.6;
+const DUPLICATE_THRESHOLD = 0.55;
 
 function shouldLogDebug(): boolean {
   return process.env.NODE_ENV !== 'production' || process.env.ALLOW_SECURITY_CONSOLE_LOGS === 'true';
