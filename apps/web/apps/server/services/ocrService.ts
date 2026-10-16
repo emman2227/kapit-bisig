@@ -151,7 +151,7 @@ async function tryPythonDeepLearningOCR(
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(`${PYTHON_AI_URL}/api/id/verify-document`, {
       method: 'POST',
@@ -226,7 +226,7 @@ export async function verifyIDDocumentDetailed(
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000);
+    const timeout = setTimeout(() => controller.abort(), 15000);
 
     const response = await fetch(`${PYTHON_AI_URL}/api/id/verify-document`, {
       method: 'POST',
@@ -266,10 +266,29 @@ export async function performOCRFromBase64Image(
 ): Promise<OCRServiceResult> {
   const payload = stripDataUrlPrefix(String(image || '').trim());
 
-  // 1. Try RapidOCR (PP-OCRv4) deep-learning service from Python backend
+  // 1. Try RapidOCR (PP-OCRv4) deep-learning service from Python backend.
+  // If Python responded, its inspection is authoritative (even if text is empty, e.g. for non-IDs).
   const pythonResult = await tryPythonDeepLearningOCR(payload, idType);
-  if (pythonResult && pythonResult.text.length > 0) {
+  if (pythonResult !== null) {
     return pythonResult;
+  }
+
+  // 2. Fallback to local Tesseract worker with crash guard
+  // Do NOT spawn Tesseract on memory-constrained production environments (e.g. Render Free 512MB RAM)
+  // because loading WebAssembly will exceed container memory and cause SIGKILL.
+  const isProductionOrLowMemory =
+    process.env.NODE_ENV === 'production' ||
+    process.env.DISABLE_TESSERACT_FALLBACK === 'true';
+
+  if (isProductionOrLowMemory) {
+    console.warn('[ocrService] Python OCR unreachable. Skipping Tesseract on memory-constrained environment.');
+    return {
+      text: '',
+      confidence: 0,
+      blocks: [],
+      languageUsed: 'none',
+      isLegitimateId: false,
+    };
   }
 
   // 2. Fallback to local Tesseract worker with crash guard

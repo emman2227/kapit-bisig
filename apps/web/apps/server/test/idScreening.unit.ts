@@ -246,6 +246,48 @@ function run(): void {
     "Pure text words should not pass as Voter's ID numbers",
   );
   console.log('  ✓ Voter ID regex tightening test passed');
+
+  // ==================================================
+  // NEW: Non-ID / Unrecognized Document Fast Block
+  // ==================================================
+  const nonIdResult = analyzeIdScreeningFromOcr({
+    enteredIdType: 'PhilSys ID',
+    enteredIdNumber: '1234-5678-9012',
+    frontText: 'alt space enter shift control',
+    backText: '',
+    frontOcrConfidence: 0.1,
+    backOcrConfidence: 0.0,
+    frontWidth: 900,
+    frontHeight: 600,
+    backWidth: 900,
+    backHeight: 600,
+    isLegitimateGovernmentId: false,
+    detectedKeywords: [],
+  });
+  assert.strictEqual(nonIdResult.decision, 'BLOCK', 'Non-ID photo should immediately BLOCK');
+  assert.ok(nonIdResult.reviewFlags.includes('UNRECOGNIZED_DOCUMENT'), 'Should set UNRECOGNIZED_DOCUMENT flag');
+  assert.ok(nonIdResult.reasons[0].includes('Unrecognized Document'), 'Reason should explain unrecognized document');
+  console.log('  ✓ Non-ID fast BLOCK test passed');
+
+  // Test: Screen photo with SMS messages / chat text
+  const smsScreenResult = analyzeIdScreeningFromOcr({
+    enteredIdType: 'PhilSys ID',
+    enteredIdNumber: '1234-5678-9012',
+    frontText: 'alt space enter shift control',
+    backText: '[KapitBisig] Your registration verification code is: 208880. This code expires in 5 minutes. Do not share this code with anyone.',
+    frontOcrConfidence: 0.1,
+    backOcrConfidence: 0.85,
+    frontWidth: 900,
+    frontHeight: 600,
+    backWidth: 900,
+    backHeight: 600,
+    isLegitimateGovernmentId: false,
+    detectedKeywords: [],
+  });
+  assert.strictEqual(smsScreenResult.decision, 'BLOCK', 'SMS screen photo should immediately BLOCK');
+  assert.ok(smsScreenResult.reviewFlags.includes('UNRECOGNIZED_DOCUMENT'), 'Should set UNRECOGNIZED_DOCUMENT flag');
+  assert.ok(smsScreenResult.reasons[0].includes('Unrecognized Document'), 'Reason should explain unrecognized document');
+  console.log('  ✓ Screen with SMS texts fast BLOCK test passed');
 }
 
 run();

@@ -357,14 +357,21 @@ function scoreIdType(text: string, idType: SupportedIdType): number {
   const upperText = String(text || '').toUpperCase();
   if (!upperText) return 0;
 
+  const correctedText = applyOcrCharCorrections(upperText);
+
   // Use fuzzy keyword matching to tolerate OCR misreadings
   // (e.g., "PHIUPPINE" → "PHILIPPINE", "LI0ENSE" → "LICENSE")
   const keywordHits = rule.keywords.filter((keyword) =>
-    fuzzyKeywordMatch(upperText, keyword),
+    fuzzyKeywordMatch(upperText, keyword) || fuzzyKeywordMatch(correctedText, keyword),
   ).length;
+  if (keywordHits === 0) {
+    return 0;
+  }
   const keywordScore = keywordHits / rule.keywords.length;
 
-  const patternMatches = Array.from(upperText.matchAll(rule.numberPattern))
+  const rawMatches = Array.from(upperText.matchAll(rule.numberPattern));
+  const correctedMatches = Array.from(correctedText.matchAll(rule.numberPattern));
+  const patternMatches = [...rawMatches, ...correctedMatches]
     .map((match) => normalizeIdNumber(canonicalType, match[0]))
     .filter((candidate) => validateIdNumberFormat(canonicalType, candidate));
   const patternScore = patternMatches.length > 0 ? 1 : 0;
@@ -466,6 +473,7 @@ function buildReasonsAndWarnings(params: {
   qualityScore: number;
   ocrEngine?: string;
   isLegitimateGovernmentId?: boolean;
+  detectedKeywords?: string[];
   verificationReasons?: string[];
 }): Pick<IdScreeningResult, 'decision' | 'reasons' | 'warnings' | 'reviewFlags'> {
   const {
@@ -478,6 +486,7 @@ function buildReasonsAndWarnings(params: {
     qualityScore,
     ocrEngine,
     isLegitimateGovernmentId,
+    detectedKeywords,
     verificationReasons,
   } = params;
 
@@ -495,6 +504,27 @@ function buildReasonsAndWarnings(params: {
       'The document type could not be confirmed with high confidence.';
     reasons.push(note);
     warnings.push(note);
+  }
+
+  // Fast block for non-ID / unrecognized document uploads (e.g. keyboard, table, room photo)
+  // When AI legitimacy failed, no government keywords were detected, and no ID type could be identified from text:
+  const isUnrecognizedDocument =
+    isLegitimateGovernmentId === false &&
+    (!detectedKeywords || detectedKeywords.length === 0) &&
+    !detectedIdType;
+
+  if (isUnrecognizedDocument) {
+    reviewFlags.push('UNRECOGNIZED_DOCUMENT');
+    const blockReason =
+      'Unrecognized Document: The uploaded image does not appear to be a valid government ID. Please capture a clear photo of your ID card.';
+    reasons.unshift(blockReason);
+    warnings.push(blockReason);
+    return {
+      decision: 'BLOCK',
+      reasons,
+      warnings,
+      reviewFlags,
+    };
   }
 
   const strongTypeMismatch =
@@ -684,6 +714,7 @@ export function analyzeIdScreeningFromOcr(
     qualityScore,
     ocrEngine: input.ocrEngine,
     isLegitimateGovernmentId: input.isLegitimateGovernmentId,
+    detectedKeywords: input.detectedKeywords,
     verificationReasons: input.verificationReasons,
   });
 
