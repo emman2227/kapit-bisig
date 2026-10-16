@@ -39,6 +39,9 @@ async function main() {
     const residentIdStrings = residentIds.map((id) => id.toString());
     const residentCodes = assistedResidents.map((r) => r.residentCode).filter(Boolean) as string[];
     const mobileNumbers = assistedResidents.map((r) => r.mobileNumber).filter(Boolean) as string[];
+    const residentNames = assistedResidents.map((r) => r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim()).filter(Boolean);
+    const firstNames = assistedResidents.map((r) => r.firstName).filter(Boolean);
+    const lastNames = assistedResidents.map((r) => r.lastName).filter(Boolean);
 
     // 2. Remove matching face embeddings from MongoDB
     const faceQueries: any[] = [
@@ -46,6 +49,10 @@ async function main() {
     ];
     if (mobileNumbers.length > 0) {
       faceQueries.push({ mobile_number: { $in: mobileNumbers } });
+    }
+    if (residentNames.length > 0) {
+      faceQueries.push({ name: { $in: residentNames } });
+      faceQueries.push({ $and: [{ first_name: { $in: firstNames } }, { last_name: { $in: lastNames } }] });
     }
 
     const deletedEmbeddings = await db.collection('face_embeddings').deleteMany({
