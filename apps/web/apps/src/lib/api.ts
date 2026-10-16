@@ -285,6 +285,7 @@ export interface ResidentRecord {
   status: 'Pending' | 'Approved' | 'Needs Revision' | 'Rejected';
   rejectionReason?: string;
   verifiedBy?: string;
+  verifiedByName?: string;
   verifiedAt?: string;
   createdAt?: string;
   registrationMethod?: 'self' | 'assisted';

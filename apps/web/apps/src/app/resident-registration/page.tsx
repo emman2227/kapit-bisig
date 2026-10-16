@@ -168,6 +168,110 @@ function RevisionNoteModal({
   )
 }
 
+const REJECTION_CATEGORIES = [
+  'Ineligible - Non-Resident / Relocated',
+  'Suspected Fraud / Tampered Documents',
+  'Duplicate Household Allocation',
+  'Deceased Individual',
+  'Other Disqualification',
+]
+
+function RejectReasonModal({
+  isOpen,
+  loading,
+  title,
+  body,
+  category,
+  onCategoryChange,
+  note,
+  onNoteChange,
+  onClose,
+  onSubmit,
+}: {
+  isOpen: boolean
+  loading: boolean
+  title: string
+  body: string
+  category: string
+  onCategoryChange: (value: string) => void
+  note: string
+  onNoteChange: (value: string) => void
+  onClose: () => void
+  onSubmit: () => void
+}) {
+  if (!isOpen || typeof document === 'undefined') return null
+
+  return createPortal(
+    <div className="fixed inset-0 z-[210] flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/55 backdrop-blur-sm" onClick={loading ? undefined : onClose} />
+
+      <div className="relative w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900 dark:shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+        <div className="flex items-center gap-2">
+          <span className="h-2 w-2 rounded-full bg-rose-500" />
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-rose-600 dark:text-rose-400">
+            Permanent Disqualification
+          </p>
+        </div>
+        <h3 className="mt-2 text-xl font-black text-gray-900 dark:text-slate-100">{title}</h3>
+        <p className="mt-2 text-sm text-gray-600 dark:text-slate-400">{body}</p>
+
+        <div className="mt-5 space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Disqualification Category
+            </label>
+            <select
+              value={category}
+              onChange={(e) => onCategoryChange(e.target.value)}
+              className="mt-1.5 w-full rounded-2xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-800 shadow-sm outline-none transition-colors focus:border-rose-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-rose-500"
+            >
+              {REJECTION_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+              Audit Note / Explanation
+            </label>
+            <textarea
+              value={note}
+              onChange={(event) => onNoteChange(event.target.value)}
+              rows={4}
+              placeholder="State the specific legal or operational reason this application cannot be approved."
+              className="mt-1.5 w-full rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 shadow-sm outline-none transition-colors focus:border-rose-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:focus:border-rose-500"
+            />
+          </div>
+        </div>
+
+        <div className="mt-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={loading}
+            className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm font-semibold text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={loading}
+            className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-rose-700 disabled:opacity-50"
+          >
+            {loading ? <SpinnerIcon className="h-4 w-4" /> : null}
+            Confirm Rejection
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 function RegistrationRow({
   record,
   currentUserId,
@@ -194,6 +298,7 @@ function RegistrationRow({
   const id = getResidentId(record)
   const isPending = record.status === 'Pending'
   const isNeedsRevision = record.status === 'Needs Revision'
+  const isRejected = record.status === 'Rejected'
   const isAssisted = record.registrationMethod === 'assisted' || Boolean((record as any).assistedBy)
   const submittedAt = formatSubmittedAt(record.createdAt)
   const proofPackageCount = getProofPackageCount(record)
@@ -213,6 +318,8 @@ function RegistrationRow({
           ? 'border-l-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/10'
           : isNeedsRevision
           ? 'border-l-amber-500 hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
+          : isRejected
+          ? 'border-l-rose-500 hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
           : 'border-l-transparent hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
       }`}
     >
@@ -231,7 +338,8 @@ function RegistrationRow({
       <div className="flex flex-col min-w-0">
         <div className="flex items-center gap-2">
            {isPending && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-label="Pending" title="Pending Status" />}
-           {isNeedsRevision && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-label="Needs Revision" title="Needs Revision Status" />}
+           {isNeedsRevision && <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-label="Needs Revision" title="Needs Revision Status" />}
+           {isRejected && <span className="h-1.5 w-1.5 rounded-full bg-rose-600" aria-label="Rejected" title="Rejected Status" />}
            <button
              type="button"
              onClick={onReview}
@@ -270,6 +378,12 @@ function RegistrationRow({
         {isNeedsRevision && record.rejectionReason && (
           <div className="mt-2 rounded-xl border border-amber-200/90 bg-amber-50/80 p-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
             <span className="font-bold">Return Note: </span>
+            {record.rejectionReason}
+          </div>
+        )}
+        {isRejected && record.rejectionReason && (
+          <div className="mt-2 rounded-xl border border-rose-200/90 bg-rose-50/80 p-2.5 text-xs text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/30 dark:text-rose-200">
+            <span className="font-bold">Rejection Reason: </span>
             {record.rejectionReason}
           </div>
         )}
@@ -345,6 +459,13 @@ function RegistrationRow({
             </span>
           )
         )}
+        {isRejected && (
+          <span
+            className="inline-flex items-center rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs font-bold text-rose-700 dark:border-rose-900/40 dark:bg-rose-950/40 dark:text-rose-300"
+          >
+            Disqualified
+          </span>
+        )}
       </div>
     </article>
   )
@@ -354,7 +475,7 @@ export default function ResidentRegistrationPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
 
-  const [activeTab, setActiveTab] = useState<'Pending' | 'Needs Revision'>('Pending')
+  const [activeTab, setActiveTab] = useState<'Pending' | 'Needs Revision' | 'Rejected'>('Pending')
   const [rows, setRows] = useState<ResidentRecord[]>([])
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -370,6 +491,9 @@ export default function ResidentRegistrationPage() {
   const [approveTargetId, setApproveTargetId] = useState<string | null>(null)
   const [revisionTargetId, setRevisionTargetId] = useState<string | null>(null)
   const [revisionNote, setRevisionNote] = useState('')
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null)
+  const [rejectCategory, setRejectCategory] = useState<string>('Ineligible - Non-Resident / Relocated')
+  const [rejectNote, setRejectNote] = useState('')
   const [showAssistedModal, setShowAssistedModal] = useState(false)
   const [revisionEditResident, setRevisionEditResident] = useState<ResidentRecord | null>(null)
   
@@ -509,6 +633,10 @@ export default function ResidentRegistrationPage() {
       (row) => row.status === 'Needs Revision' && row.registrationMethod !== 'assisted' && !(row as any).assistedBy,
     ).length
 
+    const rejectedCount = filteredRows.filter(
+      (row) => row.status === 'Rejected',
+    ).length
+
     return {
       total: filteredRows.length,
       manualReviewCount,
@@ -517,6 +645,7 @@ export default function ResidentRegistrationPage() {
       proofReadyCount,
       assistedRevisionCount,
       selfRevisionCount,
+      rejectedCount,
     }
   }, [filteredRows])
 
@@ -550,6 +679,18 @@ export default function ResidentRegistrationPage() {
     setRevisionTargetId(residentId)
     setRevisionNote(sourceRecord?.rejectionReason || '')
   }, [reviewResident, reviewResidentId, rows])
+
+  const closeRejectModal = useCallback(() => {
+    setRejectTargetId(null)
+    setRejectCategory('Ineligible - Non-Resident / Relocated')
+    setRejectNote('')
+  }, [])
+
+  const openRejectModal = useCallback((residentId: string) => {
+    setRejectTargetId(residentId)
+    setRejectCategory('Ineligible - Non-Resident / Relocated')
+    setRejectNote('')
+  }, [])
 
   const openReview = useCallback(async (residentId: string) => {
     setReviewResidentId(residentId)
@@ -697,6 +838,74 @@ export default function ResidentRegistrationPage() {
     [closeReview, closeRevisionModal, resolveActionTargetIds, revisionNote, revisionTargetId, reviewResidentId],
   )
 
+  const submitReject = useCallback(
+    async () => {
+      if (!rejectTargetId) return
+      const finalReason = `${rejectCategory}: ${rejectNote.trim()}`
+      if (!rejectNote.trim()) {
+        showToast.error('An explanation note is required for rejection.')
+        return
+      }
+
+      const targetIds = resolveActionTargetIds(rejectTargetId)
+      const isBulk = targetIds.length > 1
+
+      if (isBulk) setBulkBusy(true)
+      setBusyId(rejectTargetId)
+      try {
+        const results = await Promise.allSettled(
+          targetIds.map((id) =>
+            api.updateResidentStatus(id, {
+              status: 'Rejected',
+              rejectionReason: finalReason,
+            }),
+          ),
+        )
+
+        const rejectedIds: string[] = []
+        let failedCount = 0
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') rejectedIds.push(targetIds[index])
+          else failedCount += 1
+        })
+
+        if (rejectedIds.length > 0) {
+          setRows((prev) => prev.filter((r) => !rejectedIds.includes(getResidentId(r))))
+          setSelectedIds((prev) => prev.filter((id) => !rejectedIds.includes(id)))
+          if (reviewResidentId && rejectedIds.includes(reviewResidentId)) {
+            closeReview()
+          }
+          closeRejectModal()
+        }
+
+        if (rejectedIds.length > 0 && failedCount === 0) {
+          showToast.success(
+            isBulk
+              ? `Disqualified ${rejectedIds.length} registration(s).`
+              : 'Registration disqualified and archived.',
+          )
+        } else if (rejectedIds.length > 0 && failedCount > 0) {
+          showToast.error(`Disqualified ${rejectedIds.length}, but ${failedCount} failed.`)
+        } else {
+          showToast.error(
+            isBulk ? 'Failed to disqualify selected registrations.' : 'Failed to disqualify registration.',
+          )
+        }
+      } catch (e) {
+        console.error('Failed to reject registration:', e)
+        showToast.error(
+          isBulk
+            ? 'Failed to disqualify selected registrations.'
+            : 'Failed to disqualify registration.',
+        )
+      } finally {
+        setBusyId(null)
+        if (isBulk) setBulkBusy(false)
+      }
+    },
+    [closeRejectModal, closeReview, rejectCategory, rejectNote, rejectTargetId, resolveActionTargetIds, reviewResidentId],
+  )
+
   const onApprove = useCallback((residentId: string) => {
     openApproveConfirm(residentId)
   }, [openApproveConfirm])
@@ -713,6 +922,11 @@ export default function ResidentRegistrationPage() {
   const revisionTargetIds = useMemo(
     () => (revisionTargetId ? resolveActionTargetIds(revisionTargetId) : []),
     [resolveActionTargetIds, revisionTargetId],
+  )
+
+  const rejectTargetIds = useMemo(
+    () => (rejectTargetId ? resolveActionTargetIds(rejectTargetId) : []),
+    [rejectTargetId, resolveActionTargetIds],
   )
 
   const toggleSelectRow = useCallback((residentId: string, checked: boolean) => {
@@ -750,11 +964,19 @@ export default function ResidentRegistrationPage() {
           <div className="border-b border-slate-200/80 bg-slate-50/90 px-5 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-6">
             <SectionHeader
               eyebrow="Account Authentication"
-              title={activeTab === 'Pending' ? 'Review new registrations' : 'Review returned registrations'}
+              title={
+                activeTab === 'Pending'
+                  ? 'Review new registrations'
+                  : activeTab === 'Needs Revision'
+                  ? 'Review returned registrations'
+                  : 'Archived Disqualified Registrations'
+              }
               subtitle={
                 activeTab === 'Pending'
                   ? 'Screen newly submitted resident applications, proof uploads, and validation flags'
-                  : 'View registrations returned for revision. Update walk-in records or track mobile citizen resubmissions.'
+                  : activeTab === 'Needs Revision'
+                  ? 'View registrations returned for revision. Update walk-in records or track mobile citizen resubmissions.'
+                  : 'Permanently rejected registrations. Records and audit proofs are preserved indefinitely for compliance.'
               }
               rightAccessory={
                 <div className="flex items-center gap-3">
@@ -769,7 +991,9 @@ export default function ResidentRegistrationPage() {
                   <div className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
                     {activeTab === 'Pending'
                       ? `Ready for review: ${queueMetrics.manualReviewCount}`
-                      : `Actionable walk-ins: ${queueMetrics.assistedRevisionCount}`}
+                      : activeTab === 'Needs Revision'
+                      ? `Actionable walk-ins: ${queueMetrics.assistedRevisionCount}`
+                      : `Total Disqualified: ${queueMetrics.rejectedCount}`}
                   </div>
                 </div>
               }
@@ -778,30 +1002,42 @@ export default function ResidentRegistrationPage() {
 
           <div className="p-5 sm:p-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Visible Queue' : 'Needs Revision'} 
+              label={activeTab === 'Pending' ? 'Visible Queue' : activeTab === 'Needs Revision' ? 'Needs Revision' : 'Disqualified Total'} 
               value={queueMetrics.total} 
-              helper={activeTab === 'Pending' ? 'Total records loaded' : 'Total returned records'} 
-              variant="blue"
+              helper={activeTab === 'Pending' ? 'Total records loaded' : activeTab === 'Needs Revision' ? 'Total returned records' : 'Total disqualified records'} 
+              variant={activeTab === 'Rejected' ? 'rose' : 'blue'}
               icon={<UsersIcon className="h-5 w-5" />} 
             />
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Ready for Review' : 'Walk-In Returned'} 
-              value={activeTab === 'Pending' ? queueMetrics.manualReviewCount : queueMetrics.assistedRevisionCount} 
-              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation' : 'Staff can update & resubmit'} 
+              label={activeTab === 'Pending' ? 'Ready for Review' : activeTab === 'Needs Revision' ? 'Walk-In Returned' : 'Walk-In Disqualified'} 
+              value={
+                activeTab === 'Pending'
+                  ? queueMetrics.manualReviewCount
+                  : activeTab === 'Needs Revision'
+                  ? queueMetrics.assistedRevisionCount
+                  : filteredRows.filter((r) => r.registrationMethod === 'assisted' || Boolean((r as any).assistedBy)).length
+              } 
+              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation' : activeTab === 'Needs Revision' ? 'Staff can update & resubmit' : 'Barangay assisted records'} 
               variant="amber"
               icon={<ClipboardCheckIcon className="h-5 w-5" />} 
             />
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Proof Ready' : 'Self-Registered'} 
-              value={activeTab === 'Pending' ? queueMetrics.proofReadyCount : queueMetrics.selfRevisionCount} 
-              helper={activeTab === 'Pending' ? '2+ assets detected' : 'Citizen mobile revision'} 
+              label={activeTab === 'Pending' ? 'Proof Ready' : activeTab === 'Needs Revision' ? 'Self-Registered' : 'Citizen Disqualified'} 
+              value={
+                activeTab === 'Pending'
+                  ? queueMetrics.proofReadyCount
+                  : activeTab === 'Needs Revision'
+                  ? queueMetrics.selfRevisionCount
+                  : filteredRows.filter((r) => r.registrationMethod !== 'assisted' && !Boolean((r as any).assistedBy)).length
+              } 
+              helper={activeTab === 'Pending' ? '2+ assets detected' : activeTab === 'Needs Revision' ? 'Citizen mobile revision' : 'Mobile citizen applications'} 
               variant={activeTab === 'Pending' ? 'emerald' : 'purple'}
               icon={<FileCheckIcon className="h-5 w-5" />} 
             />
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Needs Attention' : 'Proof Attached'} 
+              label={activeTab === 'Pending' ? 'Needs Attention' : activeTab === 'Needs Revision' ? 'Proof Attached' : 'Preserved Proofs'} 
               value={activeTab === 'Pending' ? queueMetrics.blockedCount : queueMetrics.proofReadyCount} 
-              helper={activeTab === 'Pending' ? 'Review AI red flags' : 'Assets on record'} 
+              helper={activeTab === 'Pending' ? 'Review AI red flags' : 'Assets retained on record'} 
               variant={activeTab === 'Pending' ? 'rose' : 'emerald'}
               icon={<AlertCircleIcon className="h-5 w-5" />} 
             />
@@ -834,6 +1070,17 @@ export default function ResidentRegistrationPage() {
               }`}
             >
               <span>Needs Revision</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('Rejected')}
+              className={`flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-bold transition-all ${
+                activeTab === 'Rejected'
+                  ? 'border-rose-600 text-rose-600 dark:border-rose-400 dark:text-rose-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <span>Rejected Archive</span>
             </button>
           </div>
           
@@ -1080,6 +1327,8 @@ export default function ResidentRegistrationPage() {
         onClose={closeReview}
         onApprove={onApprove}
         onReject={onReject}
+        onReturnRevision={openRevisionModal}
+        onHardReject={openRejectModal}
       />
 
       <ConfirmModal
@@ -1117,6 +1366,27 @@ export default function ResidentRegistrationPage() {
         onNoteChange={setRevisionNote}
         onClose={closeRevisionModal}
         onSubmit={submitRevision}
+      />
+
+      <RejectReasonModal
+        isOpen={Boolean(rejectTargetId)}
+        loading={bulkBusy || (rejectTargetId !== null && busyId === rejectTargetId)}
+        title={
+          rejectTargetIds.length > 1
+            ? `Disqualify and Reject ${rejectTargetIds.length} registrations`
+            : 'Disqualify and Reject registration'
+        }
+        body={
+          rejectTargetIds.length > 1
+            ? 'This action marks selected registrations as permanently disqualified. Document images and proof data will be preserved indefinitely for compliance and audit logs.'
+            : 'This action marks this registration as permanently disqualified. Document images and proof data will be preserved indefinitely for compliance and audit logs.'
+        }
+        category={rejectCategory}
+        onCategoryChange={setRejectCategory}
+        note={rejectNote}
+        onNoteChange={setRejectNote}
+        onClose={closeRejectModal}
+        onSubmit={submitReject}
       />
 
       <AssistedRegistrationModal

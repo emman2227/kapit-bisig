@@ -9,6 +9,7 @@ import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
 import Resident from '../models/Resident';
 import HouseholdToken from '../models/HouseholdToken';
+import StaffUser from '../models/StaffUser';
 import { requireAuth, requireSuperadmin, requireStaffOrSuperadmin, scopeBarangayGuard, AuthRequest } from '../middleware/unifiedAuth';
 import { householdTokenService } from '../services/householdTokenService';
 import { validateRequest } from '../validation/validateRequest';
@@ -476,6 +477,25 @@ router.patch(
       resident.rejectionReason = status === 'Approved' ? undefined : rejectionReason?.trim();
       resident.verifiedAt = new Date();
       resident.verifiedBy = req.authUser?.userId || req.authUser?.sub || 'system';
+
+      let reviewerName: string = 'Staff';
+      if (req.authUser?.role === 'SUPERADMIN') {
+        reviewerName = 'Super Admin';
+      } else if (req.authUser?.userId) {
+        try {
+          const staff = await StaffUser.findById(req.authUser.userId).select('firstName lastName fullName').lean();
+          if (staff) {
+            reviewerName = staff.fullName || `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || 'Staff';
+          } else if (req.authUser.sub) {
+            reviewerName = req.authUser.sub;
+          }
+        } catch {
+          reviewerName = req.authUser.sub || 'Staff';
+        }
+      } else if (req.authUser?.sub) {
+        reviewerName = req.authUser.sub;
+      }
+      resident.verifiedByName = reviewerName;
 
       if (status === 'Approved') {
         if (previousStatus !== 'Approved' && resident.qrIssuedAt) {
@@ -1002,7 +1022,35 @@ router.get('/:id', requireAuth, requireStaffOrSuperadmin, validateRequest({ para
         });
       }
     }
-    const record = resident.toObject();
+    const record = resident.toObject() as any;
+
+    // Resolve human-readable staff names for legacy records
+    if (!record.assistedByName && record.assistedBy) {
+      try {
+        const staff = await StaffUser.findById(record.assistedBy).select('firstName lastName fullName').lean();
+        if (staff) {
+          record.assistedByName = staff.fullName || `${staff.firstName || ''} ${staff.lastName || ''}`.trim() || 'Barangay Staff';
+        }
+      } catch {}
+    }
+
+    if (!record.verifiedByName && record.verifiedBy) {
+      const vBy = String(record.verifiedBy);
+      if (vBy.toLowerCase().includes('admin') || vBy === 'superadmin' || vBy === 'system') {
+        record.verifiedByName = 'Super Admin';
+      } else {
+        try {
+          const staff = await StaffUser.findById(vBy).select('firstName lastName fullName').lean();
+          if (staff) {
+            record.verifiedByName = staff.fullName || `${staff.firstName || ''} ${staff.lastName || ''}`.trim();
+          } else {
+            record.verifiedByName = record.verifiedBy;
+          }
+        } catch {
+          record.verifiedByName = record.verifiedBy;
+        }
+      }
+    }
 
     res.json({
       success: true,

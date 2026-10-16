@@ -136,6 +136,7 @@ export interface IResident extends Document {
   status: 'Pending' | 'Approved' | 'Needs Revision' | 'Rejected';
   rejectionReason?: string;
   verifiedBy?: string;
+  verifiedByName?: string | null;
   verifiedAt?: Date;
   
   // Timestamps
@@ -422,6 +423,10 @@ const ResidentSchema: Schema = new Schema(
     },
     verifiedBy: {
       type: String,
+    },
+    verifiedByName: {
+      type: String,
+      default: null,
     },
     verifiedAt: {
       type: Date,

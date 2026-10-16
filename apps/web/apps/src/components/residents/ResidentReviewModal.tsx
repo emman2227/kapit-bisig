@@ -13,6 +13,8 @@ interface ResidentReviewModalProps {
   onClose: () => void
   onApprove?: (residentId: string) => void
   onReject?: (residentId: string) => void
+  onReturnRevision?: (residentId: string) => void
+  onHardReject?: (residentId: string) => void
   readOnly?: boolean
   approvedLabel?: string
   titleEyebrow?: string
@@ -253,6 +255,8 @@ export default function ResidentReviewModal({
   onClose,
   onApprove,
   onReject,
+  onReturnRevision,
+  onHardReject,
   readOnly = false,
   approvedLabel = 'Approved',
   titleEyebrow,
@@ -389,12 +393,12 @@ export default function ResidentReviewModal({
                           label="Registration Mode"
                           value={
                             resident.registrationMethod === 'assisted'
-                              ? `Assisted Walk-In${resident.assistedBy ? ` (Staff: ${resident.assistedBy})` : ''}`
+                              ? `Assisted Walk-In (Staff: ${resident.assistedByName || resident.assistedBy || 'Barangay Staff'})`
                               : 'Self-Registration'
                           }
                         />
                         <DetailItem label="Household Size" value={String(resident.householdSize || 1)} />
-                        <DetailItem label="Reviewed By" value={resident.verifiedBy || 'Pending review'} />
+                        <DetailItem label="Reviewed By" value={resident.verifiedByName || resident.verifiedBy || 'Pending review'} />
                         <DetailItem
                           label="Reviewed At"
                           value={resident.verifiedAt ? formatDate(resident.verifiedAt) : 'Pending review'}
@@ -517,8 +521,18 @@ export default function ResidentReviewModal({
                     <button
                       type="button"
                       disabled={!residentId || busy}
-                      onClick={() => residentId && onReject?.(residentId)}
-                      className="rounded-xl border border-slate-200 bg-slate-100 px-4 py-2.5 text-sm font-bold text-slate-900 transition-colors hover:bg-slate-200 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                      onClick={() => residentId && onHardReject?.(residentId)}
+                      className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-bold text-rose-700 transition-colors hover:bg-rose-100 hover:border-rose-300 disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-900/60"
+                      title="Permanently reject and disqualify registration"
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!residentId || busy}
+                      onClick={() => residentId && (onReturnRevision ? onReturnRevision(residentId) : onReject?.(residentId))}
+                      className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm font-bold text-amber-800 transition-colors hover:bg-amber-100 hover:border-amber-300 disabled:opacity-50 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-900/60"
+                      title="Return application for resident or staff to correct photos or documents"
                     >
                       Return for Revision
                     </button>
