@@ -37,6 +37,7 @@ import {
   IdScreeningResult,
   screenSubmittedId,
 } from './idScreeningService';
+import { enrollResidentFaceEmbedding } from './duplicateFaceService';
 
 export interface RegistrationData {
   // Personal Info (Step 1)
@@ -695,7 +696,26 @@ export class HouseholdRegistrationService {
         // Admin will need to manually mark token as used
       }
       
-      // Step 6: Log successful registration
+      // Step 6: Enroll face embedding post-save with definitive identifiers
+      try {
+        await enrollResidentFaceEmbedding({
+          image: data.faceImage,
+          residentId: resident._id.toString(),
+          residentCode: resident.residentCode,
+          householdToken: data.householdToken?.trim(),
+          firstName: resident.firstName,
+          lastName: resident.lastName,
+          mobileNumber: resident.mobileNumber,
+          barangay: resident.barangay,
+          dateOfBirth: resident.dateOfBirth,
+          gender: resident.gender,
+          streetAddress: resident.streetAddress,
+        });
+      } catch (enrollErr: any) {
+        console.warn('[RegistrationService] Face enrollment warning:', enrollErr?.message || enrollErr);
+      }
+
+      // Step 7: Log successful registration
       await RegistrationAuditLog.log({
         eventType: 'REGISTRATION_COMPLETED',
         severity: 'INFO',

@@ -28,6 +28,7 @@ import { validateBase64Image } from '../validation/imageValidation';
 import { screenSubmittedId } from '../services/idScreeningService';
 import { persistVerificationImage } from '../utils/imageStorage';
 import { buildScreeningValidationIssues, buildVerificationPayload } from '../services/householdRegistrationService';
+import { enrollResidentFaceEmbedding } from '../services/duplicateFaceService';
 import { broadcastScopedNotification, createNotification } from '../utils/createNotification';
 import { validatePasswordStrength } from '../utils/passwordValidator';
 import { sendPasswordResetOtpSms, sendProfileUpdateOtpSms } from '../utils/smsService';
@@ -1343,6 +1344,24 @@ router.patch(
       resident.verifiedBy = undefined;
 
       await resident.save();
+
+      // Re-enroll face embedding post-revision-save
+      try {
+        await enrollResidentFaceEmbedding({
+          image: faceImage,
+          residentId: resident._id.toString(),
+          residentCode: resident.residentCode,
+          firstName: resident.firstName,
+          lastName: resident.lastName,
+          mobileNumber: resident.mobileNumber,
+          barangay: resident.barangay,
+          dateOfBirth: resident.dateOfBirth,
+          gender: resident.gender,
+          streetAddress: resident.streetAddress,
+        });
+      } catch (enrollErr: any) {
+        console.warn('[ResidentAuthRoutes] Face re-enrollment warning:', enrollErr?.message || enrollErr);
+      }
 
       await broadcastScopedNotification({
         title: 'Resident Resubmitted Registration',
