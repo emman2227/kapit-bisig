@@ -27,6 +27,11 @@ import ResidentBrandLockup from './ui/ResidentBrandLockup';
 import { DistributionCardSkeleton, VolunteerDashboardSkeleton } from './ui/Skeleton';
 import DistributionBeneficiariesModal from './DistributionBeneficiariesModal';
 import AssistedRegistrationScreen from './AssistedRegistrationScreen';
+import AssistedRevisionModal from './AssistedRevisionModal';
+import {
+  getReturnedAssistedRegistrations,
+  ReturnedAssistedResident,
+} from '../services/api/AssistedRegistrationService';
 
 const sc = staffTheme.colors;
 
@@ -106,6 +111,8 @@ export default function VolunteerDashboardScreen({
   const [notifications, setNotifications] = useState<VolunteerNotificationItem[]>([]);
   const [selectedDistributionForModal, setSelectedDistributionForModal] = useState<DistributionData | null>(null);
   const [showAssistedRegistration, setShowAssistedRegistration] = useState(false);
+  const [showAssistedRevision, setShowAssistedRevision] = useState(false);
+  const [returnedWalkIns, setReturnedWalkIns] = useState<ReturnedAssistedResident[]>([]);
 
   const staffFirstName = volunteerUser?.firstName?.trim();
   const greetingText = staffFirstName ? `Welcome, ${staffFirstName}` : 'Welcome';
@@ -119,7 +126,7 @@ export default function VolunteerDashboardScreen({
       setLoading(true);
     }
     try {
-      const [distributionResult, summaryResult] = await Promise.all([
+      const [distributionResult, summaryResult, returnedResult] = await Promise.all([
         mobileAuthService.authenticatedRequest<{
           success: boolean;
           data?: Array<{
@@ -135,7 +142,12 @@ export default function VolunteerDashboardScreen({
           }>;
         }>('/distributions', { method: 'GET' }),
         mobileAuthService.getDashboardSummary(),
+        getReturnedAssistedRegistrations(),
       ]);
+
+      if (returnedResult.success && Array.isArray(returnedResult.data)) {
+        setReturnedWalkIns(returnedResult.data);
+      }
 
       if (summaryResult.success && summaryResult.data) {
         const summary: DashboardSummary = summaryResult.data;
@@ -444,6 +456,47 @@ export default function VolunteerDashboardScreen({
               </View>
             </LinearGradient>
           </TouchableOpacity>
+
+          {/* ── Returned Walk-Ins Revision Card ── */}
+          {returnedWalkIns.length > 0 && (
+            <TouchableOpacity
+              style={[styles.premiumCardShadow, { marginTop: 12 }]}
+              activeOpacity={0.86}
+              onPress={() => setShowAssistedRevision(true)}
+            >
+              <LinearGradient
+                colors={['#78350F', '#92400E', '#B45309']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.qrActionCard}
+              >
+                <View style={styles.cardGoldAccent} />
+                <View style={styles.qrWatermark} pointerEvents="none">
+                  <Ionicons name="refresh-circle-outline" size={92} color="rgba(255, 255, 255, 0.06)" />
+                </View>
+                <View style={[styles.darkIconTile, { backgroundColor: 'rgba(254, 243, 199, 0.2)' }]}>
+                  <Ionicons name="alert-circle-outline" size={23} color="#FDE68A" />
+                </View>
+                <View style={styles.premiumCardCopy}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Text style={[styles.darkCardEyebrow, { color: '#FDE68A' }]}>MY RETURNED WALK-INS</Text>
+                    <View style={{ backgroundColor: '#EF4444', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 10 }}>
+                      <Text style={{ color: '#FFF', fontSize: 10, fontWeight: '900' }}>{returnedWalkIns.length}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.darkCardTitle}>Update & resubmit</Text>
+                  <Text style={styles.darkCardDescription}>
+                    {returnedWalkIns.length === 1
+                      ? '1 walk-in you registered needs photo/ID revision.'
+                      : `${returnedWalkIns.length} walk-ins you registered need revision.`}
+                  </Text>
+                </View>
+                <View style={styles.darkArrowButton}>
+                  <Ionicons name="arrow-forward" size={18} color="#FDE68A" />
+                </View>
+              </LinearGradient>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ── Progress Card ── */}
@@ -709,6 +762,16 @@ export default function VolunteerDashboardScreen({
         onClose={() => setShowAssistedRegistration(false)}
         onSuccess={(_code) => {
           setShowAssistedRegistration(false);
+          loadDashboardData(true);
+        }}
+      />
+
+      {/* ── Assisted Revision Modal ── */}
+      <AssistedRevisionModal
+        visible={showAssistedRevision}
+        onClose={() => setShowAssistedRevision(false)}
+        onSuccess={() => {
+          setShowAssistedRevision(false);
           loadDashboardData(true);
         }}
       />

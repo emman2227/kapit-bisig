@@ -100,6 +100,7 @@ export interface IResident extends Document {
   // Assisted Registration Tracking
   registrationMethod?: 'self' | 'assisted';
   assistedBy?: string | null;
+  assistedByName?: string | null;
   attestationReason?: string;
 
   
@@ -240,6 +241,10 @@ const ResidentSchema: Schema = new Schema(
       index: true,
     },
     assistedBy: {
+      type: String,
+      default: null,
+    },
+    assistedByName: {
       type: String,
       default: null,
     },

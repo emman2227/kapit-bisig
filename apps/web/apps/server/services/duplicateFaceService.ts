@@ -44,8 +44,9 @@ async function checkWithPythonAiBackend(
 
   let res: Response;
   try {
-    const payload: { image: string; resident_data?: Record<string, any> } = {
+    const payload: { image: string; resident_data?: Record<string, any>; enroll?: boolean } = {
       image: base64Image,
+      enroll: false,
     };
     if (residentData) {
       payload.resident_data = residentData;
@@ -121,6 +122,67 @@ export async function checkDuplicateFace(
 }
 
 /**
+ * Explicitly enroll a resident's face embedding into MongoDB and Python cache upon successful registration/approval.
+ */
+export async function enrollResidentFaceEmbedding(data: {
+  image: string;
+  residentId: string;
+  residentCode?: string;
+  householdToken?: string;
+  firstName?: string;
+  lastName?: string;
+  mobileNumber?: string;
+  barangay?: string;
+  dateOfBirth?: string;
+  gender?: string;
+  streetAddress?: string;
+}): Promise<boolean> {
+  const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 12000);
+
+  try {
+    const payload = {
+      image: data.image,
+      resident_id: data.residentId,
+      resident_code: data.residentCode,
+      household_token: data.householdToken,
+      first_name: data.firstName,
+      last_name: data.lastName,
+      mobile_number: data.mobileNumber,
+      barangay: data.barangay,
+      date_of_birth: data.dateOfBirth,
+      gender: data.gender,
+      street_address: data.streetAddress,
+    };
+
+    const res = await fetch(`${pythonUrl}/api/face/enroll`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      if (shouldLogDebug()) {
+        console.warn(`[FaceEnroll] Python AI service returned status ${res.status}`);
+      }
+      return false;
+    }
+
+    const resData = (await res.json()) as any;
+    return Boolean(resData.success);
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (shouldLogDebug()) {
+      console.warn(`[FaceEnroll] Python AI enrollment call failed (${err.message})`);
+    }
+    return false;
+  }
+}
+
+/**
  * Remove a resident's face embedding from MongoDB face_embeddings and Python cache
  * when their registration is rejected or returned for revision.
  */
@@ -128,8 +190,9 @@ export async function removeResidentFaceEmbedding(identifiers: {
   residentId?: string;
   residentCode?: string;
   mobileNumber?: string;
+  householdToken?: string;
 }): Promise<number> {
-  const { residentId, residentCode, mobileNumber } = identifiers;
+  const { residentId, residentCode, mobileNumber, householdToken } = identifiers;
   const queries: any[] = [];
 
   if (residentCode) {
@@ -140,6 +203,9 @@ export async function removeResidentFaceEmbedding(identifiers: {
   }
   if (mobileNumber && mobileNumber.trim()) {
     queries.push({ mobile_number: mobileNumber.trim() });
+  }
+  if (householdToken && householdToken.trim()) {
+    queries.push({ household_token: householdToken.trim() });
   }
 
   if (queries.length === 0) {
@@ -162,14 +228,14 @@ export async function removeResidentFaceEmbedding(identifiers: {
     console.error('[FaceBiometrics] Error removing face embedding from MongoDB:', err.message);
   }
 
-  // Also call Python backend to remove from in-memory cache if targetId exists
-  const targetId = residentCode || residentId;
-  if (targetId) {
+  // Also call Python backend to remove from in-memory cache
+  const targets = [residentCode, residentId, householdToken, mobileNumber].filter(Boolean) as string[];
+  const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
+  for (const targetId of targets) {
     try {
-      const pythonUrl = process.env.PYTHON_BACKEND_URL || 'http://127.0.0.1:8000';
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
-      await fetch(`${pythonUrl}/api/face/user/${targetId}`, {
+      await fetch(`${pythonUrl}/api/face/user/${encodeURIComponent(targetId)}`, {
         method: 'DELETE',
         signal: controller.signal,
       }).catch(() => {});
@@ -184,6 +250,7 @@ export async function removeResidentFaceEmbedding(identifiers: {
 
 export default {
   checkDuplicateFace,
+  enrollResidentFaceEmbedding,
   removeResidentFaceEmbedding,
   DUPLICATE_THRESHOLD,
 };

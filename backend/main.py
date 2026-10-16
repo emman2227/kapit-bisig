@@ -241,6 +241,7 @@ class FaceDetectRequest(BaseModel):
 class DuplicateCheckRequest(BaseModel):
     image: str  # Base64 encoded image
     resident_data: Optional[dict] = None  # Optional resident registration data
+    enroll: Optional[bool] = False  # Only save embedding if explicitly requested (defaults to False)
 
 class DuplicateCheckResponse(BaseModel):
     success: bool
@@ -254,6 +255,25 @@ class DuplicateCheckResponse(BaseModel):
     message: str
     # For storing resident on ALLOW
     resident_id: Optional[str] = None
+
+class FaceEnrollRequest(BaseModel):
+    image: str
+    resident_id: str
+    resident_code: Optional[str] = None
+    household_token: Optional[str] = None
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    mobile_number: Optional[str] = ""
+    barangay: Optional[str] = ""
+    date_of_birth: Optional[str] = ""
+    gender: Optional[str] = ""
+    street_address: Optional[str] = ""
+
+class FaceEnrollResponse(BaseModel):
+    success: bool
+    message: str
+    resident_id: Optional[str] = None
+    embedding_id: Optional[str] = None
 
 class FaceRegisterResponse(BaseModel):
     success: bool
@@ -1538,19 +1558,51 @@ async def check_duplicate_face(request: DuplicateCheckRequest, http_request: Req
         embedding_rows = []
 
         applicant_mobile = ""
+        applicant_token = ""
+        applicant_resident_id = ""
+        applicant_first_name = ""
+        applicant_last_name = ""
+        applicant_dob = ""
+        applicant_barangay = ""
+
         if request.resident_data:
-            applicant_mobile = str(request.resident_data.get("mobileNumber", "")).strip()
+            applicant_mobile = str(request.resident_data.get("mobileNumber") or request.resident_data.get("mobile_number") or "").strip()
+            applicant_token = str(request.resident_data.get("householdToken") or request.resident_data.get("household_token") or "").strip()
+            applicant_resident_id = str(request.resident_data.get("resident_id") or request.resident_data.get("residentCode") or request.resident_data.get("residentId") or "").strip()
+            applicant_first_name = str(request.resident_data.get("firstName") or request.resident_data.get("first_name") or "").strip().lower()
+            applicant_last_name = str(request.resident_data.get("lastName") or request.resident_data.get("last_name") or "").strip().lower()
+            applicant_dob = str(request.resident_data.get("dateOfBirth") or request.resident_data.get("date_of_birth") or "").strip()
+            applicant_barangay = str(request.resident_data.get("barangay", "")).strip().lower()
 
         for resident in registered_faces:
             stored_embedding = resident.get("embedding_vector", [])
             if not stored_embedding or len(stored_embedding) != len(embedding):
                 continue
 
-            # Self-exclusion: If the applicant is retrying registration with the SAME mobile number,
-            # do not treat their own pending embedding as an unauthorized duplicate.
+            # Composite Self-Exclusion: Check if applicant is retrying registration or revising
             stored_mobile = str(resident.get("mobile_number", "")).strip()
-            if applicant_mobile and stored_mobile and applicant_mobile == stored_mobile:
-                print(f"  Skipping self-match for applicant mobile: {applicant_mobile}")
+            stored_token = str(resident.get("household_token", "")).strip()
+            stored_res_id = str(resident.get("resident_id", "")).strip()
+            stored_fname = str(resident.get("first_name", "")).strip().lower()
+            stored_lname = str(resident.get("last_name", "")).strip().lower()
+            stored_dob = str(resident.get("date_of_birth", "")).strip()
+            stored_brgy = str(resident.get("barangay", "")).strip().lower()
+
+            is_self = False
+            if applicant_resident_id and stored_res_id and applicant_resident_id == stored_res_id:
+                is_self = True
+            elif applicant_mobile and stored_mobile and applicant_mobile == stored_mobile:
+                is_self = True
+            elif applicant_token and stored_token and applicant_token == stored_token:
+                is_self = True
+            elif (applicant_first_name and stored_fname and applicant_first_name == stored_fname and
+                  applicant_last_name and stored_lname and applicant_last_name == stored_lname and
+                  applicant_dob and stored_dob and applicant_dob == stored_dob and
+                  applicant_barangay and stored_brgy and applicant_barangay == stored_brgy):
+                is_self = True
+
+            if is_self:
+                print(f"  Skipping self-match for applicant: {stored_res_id or applicant_mobile or applicant_token or applicant_last_name}")
                 continue
 
             valid_records.append(resident)
@@ -1626,17 +1678,18 @@ async def check_duplicate_face(request: DuplicateCheckRequest, http_request: Req
             best_match_id = best_match["id"] if best_match else None
             message = "No duplicate found. Registration allowed."
             
-            # Save face embedding if resident_data provided
+            # Save face embedding ONLY if enroll=True explicitly requested
             embedding_id = None
-            if request.resident_data:
+            if getattr(request, "enroll", False) and request.resident_data:
                 embedding_record = {
-                    "resident_id": request.resident_data.get("resident_id", f"RES_{datetime.now().strftime('%Y%m%d%H%M%S')}"),
+                    "resident_id": request.resident_data.get("resident_id") or request.resident_data.get("residentCode") or f"RES_{datetime.now().strftime('%Y%m%d%H%M%S')}",
                     "first_name": request.resident_data.get("firstName", ""),
                     "last_name": request.resident_data.get("lastName", ""),
                     "name": f"{request.resident_data.get('firstName', '')} {request.resident_data.get('lastName', '')}".strip(),
                     "date_of_birth": request.resident_data.get("dateOfBirth", ""),
                     "gender": request.resident_data.get("gender", ""),
                     "mobile_number": request.resident_data.get("mobileNumber", ""),
+                    "household_token": request.resident_data.get("householdToken", ""),
                     "barangay": request.resident_data.get("barangay", ""),
                     "street_address": request.resident_data.get("streetAddress", ""),
                     "embedding_vector": embedding,
@@ -1730,6 +1783,62 @@ async def check_duplicate_face(request: DuplicateCheckRequest, http_request: Req
         logger.info("="*60 + "\n")
         
         raise HTTPException(status_code=500, detail="Duplicate check failed.")
+
+@app.post("/api/face/enroll", response_model=FaceEnrollResponse)
+async def enroll_face(request: FaceEnrollRequest):
+    """
+    Final enrollment of a resident face embedding upon successful registration or approval.
+    """
+    try:
+        image = decode_base64_image(request.image)
+        detection = detect_faces_opencv(image)
+        if not detection["has_face"]:
+            return FaceEnrollResponse(
+                success=False,
+                message="No face detected in enrollment image."
+            )
+        
+        face_crop = extract_face_crop(image, detection["faces"][0])
+        embedding = get_face_embedding_fast(face_crop)
+        
+        target_id = request.resident_code or request.resident_id
+        embedding_record = {
+            "resident_id": target_id,
+            "first_name": request.first_name or "",
+            "last_name": request.last_name or "",
+            "name": f"{request.first_name or ''} {request.last_name or ''}".strip(),
+            "date_of_birth": request.date_of_birth or "",
+            "gender": request.gender or "",
+            "mobile_number": request.mobile_number or "",
+            "household_token": request.household_token or "",
+            "barangay": request.barangay or "",
+            "street_address": request.street_address or "",
+            "embedding_vector": embedding,
+            "face_image_path": "image not stored for privacy"
+        }
+        
+        saved_id = save_face_embedding_to_mongodb(embedding_record)
+        face_database[target_id] = {
+            "name": embedding_record["name"],
+            "embedding": embedding,
+            "registered_at": datetime.now().isoformat()
+        }
+        rebuild_face_index()
+        save_database()
+        
+        logger.info(f"[FaceEnroll] Successfully enrolled face for {embedding_record['name']} ({target_id})")
+        return FaceEnrollResponse(
+            success=True,
+            message="Face embedding enrolled successfully.",
+            resident_id=target_id,
+            embedding_id=saved_id
+        )
+    except Exception as e:
+        logger.error(f"[FaceEnroll] Error enrolling face: {e}")
+        return FaceEnrollResponse(
+            success=False,
+            message=f"Enrollment failed: {str(e)}"
+        )
 
 @app.get("/api/face/registration-logs")
 async def get_registration_logs(limit: int = 50):
@@ -1917,7 +2026,7 @@ async def get_registered_users():
 @app.delete("/api/face/user/{user_id}")
 async def delete_user(user_id: str, _auth: None = Depends(require_admin_auth)):
     """
-    Delete a registered user from the database and cache
+    Delete a registered user from the database and cache by resident_id, residentCode, mobile_number, or household_token
     """
     db = get_mongo_db()
     deleted_mongo = 0
@@ -1926,25 +2035,31 @@ async def delete_user(user_id: str, _auth: None = Depends(require_admin_auth)):
             res = db.face_embeddings.delete_many({
                 "$or": [
                     {"resident_id": user_id},
-                    {"mobile_number": user_id}
+                    {"mobile_number": user_id},
+                    {"household_token": user_id}
                 ]
             })
             deleted_mongo = res.deleted_count
         except Exception as e:
             logger.error(f"Failed to delete embedding from MongoDB: {e}")
 
-    deleted_name = "User"
-    if user_id in face_database:
-        deleted_name = face_database[user_id].get("name", "User")
-        del face_database[user_id]
+    keys_to_delete = [
+        k for k, v in face_database.items()
+        if k == user_id or v.get("resident_id") == user_id or v.get("household_token") == user_id or v.get("mobile_number") == user_id
+    ]
+    for k in keys_to_delete:
+        del face_database[k]
+    
+    if keys_to_delete:
         rebuild_face_index()
         save_database()
-        logger.info(f"Deleted user from cache: {deleted_name} ({user_id})")
+        logger.info(f"Deleted {len(keys_to_delete)} user(s) from cache matching '{user_id}'")
     
     return {
         "success": True, 
         "message": f"User '{user_id}' deleted successfully",
-        "deleted_count": deleted_mongo
+        "deleted_count": deleted_mongo,
+        "deleted_cache_count": len(keys_to_delete)
     }
 
 @app.delete("/api/face/clear-all")

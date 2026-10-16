@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { DashboardLayout, Header } from '@/components/layout'
-import api, { getScopedBarangays, ResidentRecord } from '@/lib/api'
+import api, { getScopedBarangays, ResidentRecord, StaffUser } from '@/lib/api'
 import { useAuth } from '@/lib/AuthContext'
 import { showToast } from '@/lib/toast'
 import SummaryMetricCard from '@/components/ui/SummaryMetricCard'
@@ -13,6 +13,7 @@ import ConfirmModal from '@/components/ui/ConfirmModal'
 
 import ResidentReviewModal from '@/components/residents/ResidentReviewModal'
 import AssistedRegistrationModal from '@/components/residents/AssistedRegistrationModal'
+import AssistedRevisionModal from '@/components/residents/AssistedRevisionModal'
 import FilterDropdown from '@/components/ui/FilterDropdown'
 import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
 
@@ -169,23 +170,31 @@ function RevisionNoteModal({
 
 function RegistrationRow({
   record,
+  currentUserId,
+  userRole,
   isSelected,
   isBusy,
   onSelect,
   onReview,
   onApprove,
   onReject,
+  onOpenRevision,
 }: {
   record: ResidentRecord
+  currentUserId?: string
+  userRole?: string
   isSelected: boolean
   isBusy: boolean
   onSelect: (checked: boolean) => void
   onReview: () => void
   onApprove: () => void
   onReject: () => void
+  onOpenRevision?: (record: ResidentRecord) => void
 }) {
   const id = getResidentId(record)
   const isPending = record.status === 'Pending'
+  const isNeedsRevision = record.status === 'Needs Revision'
+  const isAssisted = record.registrationMethod === 'assisted' || Boolean((record as any).assistedBy)
   const submittedAt = formatSubmittedAt(record.createdAt)
   const proofPackageCount = getProofPackageCount(record)
   const confidence = record.verification?.screeningConfidence || 0
@@ -202,6 +211,8 @@ function RegistrationRow({
       className={`group grid grid-cols-1 sm:grid-cols-[auto_minmax(0,1.2fr)_minmax(0,1fr)_auto] gap-x-6 gap-y-4 items-center bg-white px-6 py-4 transition-colors border-l-4 dark:bg-slate-900 ${
         isSelected
           ? 'border-l-indigo-500 bg-indigo-50/30 dark:bg-indigo-900/10'
+          : isNeedsRevision
+          ? 'border-l-amber-500 hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
           : 'border-l-transparent hover:bg-slate-50/50 dark:hover:bg-slate-800/50'
       }`}
     >
@@ -212,7 +223,7 @@ function RegistrationRow({
           checked={isSelected}
           disabled={!isPending || isBusy || !id}
           onChange={(event) => onSelect(event.target.checked)}
-          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800"
+          className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-slate-600 dark:bg-slate-800 disabled:opacity-30"
         />
       </div>
 
@@ -220,6 +231,7 @@ function RegistrationRow({
       <div className="flex flex-col min-w-0">
         <div className="flex items-center gap-2">
            {isPending && <span className="h-1.5 w-1.5 rounded-full bg-amber-400" aria-label="Pending" title="Pending Status" />}
+           {isNeedsRevision && <span className="h-1.5 w-1.5 rounded-full bg-rose-500" aria-label="Needs Revision" title="Needs Revision Status" />}
            <button
              type="button"
              onClick={onReview}
@@ -227,6 +239,15 @@ function RegistrationRow({
            >
              {getResidentName(record)}
            </button>
+           {isAssisted ? (
+             <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+               Walk-In
+             </span>
+           ) : (
+             <span className="rounded-md bg-sky-100 px-1.5 py-0.5 text-[10px] font-bold text-sky-800 dark:bg-sky-950/40 dark:text-sky-300">
+               Citizen App
+             </span>
+           )}
         </div>
         <p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400">
            <span className="font-medium text-slate-700 dark:text-slate-300">{getIdLine(record)}</span>
@@ -234,10 +255,24 @@ function RegistrationRow({
            <span>{record.barangay}</span>
            <span className="text-slate-300 dark:text-slate-600">•</span>
            <span>Added {submittedAt.date}</span>
+           {isAssisted && (
+             <>
+               <span className="text-slate-300 dark:text-slate-600">•</span>
+               <span className="font-semibold text-emerald-700 dark:text-emerald-400">
+                 Assisted by: {record.assistedByName || (record.assistedBy && currentUserId && record.assistedBy === currentUserId ? 'You' : 'Staff')}
+               </span>
+             </>
+           )}
         </p>
         <p className="mt-1 truncate text-xs text-slate-500 dark:text-slate-400">
            {getAddressLine(record)} • {maskMobileNumber(record.mobileNumber)}
         </p>
+        {isNeedsRevision && record.rejectionReason && (
+          <div className="mt-2 rounded-xl border border-amber-200/90 bg-amber-50/80 p-2.5 text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
+            <span className="font-bold">Return Note: </span>
+            {record.rejectionReason}
+          </div>
+        )}
       </div>
 
       {/* 3. Verification Context */}
@@ -292,6 +327,24 @@ function RegistrationRow({
             </button>
           </>
         )}
+        {isNeedsRevision && (
+          isAssisted ? (
+            <button
+              type="button"
+              onClick={() => onOpenRevision?.(record)}
+              className="rounded-lg bg-amber-600 px-3.5 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-amber-700"
+            >
+              Update & Resubmit
+            </button>
+          ) : (
+            <span
+              title="This resident self-registered via the mobile app. The citizen must resubmit their photos/documents using the mobile app."
+              className="inline-flex items-center rounded-lg border border-slate-200 bg-slate-100 px-2.5 py-2 text-xs font-semibold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+            >
+              Awaiting Citizen
+            </span>
+          )
+        )}
       </div>
     </article>
   )
@@ -301,6 +354,7 @@ export default function ResidentRegistrationPage() {
   const { user, loading } = useAuth()
   const router = useRouter()
 
+  const [activeTab, setActiveTab] = useState<'Pending' | 'Needs Revision'>('Pending')
   const [rows, setRows] = useState<ResidentRecord[]>([])
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -317,10 +371,14 @@ export default function ResidentRegistrationPage() {
   const [revisionTargetId, setRevisionTargetId] = useState<string | null>(null)
   const [revisionNote, setRevisionNote] = useState('')
   const [showAssistedModal, setShowAssistedModal] = useState(false)
+  const [revisionEditResident, setRevisionEditResident] = useState<ResidentRecord | null>(null)
   
   const [barangay, setBarangay] = useState('All Barangays')
   const [searchQuery, setSearchQuery] = useState('')
   const [appliedSearch, setAppliedSearch] = useState('')
+  const [revisionScope, setRevisionScope] = useState<'mine' | 'all'>('mine')
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState('All Staff')
+  const [staffList, setStaffList] = useState<StaffUser[]>([])
 
   const barangayOptions = useMemo(
     () => ['All Barangays', ...getScopedBarangays(user?.role, user?.assignedBarangays)],
@@ -336,16 +394,43 @@ export default function ResidentRegistrationPage() {
     }
   }, [loading, user, router])
 
+  useEffect(() => {
+    if (user?.role === 'SUPERADMIN') {
+      api.getStaffUsers().then((res) => {
+        if (res.success && Array.isArray(res.data)) {
+          setStaffList(res.data)
+        }
+      }).catch((err) => {
+        console.error('Failed to load staff list:', err)
+      })
+    }
+  }, [user?.role])
+
   const fetchResidents = useCallback(async () => {
     setFetching(true)
     setError(null)
     try {
-      const response = await api.getResidents({
-        status: 'Pending',
+      const isNeedsRevision = activeTab === 'Needs Revision'
+      const isSuperadmin = user?.role === 'SUPERADMIN'
+
+      const params: Parameters<typeof api.getResidents>[0] = {
+        status: activeTab,
         barangay,
         page: 1,
         limit: 50,
-      })
+      }
+
+      if (isNeedsRevision) {
+        if (isSuperadmin) {
+          if (selectedStaffFilter !== 'All Staff') {
+            params.assistedBy = selectedStaffFilter
+          }
+        } else {
+          params.myOnly = revisionScope === 'mine'
+        }
+      }
+
+      const response = await api.getResidents(params)
       if (!response.success || !Array.isArray(response.data)) {
         throw new Error(response.message || 'Failed to load resident registrations.')
       }
@@ -358,7 +443,7 @@ export default function ResidentRegistrationPage() {
     } finally {
       setFetching(false)
     }
-  }, [barangay])
+  }, [activeTab, barangay, user?.role, revisionScope, selectedStaffFilter])
 
   useEffect(() => {
     if (!user) return
@@ -373,6 +458,7 @@ export default function ResidentRegistrationPage() {
     setBarangay('All Barangays')
     setSearchQuery('')
     setAppliedSearch('')
+    setSelectedStaffFilter('All Staff')
   }, [])
 
   const filteredRows = useMemo(() => {
@@ -415,12 +501,22 @@ export default function ResidentRegistrationPage() {
 
     const proofReadyCount = filteredRows.filter((row) => getProofPackageCount(row) >= 2).length
 
+    const assistedRevisionCount = filteredRows.filter(
+      (row) => row.status === 'Needs Revision' && (row.registrationMethod === 'assisted' || Boolean((row as any).assistedBy)),
+    ).length
+
+    const selfRevisionCount = filteredRows.filter(
+      (row) => row.status === 'Needs Revision' && row.registrationMethod !== 'assisted' && !(row as any).assistedBy,
+    ).length
+
     return {
       total: filteredRows.length,
       manualReviewCount,
       blockedCount,
       passCount,
       proofReadyCount,
+      assistedRevisionCount,
+      selfRevisionCount,
     }
   }, [filteredRows])
 
@@ -654,8 +750,12 @@ export default function ResidentRegistrationPage() {
           <div className="border-b border-slate-200/80 bg-slate-50/90 px-5 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-6">
             <SectionHeader
               eyebrow="Account Authentication"
-              title="Review new registrations"
-              subtitle="Screen newly submitted resident applications, proof uploads, and validation flags"
+              title={activeTab === 'Pending' ? 'Review new registrations' : 'Review returned registrations'}
+              subtitle={
+                activeTab === 'Pending'
+                  ? 'Screen newly submitted resident applications, proof uploads, and validation flags'
+                  : 'View registrations returned for revision. Update walk-in records or track mobile citizen resubmissions.'
+              }
               rightAccessory={
                 <div className="flex items-center gap-3">
                   <button
@@ -667,7 +767,9 @@ export default function ResidentRegistrationPage() {
                     <span>Assisted Registration (Walk-In)</span>
                   </button>
                   <div className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-                    Ready for review: {queueMetrics.manualReviewCount}
+                    {activeTab === 'Pending'
+                      ? `Ready for review: ${queueMetrics.manualReviewCount}`
+                      : `Actionable walk-ins: ${queueMetrics.assistedRevisionCount}`}
                   </div>
                 </div>
               }
@@ -676,31 +778,31 @@ export default function ResidentRegistrationPage() {
 
           <div className="p-5 sm:p-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <SummaryMetricCard 
-              label="Visible Queue" 
+              label={activeTab === 'Pending' ? 'Visible Queue' : 'Needs Revision'} 
               value={queueMetrics.total} 
-              helper="Total records loaded" 
+              helper={activeTab === 'Pending' ? 'Total records loaded' : 'Total returned records'} 
               variant="blue"
               icon={<UsersIcon className="h-5 w-5" />} 
             />
             <SummaryMetricCard 
-              label="Ready for Review" 
-              value={queueMetrics.manualReviewCount} 
-              helper="Awaiting staff confirmation" 
+              label={activeTab === 'Pending' ? 'Ready for Review' : 'Walk-In Returned'} 
+              value={activeTab === 'Pending' ? queueMetrics.manualReviewCount : queueMetrics.assistedRevisionCount} 
+              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation' : 'Staff can update & resubmit'} 
               variant="amber"
               icon={<ClipboardCheckIcon className="h-5 w-5" />} 
             />
             <SummaryMetricCard 
-              label="Proof Ready" 
-              value={queueMetrics.proofReadyCount} 
-              helper="2+ assets detected" 
-              variant="emerald"
+              label={activeTab === 'Pending' ? 'Proof Ready' : 'Self-Registered'} 
+              value={activeTab === 'Pending' ? queueMetrics.proofReadyCount : queueMetrics.selfRevisionCount} 
+              helper={activeTab === 'Pending' ? '2+ assets detected' : 'Citizen mobile revision'} 
+              variant={activeTab === 'Pending' ? 'emerald' : 'purple'}
               icon={<FileCheckIcon className="h-5 w-5" />} 
             />
             <SummaryMetricCard 
-              label="Needs Attention" 
-              value={queueMetrics.blockedCount} 
-              helper="Review AI red flags" 
-              variant="rose"
+              label={activeTab === 'Pending' ? 'Needs Attention' : 'Proof Attached'} 
+              value={activeTab === 'Pending' ? queueMetrics.blockedCount : queueMetrics.proofReadyCount} 
+              helper={activeTab === 'Pending' ? 'Review AI red flags' : 'Assets on record'} 
+              variant={activeTab === 'Pending' ? 'rose' : 'emerald'}
               icon={<AlertCircleIcon className="h-5 w-5" />} 
             />
           </div>
@@ -708,6 +810,32 @@ export default function ResidentRegistrationPage() {
 
         {/* Central Registration Queue Container */}
         <section className="relative overflow-hidden rounded-3xl border border-gray-200 bg-white shadow-[0_2px_14px_rgba(0,0,0,0.05)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-none">
+          
+          {/* Queue Tab Switcher */}
+          <div className="flex items-center gap-2 border-b border-gray-100 bg-slate-50/70 px-5 pt-3 dark:border-slate-800 dark:bg-slate-800/40">
+            <button
+              type="button"
+              onClick={() => setActiveTab('Pending')}
+              className={`flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-bold transition-all ${
+                activeTab === 'Pending'
+                  ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <span>Pending Review</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('Needs Revision')}
+              className={`flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-bold transition-all ${
+                activeTab === 'Needs Revision'
+                  ? 'border-amber-600 text-amber-600 dark:border-amber-400 dark:text-amber-400'
+                  : 'border-transparent text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              <span>Needs Revision</span>
+            </button>
+          </div>
           
           {/* Header & Controls */}
           <div className="border-b border-gray-100 px-5 py-4 dark:border-slate-800">
@@ -753,6 +881,81 @@ export default function ResidentRegistrationPage() {
                     <RefreshIcon className="h-4 w-4" />
                   </button>
                 </div>
+
+                {activeTab === 'Needs Revision' && (
+                  <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200/60 bg-amber-50/50 p-3 dark:border-amber-900/30 dark:bg-amber-950/20">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="text-xs font-bold uppercase tracking-wider text-amber-800 dark:text-amber-400">
+                        Revision Scope:
+                      </span>
+                      {user?.role === 'LGU_STAFF' ? (
+                        <div className="inline-flex rounded-xl bg-white/80 p-1 shadow-sm ring-1 ring-amber-200/70 dark:bg-slate-900 dark:ring-amber-900/40">
+                          <button
+                            type="button"
+                            onClick={() => setRevisionScope('mine')}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                              revisionScope === 'mine'
+                                ? 'bg-amber-600 text-white shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            My Registered Walk-Ins
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRevisionScope('all')}
+                            className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                              revisionScope === 'all'
+                                ? 'bg-amber-600 text-white shadow-sm'
+                                : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                            }`}
+                          >
+                            All in Barangay
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <FilterDropdown
+                            value={selectedStaffFilter}
+                            options={[
+                              { value: 'All Staff', label: 'All Registered Staff' },
+                              ...staffList.map((s) => {
+                                const staffName = s.fullName || `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'Staff'
+                                const brgyLabel = s.assignedBarangays && s.assignedBarangays.length > 0 ? ` (${s.assignedBarangays.join(', ')})` : ''
+                                return {
+                                  value: s.id,
+                                  label: `Assisted by: ${staffName}${brgyLabel}`,
+                                }
+                              }),
+                            ]}
+                            onChange={(val) => setSelectedStaffFilter(val)}
+                          />
+                          {selectedStaffFilter !== 'All Staff' && (
+                            <button
+                              type="button"
+                              onClick={() => setSelectedStaffFilter('All Staff')}
+                              className="text-xs font-semibold text-amber-700 hover:text-amber-900 dark:text-amber-400 dark:hover:text-amber-300 underline"
+                            >
+                              Reset
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {user?.role === 'LGU_STAFF' && revisionScope === 'mine' && (
+                        <span>Showing walk-ins you personally registered with your staff account.</span>
+                      )}
+                      {user?.role === 'LGU_STAFF' && revisionScope === 'all' && (
+                        <span>Showing all returned registrations within your assigned barangay(s).</span>
+                      )}
+                      {user?.role === 'SUPERADMIN' && (
+                        <span>Superadmin mode: Filter by specific staff member or oversee all returned registrations.</span>
+                      )}
+                    </p>
+                  </div>
+                )}
              </div>
 
              <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
@@ -760,7 +963,7 @@ export default function ResidentRegistrationPage() {
                    {filteredRows.length} registration{filteredRows.length === 1 ? '' : 's'}
                 </span>
                 
-                {(appliedSearch || barangay !== 'All Barangays') && (
+                {(appliedSearch || barangay !== 'All Barangays' || selectedStaffFilter !== 'All Staff') && (
                   <button
                     type="button"
                     onClick={handleClearFilters}
@@ -850,12 +1053,15 @@ export default function ResidentRegistrationPage() {
                       <RegistrationRow
                         key={id}
                         record={record}
+                        currentUserId={user?.id || (user as any)?._id}
+                        userRole={user?.role}
                         isSelected={isSelected}
                         isBusy={isBusy}
                         onSelect={(checked) => toggleSelectRow(id, checked)}
                         onReview={() => id && openReview(id)}
                         onApprove={() => id && onApprove(id)}
                         onReject={() => id && onReject(id)}
+                        onOpenRevision={(rec) => setRevisionEditResident(rec)}
                       />
                     )
                   })}
@@ -919,6 +1125,16 @@ export default function ResidentRegistrationPage() {
         onSuccess={(code) => {
           setShowAssistedModal(false)
           showToast.success(`Resident registered: ${code}`)
+          fetchResidents()
+        }}
+      />
+
+      <AssistedRevisionModal
+        isOpen={Boolean(revisionEditResident)}
+        resident={revisionEditResident}
+        onClose={() => setRevisionEditResident(null)}
+        onSuccess={() => {
+          setRevisionEditResident(null)
           fetchResidents()
         }}
       />

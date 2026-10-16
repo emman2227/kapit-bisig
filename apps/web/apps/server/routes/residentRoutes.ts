@@ -19,6 +19,7 @@ import {
   listResidentsQuery,
   residentIdParams,
   residentStatusUpdateBody,
+  assistedRevisionBody,
 } from '../validation/resident.schema';
 import {
   isValidPhilippineMobileNumber,
@@ -33,7 +34,11 @@ import {
 import { createNotification } from '../utils/createNotification';
 import { sendAccountStatusUpdateSms } from '../utils/smsService';
 import { logAudit } from '../utils/audit';
-import { removeResidentFaceEmbedding } from '../services/duplicateFaceService';
+import {
+  removeResidentFaceEmbedding,
+  enrollResidentFaceEmbedding,
+  checkDuplicateFace,
+} from '../services/duplicateFaceService';
 
 const router = Router();
 const REGISTER_PAYLOAD_MAX_BYTES = 8 * 1024 * 1024; // 8MB
@@ -258,6 +263,22 @@ router.post('/register', validateRequest({ body: registerResidentBody }), async 
 
     await resident.save();
 
+    // Enroll face embedding post-save with definitive identifiers
+    enrollResidentFaceEmbedding({
+      image: faceImage,
+      residentId: resident._id.toString(),
+      residentCode: resident.residentCode,
+      firstName: resident.firstName,
+      lastName: resident.lastName,
+      mobileNumber: resident.mobileNumber,
+      barangay: resident.barangay,
+      dateOfBirth: resident.dateOfBirth,
+      gender: resident.gender,
+      streetAddress: resident.streetAddress,
+    }).catch((err) => {
+      console.warn('[ResidentRoutes] Face enrollment warning:', err?.message || err);
+    });
+
     res.status(201).json({
       success: true,
       message: 'Registration submitted successfully - Pending admin review',
@@ -317,7 +338,13 @@ router.post('/register', validateRequest({ body: registerResidentBody }), async 
  */
 router.get('/', requireAuth, requireStaffOrSuperadmin, validateRequest({ query: listResidentsQuery }), async (req: AuthRequest, res: Response) => {
   try {
-    const { status, barangay, search } = req.query;
+    const { status, barangay, search, assistedBy, myOnly } = req.query as {
+      status?: string;
+      barangay?: string;
+      search?: string;
+      assistedBy?: string;
+      myOnly?: 'true' | 'false';
+    };
     
     const query: Record<string, unknown> = {};
 
@@ -325,6 +352,19 @@ router.get('/', requireAuth, requireStaffOrSuperadmin, validateRequest({ query: 
     if (req.authUser?.role === 'LGU_STAFF') {
       const assigned = req.authUser.assignedBarangays ?? [];
       query.barangay = mongoose.trusted({ $in: assigned });
+
+      // For LGU_STAFF: if myOnly is 'true' or when viewing Needs Revision by default (unless myOnly is 'false'),
+      // scope to the staff member's own assisted registrations.
+      if (myOnly === 'true' || (status === 'Needs Revision' && myOnly !== 'false')) {
+        query.assistedBy = req.authUser.userId;
+      }
+    } else if (req.authUser?.role === 'SUPERADMIN') {
+      // SUPERADMIN has municipality-wide oversight; can filter by specific staff or myOnly
+      if (myOnly === 'true') {
+        query.assistedBy = req.authUser.userId;
+      } else if (assistedBy && assistedBy !== 'All' && assistedBy !== 'ALL') {
+        query.assistedBy = assistedBy;
+      }
     }
     
     if (status && status !== 'All') {
@@ -502,10 +542,12 @@ router.patch(
  
       // If registration is returned for revision or rejected, remove biometric embedding so applicant is not blocked
       if (status === 'Needs Revision' || status === 'Rejected') {
+        const linkedToken = await HouseholdToken.findOne({ 'usedBy.residentId': resident._id }).select('tokenPrefix').lean();
         removeResidentFaceEmbedding({
           residentId: resident._id.toString(),
           residentCode: resident.residentCode,
           mobileNumber: resident.mobileNumber,
+          householdToken: linkedToken?.tokenPrefix,
         }).catch((err: any) => {
           console.warn('[ResidentRoutes] Failed to remove face embedding on status change:', err?.message || err);
         });
@@ -539,6 +581,203 @@ router.patch(
       return res.status(500).json({
         success: false,
         message: 'Server error',
+      });
+    }
+  }
+);
+
+/**
+ * PATCH /api/residents/:id/assisted-revision
+ * Staff endpoint to update photos, documents, or attestation for an assisted walk-in registration returned for revision.
+ * Automatically resets status back to 'Pending' for review.
+ */
+router.patch(
+  '/:id/assisted-revision',
+  requireAuth,
+  requireStaffOrSuperadmin,
+  validateRequest({ params: residentIdParams, body: assistedRevisionBody }),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const resident = await Resident.findById(req.params.id);
+      if (!resident) {
+        return res.status(404).json({
+          success: false,
+          message: 'Resident record not found.',
+        });
+      }
+
+      if (req.authUser?.role === 'LGU_STAFF') {
+        const assigned = req.authUser.assignedBarangays ?? [];
+        if (!assigned.includes(resident.barangay)) {
+          return res.status(403).json({
+            success: false,
+            message: 'You do not have access to modify residents in this barangay.',
+          });
+        }
+      }
+
+      // Safeguard: Only assisted walk-ins can be revised by staff
+      if (resident.registrationMethod !== 'assisted') {
+        return res.status(400).json({
+          success: false,
+          message: 'Only assisted walk-in registrations can be revised by staff. Self-registered residents must submit revisions through the mobile application.',
+        });
+      }
+
+      if (resident.status !== 'Needs Revision') {
+        return res.status(409).json({
+          success: false,
+          message: 'Only resident registrations currently marked as "Needs Revision" can be updated.',
+        });
+      }
+
+      const {
+        idType,
+        idNumber,
+        frontIdImage,
+        backIdImage,
+        faceImage,
+        attestationReason,
+        staffNote,
+      } = req.body as {
+        idType?: string;
+        idNumber?: string;
+        frontIdImage?: string;
+        backIdImage?: string;
+        faceImage?: string;
+        attestationReason?: string;
+        staffNote?: string;
+      };
+
+      if (idType) {
+        if (!validateIdType(idType, true)) {
+          return res.status(400).json({ success: false, message: 'Unsupported ID type selected.' });
+        }
+        resident.idType = idType;
+      }
+
+      if (idNumber) {
+        resident.idNumber = normalizeIdNumber(resident.idType, idNumber);
+      }
+
+      if (attestationReason !== undefined) {
+        resident.attestationReason = attestationReason.trim();
+      }
+
+      // Validate & persist images if provided
+      if (frontIdImage) {
+        const frontVal = await validateBase64Image(frontIdImage, {
+          fieldName: 'Front ID image',
+          maxBytes: 3 * 1024 * 1024,
+          minWidth: 160,
+          minHeight: 160,
+          maxWidth: 4096,
+          maxHeight: 4096,
+        });
+        if (!frontVal.ok) {
+          return res.status(400).json({ success: false, message: frontVal.message });
+        }
+        resident.frontIdImage = persistVerificationImage(frontIdImage, 'front_id_assisted');
+      }
+
+      if (backIdImage) {
+        const backVal = await validateBase64Image(backIdImage, {
+          fieldName: 'Back ID image',
+          maxBytes: 3 * 1024 * 1024,
+          minWidth: 160,
+          minHeight: 160,
+          maxWidth: 4096,
+          maxHeight: 4096,
+        });
+        if (!backVal.ok) {
+          return res.status(400).json({ success: false, message: backVal.message });
+        }
+        resident.backIdImage = persistVerificationImage(backIdImage, 'back_id_assisted');
+      }
+
+      if (faceImage) {
+        const faceVal = await validateBase64Image(faceImage, {
+          fieldName: 'Face capture image',
+          maxBytes: 3 * 1024 * 1024,
+          minWidth: 160,
+          minHeight: 160,
+          maxWidth: 4096,
+          maxHeight: 4096,
+        });
+        if (!faceVal.ok) {
+          return res.status(400).json({ success: false, message: faceVal.message });
+        }
+
+        // Duplicate check with composite self-exclusion
+        const linkedToken = await HouseholdToken.findOne({ 'usedBy.residentId': resident._id }).select('tokenPrefix').lean();
+        const dupCheck = await checkDuplicateFace(faceImage, {
+          residentId: resident._id.toString(),
+          residentCode: resident.residentCode,
+          householdToken: linkedToken?.tokenPrefix,
+          firstName: resident.firstName,
+          lastName: resident.lastName,
+          dateOfBirth: resident.dateOfBirth,
+          barangay: resident.barangay,
+          mobileNumber: resident.mobileNumber,
+        });
+
+        if (dupCheck.isDuplicate) {
+          return res.status(409).json({
+            success: false,
+            message: `Biometric duplicate detected. This face matches an existing registered resident (${dupCheck.matchedResident?.name || 'already registered'}).`,
+          });
+        }
+
+        resident.faceImage = persistVerificationImage(faceImage, 'face_assisted');
+
+        // Re-enroll the face embedding
+        enrollResidentFaceEmbedding({
+          image: faceImage,
+          residentId: resident._id.toString(),
+          residentCode: resident.residentCode,
+          householdToken: linkedToken?.tokenPrefix,
+          firstName: resident.firstName,
+          lastName: resident.lastName,
+          mobileNumber: resident.mobileNumber,
+          barangay: resident.barangay,
+          dateOfBirth: resident.dateOfBirth,
+          gender: resident.gender,
+          streetAddress: resident.streetAddress,
+        }).catch((err) => {
+          console.warn('[ResidentRoutes] Assisted revision face enrollment warning:', err?.message || err);
+        });
+      }
+
+      // Reset to Pending review
+      resident.status = 'Pending';
+      resident.rejectionReason = undefined;
+      resident.verifiedAt = undefined;
+      resident.verifiedBy = undefined;
+
+      await resident.save();
+
+      await logAudit(req, 'RESIDENT_ASSISTED_REVISED', 'Resident', resident._id.toString(), {
+        staffNote,
+        residentCode: resident.residentCode,
+        barangay: resident.barangay,
+        revisedBy: req.authUser?.userId || req.authUser?.sub || 'staff',
+      });
+
+      return res.json({
+        success: true,
+        message: 'Assisted registration revised and resubmitted for admin review.',
+        data: {
+          id: resident._id,
+          residentCode: resident.residentCode,
+          status: resident.status,
+          updatedAt: resident.updatedAt,
+        },
+      });
+    } catch (error) {
+      console.error('[ResidentRoutes] Assisted revision error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error while revising assisted registration.',
       });
     }
   }

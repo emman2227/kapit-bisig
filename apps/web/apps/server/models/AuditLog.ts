@@ -57,7 +57,8 @@ export type AuditAction =
   | 'FACE_VERIFY'
   | 'FACE_DUPLICATE_CHECK'
   | 'FACE_HEALTH_CHECK'
-  | 'RESIDENT_STATUS_UPDATED';
+  | 'RESIDENT_STATUS_UPDATED'
+  | 'RESIDENT_ASSISTED_REVISED';
 
 export interface IAuditLog extends Document {
   actorId: string | null;

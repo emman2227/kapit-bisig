@@ -20,7 +20,7 @@ import {
 } from '../utils/idVerification';
 import { persistVerificationImage } from '../utils/imageStorage';
 import { buildResidentQrToken } from './residentQrService';
-import { checkDuplicateFace } from './duplicateFaceService';
+import { checkDuplicateFace, enrollResidentFaceEmbedding } from './duplicateFaceService';
 import { householdTokenService, generateRequestId } from './householdTokenService';
 import { sendAssistedRegistrationCredentialsSms } from '../utils/smsService';
 import { sendAssistedRegistrationCredentialsEmail } from '../utils/mailer';
@@ -207,6 +207,7 @@ export async function registerAssistedResident(
         dateOfBirth: data.dateOfBirth,
         gender: data.gender,
         mobileNumber: normalizedMobile || data.mobileNumber || '',
+        householdToken: data.householdToken.trim(),
         barangay: data.barangay,
         streetAddress: data.streetAddress,
       };
@@ -263,6 +264,7 @@ export async function registerAssistedResident(
       faceImage: faceImagePath,
       registrationMethod: 'assisted',
       assistedBy: staffUser.userId,
+      assistedByName: staffUser.name || 'Barangay Staff',
       attestationReason: data.attestationReason || '',
       status: 'Pending',
       verification: {
@@ -284,6 +286,23 @@ export async function registerAssistedResident(
     });
 
     await resident.save();
+
+    // Enroll face embedding post-save with definitive identifiers
+    enrollResidentFaceEmbedding({
+      image: data.faceImage,
+      residentId: resident._id.toString(),
+      residentCode: resident.residentCode,
+      householdToken: data.householdToken.trim(),
+      firstName: resident.firstName,
+      lastName: resident.lastName,
+      mobileNumber: resident.mobileNumber,
+      barangay: resident.barangay,
+      dateOfBirth: resident.dateOfBirth,
+      gender: resident.gender,
+      streetAddress: resident.streetAddress,
+    }).catch((err) => {
+      console.warn('[AssistedRegistration] Face enrollment warning:', err?.message || err);
+    });
 
     // 7. Complete token registration
     await householdTokenService.completeRegistration(

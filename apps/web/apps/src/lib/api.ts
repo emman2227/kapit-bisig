@@ -260,6 +260,7 @@ export interface ResidentRecord {
   _id?: string;
   fullName: string;
   residentCode?: string;
+  householdToken?: string;
   firstName?: string;
   lastName?: string;
   mobileNumber: string;
@@ -288,6 +289,7 @@ export interface ResidentRecord {
   createdAt?: string;
   registrationMethod?: 'self' | 'assisted';
   assistedBy?: string;
+  assistedByName?: string;
   verification?: {
     overallConfidence?: number;
     aiVerificationStatus?: 'High Match' | 'Medium Match' | 'Low Match';
@@ -825,6 +827,8 @@ export const api = {
     search?: string;
     barangay?: string;
     status?: 'All' | 'Pending' | 'Approved' | 'Needs Revision' | 'Rejected';
+    assistedBy?: string;
+    myOnly?: boolean;
     page?: number;
     limit?: number;
   }): Promise<ApiResponse<ResidentRecord[]>> {
@@ -835,6 +839,12 @@ export const api = {
     }
     if (params?.status && params.status !== 'All') {
       sp.append('status', params.status);
+    }
+    if (params?.assistedBy && params.assistedBy !== 'All') {
+      sp.append('assistedBy', params.assistedBy);
+    }
+    if (typeof params?.myOnly === 'boolean') {
+      sp.append('myOnly', String(params.myOnly));
     }
     if (typeof params?.page === 'number') sp.append('page', String(params.page));
     if (typeof params?.limit === 'number') sp.append('limit', String(params.limit));
@@ -891,6 +901,30 @@ export const api = {
       body: JSON.stringify(payload),
     });
     return handleResponse<ApiResponse<ResidentRecord>>(response);
+  },
+
+  /**
+   * Submit corrected details for an assisted walk-in resident returned for revision.
+   */
+  async submitAssistedRevision(
+    id: string,
+    payload: {
+      idType?: string;
+      idNumber?: string;
+      frontIdImage?: string;
+      backIdImage?: string;
+      faceImage?: string;
+      attestationReason?: string;
+      staffNote?: string;
+    }
+  ): Promise<ApiResponse<{ id: string; residentCode: string; status: string }>> {
+    const response = await fetch(`${API_URL}/residents/${id}/assisted-revision`, {
+      method: 'PATCH',
+      headers: createHeaders('PATCH'),
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<ApiResponse<{ id: string; residentCode: string; status: string }>>(response);
   },
 
   /**

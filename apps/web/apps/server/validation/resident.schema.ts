@@ -67,6 +67,8 @@ export const listResidentsQuery = z.object({
   status: z.string().max(30).optional(),
   barangay: z.string().max(100).optional(),
   search: z.string().max(200).optional(),
+  assistedBy: z.string().max(100).optional(),
+  myOnly: z.enum(['true', 'false']).optional(),
   page: z.string().optional(),
   limit: z.string().optional(),
 }).strict();
@@ -103,4 +105,18 @@ export const generateCodeBatchBody = z
     quantity: z.number().int().min(1).max(100),
   })
   .strict();
+
+/* PATCH /api/residents/:id/assisted-revision */
+export const assistedRevisionBody = z
+  .object({
+    idType: z.string().trim().max(100).optional(),
+    idNumber: z.string().trim().max(100).optional(),
+    frontIdImage: z.string().max(6_000_000).optional(),
+    backIdImage: z.string().max(6_000_000).optional(),
+    faceImage: z.string().max(6_000_000).optional(),
+    attestationReason: z.string().trim().max(500).optional(),
+    staffNote: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
 
