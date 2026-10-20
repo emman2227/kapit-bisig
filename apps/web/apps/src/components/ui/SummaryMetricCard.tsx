@@ -65,16 +65,9 @@ export default function SummaryMetricCard({
   const cardContent = (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-            {label}
-          </p>
-          {isSelected && (
-            <span className="inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-bold tracking-normal bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-              Active Filter
-            </span>
-          )}
-        </div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+          {label}
+        </p>
         <p className="mt-2 text-3xl font-bold leading-tight tracking-[-0.04em] text-slate-950 dark:text-slate-100">
           {value || value === 0 ? value : '--'}
         </p>
