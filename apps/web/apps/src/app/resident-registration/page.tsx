@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { DashboardLayout, Header } from '@/components/layout'
 import api, { getScopedBarangays, ResidentRecord, StaffUser } from '@/lib/api'
 import { useAuth } from '@/lib/AuthContext'
@@ -476,9 +476,23 @@ export default function ResidentRegistrationPage() {
   const router = useRouter()
 
   const [activeTab, setActiveTab] = useState<'Pending' | 'Needs Revision' | 'Rejected'>('Pending')
+  const [queueSubFilter, setQueueSubFilter] = useState<'all' | 'manual' | 'proof_ready' | 'blocked'>('all')
   const [rows, setRows] = useState<ResidentRecord[]>([])
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const tabParam = searchParams?.get('tab')?.toLowerCase()
+    if (tabParam === 'needs-revision' || tabParam === 'revision') {
+      setActiveTab('Needs Revision')
+    } else if (tabParam === 'rejected' || tabParam === 'disqualified') {
+      setActiveTab('Rejected')
+    } else if (tabParam === 'pending') {
+      setActiveTab('Pending')
+    }
+  }, [searchParams])
   
   const [busyId, setBusyId] = useState<string | null>(null)
   const [bulkBusy, setBulkBusy] = useState(false)
@@ -590,10 +604,20 @@ export default function ResidentRegistrationPage() {
     return rows.filter((row) => matchesSearch(row, query))
   }, [rows, appliedSearch])
 
-  const pendingRows = useMemo(
-    () => filteredRows.filter((row) => row.status === 'Pending'),
-    [filteredRows],
-  )
+  const pendingRows = useMemo(() => {
+    let list = filteredRows.filter((row) => row.status === 'Pending')
+    if (queueSubFilter === 'manual') {
+      list = list.filter((row) => {
+        const decision = row.verification?.idCheckDecision
+        return row.verification?.idCheckRequiresManualReview || decision === 'REVIEW'
+      })
+    } else if (queueSubFilter === 'proof_ready') {
+      list = list.filter((row) => getProofPackageCount(row) >= 2)
+    } else if (queueSubFilter === 'blocked') {
+      list = list.filter((row) => row.verification?.idCheckDecision === 'BLOCK')
+    }
+    return list
+  }, [filteredRows, queueSubFilter])
 
   const pendingIds = useMemo(
     () => pendingRows.map((row) => getResidentId(row)).filter(Boolean),
@@ -1004,9 +1028,14 @@ export default function ResidentRegistrationPage() {
             <SummaryMetricCard 
               label={activeTab === 'Pending' ? 'Visible Queue' : activeTab === 'Needs Revision' ? 'Needs Revision' : 'Disqualified Total'} 
               value={queueMetrics.total} 
-              helper={activeTab === 'Pending' ? 'Total records loaded' : activeTab === 'Needs Revision' ? 'Total returned records' : 'Total disqualified records'} 
+              helper={activeTab === 'Pending' ? 'Total records loaded (click to show all)' : activeTab === 'Needs Revision' ? 'Total returned records' : 'Total disqualified records'} 
               variant={activeTab === 'Rejected' ? 'rose' : 'blue'}
               icon={<UsersIcon className="h-5 w-5" />} 
+              onClick={() => {
+                if (activeTab === 'Pending') setQueueSubFilter('all')
+                else setActiveTab('Pending')
+              }}
+              isSelected={activeTab === 'Pending' && queueSubFilter === 'all'}
             />
             <SummaryMetricCard 
               label={activeTab === 'Pending' ? 'Ready for Review' : activeTab === 'Needs Revision' ? 'Walk-In Returned' : 'Walk-In Disqualified'} 
@@ -1017,9 +1046,15 @@ export default function ResidentRegistrationPage() {
                   ? queueMetrics.assistedRevisionCount
                   : filteredRows.filter((r) => r.registrationMethod === 'assisted' || Boolean((r as any).assistedBy)).length
               } 
-              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation' : activeTab === 'Needs Revision' ? 'Staff can update & resubmit' : 'Barangay assisted records'} 
+              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation (click to filter)' : activeTab === 'Needs Revision' ? 'Staff can update & resubmit' : 'Barangay assisted records'} 
               variant="amber"
               icon={<ClipboardCheckIcon className="h-5 w-5" />} 
+              onClick={() => {
+                if (activeTab === 'Pending') {
+                  setQueueSubFilter((prev) => (prev === 'manual' ? 'all' : 'manual'))
+                }
+              }}
+              isSelected={activeTab === 'Pending' && queueSubFilter === 'manual'}
             />
             <SummaryMetricCard 
               label={activeTab === 'Pending' ? 'Proof Ready' : activeTab === 'Needs Revision' ? 'Self-Registered' : 'Citizen Disqualified'} 
@@ -1030,16 +1065,28 @@ export default function ResidentRegistrationPage() {
                   ? queueMetrics.selfRevisionCount
                   : filteredRows.filter((r) => r.registrationMethod !== 'assisted' && !Boolean((r as any).assistedBy)).length
               } 
-              helper={activeTab === 'Pending' ? '2+ assets detected' : activeTab === 'Needs Revision' ? 'Citizen mobile revision' : 'Mobile citizen applications'} 
+              helper={activeTab === 'Pending' ? '2+ assets detected (click to filter)' : activeTab === 'Needs Revision' ? 'Citizen mobile revision' : 'Mobile citizen applications'} 
               variant={activeTab === 'Pending' ? 'emerald' : 'purple'}
               icon={<FileCheckIcon className="h-5 w-5" />} 
+              onClick={() => {
+                if (activeTab === 'Pending') {
+                  setQueueSubFilter((prev) => (prev === 'proof_ready' ? 'all' : 'proof_ready'))
+                }
+              }}
+              isSelected={activeTab === 'Pending' && queueSubFilter === 'proof_ready'}
             />
             <SummaryMetricCard 
               label={activeTab === 'Pending' ? 'Needs Attention' : activeTab === 'Needs Revision' ? 'Proof Attached' : 'Preserved Proofs'} 
               value={activeTab === 'Pending' ? queueMetrics.blockedCount : queueMetrics.proofReadyCount} 
-              helper={activeTab === 'Pending' ? 'Review AI red flags' : 'Assets retained on record'} 
+              helper={activeTab === 'Pending' ? 'Review AI red flags (click to filter)' : 'Assets retained on record'} 
               variant={activeTab === 'Pending' ? 'rose' : 'emerald'}
               icon={<AlertCircleIcon className="h-5 w-5" />} 
+              onClick={() => {
+                if (activeTab === 'Pending') {
+                  setQueueSubFilter((prev) => (prev === 'blocked' ? 'all' : 'blocked'))
+                }
+              }}
+              isSelected={activeTab === 'Pending' && queueSubFilter === 'blocked'}
             />
           </div>
         </section>

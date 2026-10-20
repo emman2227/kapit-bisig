@@ -270,30 +270,52 @@ export default function AuditLogsPage() {
           <SummaryMetricCard
             label="Total Logged"
             value={total}
-            helper="All recorded audit events"
+            helper="All recorded audit events (click to clear filters)"
             variant="blue"
             icon={<Shield className="h-5 w-5" />}
+            onClick={handleResetFilters}
+            isSelected={!hasActiveFilters}
           />
           <SummaryMetricCard
             label="Visible Page"
             value={logs.length}
-            helper={`Page ${page} of ${totalPages || 1}`}
+            helper={`Page ${page} of ${totalPages || 1} (click to jump to page 1)`}
             variant="purple"
             icon={<FileText className="h-5 w-5" />}
+            onClick={() => setPage(1)}
+            isSelected={page === 1}
           />
           <SummaryMetricCard
             label="Data Changes"
             value={mutationCount}
-            helper="Creations & updates on page"
+            helper="Status changes on page (click to filter)"
             variant="emerald"
             icon={<Key className="h-5 w-5" />}
+            onClick={() => {
+              if (actionFilter === 'RESIDENT_STATUS_UPDATED') {
+                handleResetFilters()
+              } else {
+                setActionFilter('RESIDENT_STATUS_UPDATED')
+                setPage(1)
+              }
+            }}
+            isSelected={actionFilter === 'RESIDENT_STATUS_UPDATED'}
           />
           <SummaryMetricCard
             label="Security Alerts"
             value={securityAlertCount}
-            helper="Denied access & failed logins"
+            helper="Failed logins & alerts (click to filter)"
             variant="rose"
             icon={<AlertTriangle className="h-5 w-5" />}
+            onClick={() => {
+              if (actionFilter === 'LOGIN_FAILED') {
+                handleResetFilters()
+              } else {
+                setActionFilter('LOGIN_FAILED')
+                setPage(1)
+              }
+            }}
+            isSelected={actionFilter === 'LOGIN_FAILED'}
           />
         </div>
       </section>

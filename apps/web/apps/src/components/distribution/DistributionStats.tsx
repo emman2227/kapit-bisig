@@ -7,11 +7,15 @@ export default function DistributionStats({
   upcoming,
   householdsServed,
   barangays,
+  lifecycleView,
+  onLifecycleChange,
 }: {
   active: number
   upcoming: number
   householdsServed: number
   barangays: number
+  lifecycleView?: 'upcoming' | 'active' | 'completed' | 'archived'
+  onLifecycleChange?: (view: 'upcoming' | 'active' | 'completed' | 'archived') => void
 }) {
   const totalDistributions = active + upcoming
 
@@ -41,23 +45,28 @@ export default function DistributionStats({
         <SummaryMetricCard
           label="Households Served"
           value={householdsServed}
-          helper="Claimed households"
+          helper="Claimed households (click to view)"
           variant="emerald"
           icon={<UsersIcon className="h-5 w-5" />}
+          href="/households?status=Claimed"
         />
         <SummaryMetricCard
           label="Active"
           value={active}
-          helper="Inside claim window"
+          helper="Inside claim window (click to switch)"
           variant="amber"
           icon={<CheckCircleIcon className="h-5 w-5" />}
+          onClick={() => onLifecycleChange?.('active')}
+          isSelected={lifecycleView === 'active'}
         />
         <SummaryMetricCard
           label="Upcoming"
           value={upcoming}
-          helper="Scheduled next"
+          helper="Scheduled next (click to switch)"
           variant="purple"
           icon={<ClockIcon className="h-5 w-5" />}
+          onClick={() => onLifecycleChange?.('upcoming')}
+          isSelected={lifecycleView === 'upcoming'}
         />
       </div>
     </section>

@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { DashboardLayout, Header } from '@/components/layout'
 import { SectionHeader } from '@/components/ui'
 import {
@@ -183,6 +184,7 @@ export default function DashboardPage() {
             tagColor="blue"
             icon={<HouseholdIcon className="h-5 w-5" />}
             footerText={`${stats.totalRegistered.toLocaleString()} mapped in active batches`}
+            href="/households"
           />
           <DeckMetricCell
             title="Open Distributions"
@@ -192,6 +194,7 @@ export default function DashboardPage() {
             tagColor={stats.pendingDistributions > 0 ? 'amber' : 'emerald'}
             icon={<PendingIcon className="h-5 w-5" />}
             footerText={`${stats.totalDistributions} overall distribution events`}
+            href="/distribution?status=active"
           />
           <DeckMetricCell
             title="Claims Completed Today"
@@ -201,6 +204,7 @@ export default function DashboardPage() {
             tagColor="emerald"
             icon={<CompletedIcon className="h-5 w-5" />}
             footerText={`${stats.totalClaimed.toLocaleString()} total families served to date`}
+            href="/households?status=Claimed"
           />
           <DeckMetricCell
             title="Municipal Claim Rate"
@@ -211,6 +215,7 @@ export default function DashboardPage() {
             icon={<ChartIcon className="h-5 w-5" />}
             progress={coverageRate}
             footerText={`${stats.totalUnclaimed.toLocaleString()} unserved households remaining`}
+            href="/reports"
           />
         </div>
       </section>
@@ -321,6 +326,7 @@ function DeckMetricCell({
   tagColor = 'blue',
   progress,
   footerText,
+  href,
 }: {
   title: string
   value: string
@@ -330,6 +336,7 @@ function DeckMetricCell({
   tagColor?: 'blue' | 'emerald' | 'amber' | 'purple'
   progress?: number
   footerText?: string
+  href?: string
 }) {
   const tagColorStyles = {
     blue: 'bg-blue-50 text-blue-700 border-blue-200/60 dark:bg-blue-950/50 dark:text-blue-300 dark:border-blue-800/50',
@@ -345,21 +352,30 @@ function DeckMetricCell({
     purple: 'bg-purple-50 text-purple-600 dark:bg-purple-950/70 dark:text-purple-300 border-purple-100 dark:border-purple-900/50',
   }
 
-  return (
-    <div className="flex flex-col justify-between p-4 sm:p-5 hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+  const content = (
+    <div className={`flex flex-col justify-between p-4 sm:p-5 h-full transition-all duration-150 ${
+      href ? 'hover:bg-slate-50/90 dark:hover:bg-slate-800/50 cursor-pointer group' : 'hover:bg-slate-50/50 dark:hover:bg-slate-800/40'
+    }`}>
       <div>
         <div className="flex items-start justify-between gap-3 mb-2">
-          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${iconBgStyles[tagColor]}`}>
+          <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${iconBgStyles[tagColor]} transition-transform duration-200 group-hover:scale-105`}>
             {icon}
           </div>
-          {tag && (
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${tagColorStyles[tagColor]}`}>
-              {tag}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {tag && (
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${tagColorStyles[tagColor]}`}>
+                {tag}
+              </span>
+            )}
+            {href && (
+              <span className="text-slate-400 opacity-0 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all text-xs font-bold">
+                &rarr;
+              </span>
+            )}
+          </div>
         </div>
 
-        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">
           {title}
         </p>
         <h3 className="mt-1 text-2xl sm:text-3xl font-extrabold tracking-tight text-slate-900 dark:text-white">
@@ -382,11 +398,26 @@ function DeckMetricCell({
       )}
 
       {footerText && (
-        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 truncate">
-          {footerText}
+        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center justify-between">
+          <span className="truncate">{footerText}</span>
+          {href && (
+            <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity ml-1 shrink-0">
+              View &rarr;
+            </span>
+          )}
         </div>
       )}
     </div>
   )
+
+  if (href) {
+    return (
+      <Link href={href} className="block h-full focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 rounded-lg">
+        {content}
+      </Link>
+    )
+  }
+
+  return content
 }
 

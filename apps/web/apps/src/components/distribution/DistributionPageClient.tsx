@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import DistributionStats from './DistributionStats'
 import DistributionsTable, { DistributionRow } from './DistributionsTable'
 import NewDistributionModal, { CreateDistributionPayload } from './NewDistributionModal'
@@ -27,6 +28,21 @@ export default function DistributionPageClient() {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [pendingArchiveId, setPendingArchiveId] = useState<string | null>(null)
   const [isArchiving, setIsArchiving] = useState(false)
+
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const statusParam = searchParams?.get('status')?.toLowerCase()
+    if (statusParam === 'active') {
+      setLifecycleView('active')
+    } else if (statusParam === 'upcoming') {
+      setLifecycleView('upcoming')
+    } else if (statusParam === 'completed') {
+      setLifecycleView('completed')
+    } else if (statusParam === 'archived') {
+      setLifecycleView('archived')
+    }
+  }, [searchParams])
 
   const fetchDistributions = useCallback(async (silent = false) => {
     try {
@@ -297,6 +313,8 @@ export default function DistributionPageClient() {
         upcoming={upcomingCount}
         householdsServed={householdsServedCount}
         barangays={barangaysCount}
+        lifecycleView={lifecycleView}
+        onLifecycleChange={setLifecycleView}
       />
 
       {error && (

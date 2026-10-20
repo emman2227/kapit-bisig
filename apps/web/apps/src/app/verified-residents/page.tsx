@@ -44,6 +44,7 @@ export default function VerifiedResidentsPage() {
 
   const [barangay, setBarangay] = useState('All Barangays')
   const [currentPage, setCurrentPage] = useState(1)
+  const [quickFilter, setQuickFilter] = useState<'all' | 'high_match' | 'recent'>('all')
 
   const barangayOptions = useMemo(
     () => ['All Barangays', ...getScopedBarangays(user?.role, user?.assignedBarangays)],
@@ -133,14 +134,31 @@ export default function VerifiedResidentsPage() {
       return Number.isFinite(t) && now - t <= sevenDaysMs
     }).length
   }, [rows])
+  const displayRows = useMemo(() => {
+    let result = rows
+    if (quickFilter === 'high_match') {
+      result = result.filter((r) => isHighMatchResident(r))
+    } else if (quickFilter === 'recent') {
+      const now = Date.now()
+      const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
+      result = result.filter((r) => {
+        const timestamp = getVerifiedTimestamp(r)
+        if (!timestamp) return false
+        const t = new Date(timestamp).getTime()
+        return Number.isFinite(t) && now - t <= sevenDaysMs
+      })
+    }
+    return result
+  }, [rows, quickFilter])
+
   const totalPages = useMemo(
-    () => Math.max(1, Math.ceil(rows.length / PAGE_SIZE)),
-    [rows.length, PAGE_SIZE],
+    () => Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE)),
+    [displayRows.length, PAGE_SIZE],
   )
   const pagedRows = useMemo(() => {
     const start = (currentPage - 1) * PAGE_SIZE
-    return rows.slice(start, start + PAGE_SIZE)
-  }, [rows, currentPage, PAGE_SIZE])
+    return displayRows.slice(start, start + PAGE_SIZE)
+  }, [displayRows, currentPage, PAGE_SIZE])
 
   if (loading || !user || (user.role !== 'SUPERADMIN' && user.role !== 'LGU_STAFF')) return null
 
@@ -169,30 +187,49 @@ export default function VerifiedResidentsPage() {
           <SummaryMetricCard
             label="Verified"
             value={rows.length}
-            helper="Verified registrations"
+            helper="All verified (click to reset)"
             variant="emerald"
             icon={<CheckCircleIcon className="h-5 w-5" />}
+            onClick={() => {
+              setQuickFilter('all')
+              setCurrentPage(1)
+            }}
+            isSelected={quickFilter === 'all'}
           />
           <SummaryMetricCard
             label="Barangays"
             value={uniqueBarangayCount}
-            helper="Covered barangays"
+            helper="Covered barangays (click to reset)"
             variant="blue"
             icon={<MapIcon className="h-5 w-5" />}
+            onClick={() => {
+              setBarangay('All Barangays')
+              setCurrentPage(1)
+            }}
           />
           <SummaryMetricCard
             label="High AI Match"
             value={withHighMatch}
-            helper="Strong confidence records"
+            helper="Strong confidence (click to filter)"
             variant="purple"
             icon={<SparklesIcon className="h-5 w-5" />}
+            onClick={() => {
+              setQuickFilter((prev) => (prev === 'high_match' ? 'all' : 'high_match'))
+              setCurrentPage(1)
+            }}
+            isSelected={quickFilter === 'high_match'}
           />
           <SummaryMetricCard
             label="Recent"
             value={verifiedLast7Days}
-            helper="Verified in 7 days"
+            helper="Verified in 7 days (click to filter)"
             variant="amber"
             icon={<RefreshIcon className="h-5 w-5" />}
+            onClick={() => {
+              setQuickFilter((prev) => (prev === 'recent' ? 'all' : 'recent'))
+              setCurrentPage(1)
+            }}
+            isSelected={quickFilter === 'recent'}
           />
         </div>
       </section>
@@ -203,7 +240,7 @@ export default function VerifiedResidentsPage() {
             <div>
               <p className="text-xs font-semibold tracking-[0.14em] uppercase text-gray-500 dark:text-slate-400">Verified Directory</p>
               <p className="mt-1 text-sm text-gray-700 dark:text-slate-300">
-                {fetching ? 'Loading verified residents...' : `${rows.length} verified resident(s)`}
+                {fetching ? 'Loading verified residents...' : `${displayRows.length} verified resident(s)`}
               </p>
               <p className="mt-1 text-xs text-gray-500 dark:text-slate-400">
                 Use the record button to open the full approved resident information.

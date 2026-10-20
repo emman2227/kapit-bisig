@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { DashboardLayout, Header } from '@/components/layout'
 import HouseholdStats from '@/components/households/PriorityStats'
 import HouseholdsTable, { DistributionOption } from '@/components/households/HouseholdsTable'
@@ -42,6 +43,23 @@ export default function HouseholdsPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [barangay, setBarangay] = useState<BarangayFilter>('All Barangays')
   const [status, setStatus] = useState<StatusFilter>('All Status')
+  const [onlyWithHistory, setOnlyWithHistory] = useState(false)
+
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const urlStatus = searchParams?.get('status')
+    if (urlStatus === 'Claimed' || urlStatus === 'Unclaimed') {
+      setStatus(urlStatus)
+    } else if (urlStatus === 'All' || urlStatus === 'All Status') {
+      setStatus('All Status')
+    }
+    const urlHistory = searchParams?.get('withHistory')
+    if (urlHistory === 'true') {
+      setOnlyWithHistory(true)
+    }
+  }, [searchParams])
 
   // Load available distribution cycles on mount
   useEffect(() => {
@@ -191,9 +209,30 @@ export default function HouseholdsPage() {
 
       const matchesBarangay = barangay === 'All Barangays' || h.barangay === barangay
       const matchesStatus = status === 'All Status' || h.claimStatus === status
-      return matchesSearch && matchesBarangay && matchesStatus
+      const matchesHistory = !onlyWithHistory || Boolean(h.lastClaimedAt)
+      return matchesSearch && matchesBarangay && matchesStatus && matchesHistory
     })
-  }, [searchQuery, barangay, status, allRows])
+  }, [searchQuery, barangay, status, onlyWithHistory, allRows])
+
+  const handleCardFilterChange = (newStatus: StatusFilter, withHistory = false) => {
+    setStatus(newStatus)
+    setOnlyWithHistory(withHistory)
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (newStatus !== 'All Status') {
+        params.set('status', newStatus)
+      } else {
+        params.delete('status')
+      }
+      if (withHistory) {
+        params.set('withHistory', 'true')
+      } else {
+        params.delete('withHistory')
+      }
+      const newQuery = params.toString() ? `?${params.toString()}` : window.location.pathname
+      router.replace(newQuery, { scroll: false })
+    }
+  }
 
   return (
     <DashboardLayout>
@@ -204,7 +243,12 @@ export default function HouseholdsPage() {
         />
 
         <div className="mt-6">
-          <HouseholdStats counts={statCounts} />
+          <HouseholdStats
+            counts={statCounts}
+            activeFilter={status}
+            onlyWithHistory={onlyWithHistory}
+            onFilterChange={handleCardFilterChange}
+          />
         </div>
 
         <HouseholdsTable

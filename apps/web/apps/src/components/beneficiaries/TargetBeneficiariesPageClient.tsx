@@ -236,27 +236,47 @@ export default function TargetBeneficiariesPageClient() {
             helper="Across current scope"
             variant="blue"
             icon={<FileText className="h-5 w-5" />}
+            onClick={() => {
+              setSelectedStatus(ALL_STATUSES)
+              setPage(1)
+            }}
+            isSelected={selectedStatus === ALL_STATUSES}
           />
           <SummaryMetricCard
             label="Pending Verification"
             value={String(proofSummary.pendingVerification)}
-            helper="Awaiting staff decision"
+            helper="Awaiting staff decision (click to filter)"
             variant="amber"
             icon={<Clock className="h-5 w-5" />}
+            onClick={() => {
+              setSelectedStatus((prev) => (prev === PENDING_STATUS ? ALL_STATUSES : PENDING_STATUS))
+              setPage(1)
+            }}
+            isSelected={selectedStatus === PENDING_STATUS}
           />
           <SummaryMetricCard
             label="Approved Beneficiaries"
             value={String(proofSummary.approved)}
-            helper="Eligible for aid pack"
+            helper="Eligible for aid pack (click to filter)"
             variant="emerald"
             icon={<CheckCircle2 className="h-5 w-5" />}
+            onClick={() => {
+              setSelectedStatus((prev) => (prev === 'Approved' ? ALL_STATUSES : 'Approved'))
+              setPage(1)
+            }}
+            isSelected={selectedStatus === 'Approved'}
           />
           <SummaryMetricCard
             label="Needs Revision"
             value={String(proofSummary.rejected)}
-            helper="Returned for missing proof"
+            helper="Returned for missing proof (click to filter)"
             variant="rose"
             icon={<RotateCcw className="h-5 w-5" />}
+            onClick={() => {
+              setSelectedStatus((prev) => (prev === 'Rejected' ? ALL_STATUSES : 'Rejected'))
+              setPage(1)
+            }}
+            isSelected={selectedStatus === 'Rejected'}
           />
         </div>
       </section>

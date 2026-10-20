@@ -299,27 +299,35 @@ export default function UsersTable() {
             helper="Visible accounts"
             variant="blue"
             icon={<UsersMenuIcon className="h-5 w-5" />}
+            onClick={() => setFilterStatus('all')}
+            isSelected={filterStatus === 'all'}
           />
           <SummaryMetricCard
             label="Active"
             value={metrics.active}
-            helper="Can access platform"
+            helper="Can access platform (click to filter)"
             variant="emerald"
             icon={<CheckCircleIcon className="h-5 w-5" />}
+            onClick={() => setFilterStatus((prev) => (prev === 'active' ? 'all' : 'active'))}
+            isSelected={filterStatus === 'active'}
           />
           <SummaryMetricCard
             label="Pending"
             value={metrics.pending}
-            helper="Awaiting first login"
+            helper="Awaiting first login (click to filter)"
             variant="amber"
             icon={<ClockIcon className="h-5 w-5" />}
+            onClick={() => setFilterStatus((prev) => (prev === 'pending' ? 'all' : 'pending'))}
+            isSelected={filterStatus === 'pending'}
           />
           <SummaryMetricCard
             label="Inactive"
             value={metrics.inactive}
-            helper="Currently disabled"
+            helper="Currently disabled (click to filter)"
             variant="rose"
             icon={<DeactivateIcon className="h-5 w-5" />}
+            onClick={() => setFilterStatus((prev) => (prev === 'inactive' ? 'all' : 'inactive'))}
+            isSelected={filterStatus === 'inactive'}
           />
         </div>
       </section>

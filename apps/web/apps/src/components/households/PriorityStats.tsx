@@ -11,14 +11,48 @@ type Counts = {
 
 export default function HouseholdStats({
   counts,
+  activeFilter = 'All Status',
+  onlyWithHistory = false,
+  onFilterChange,
 }: {
   counts?: Partial<Counts>
+  activeFilter?: string
+  onlyWithHistory?: boolean
+  onFilterChange?: (status: 'All Status' | 'Claimed' | 'Unclaimed', withHistory?: boolean) => void
 }) {
   const total = counts?.total ?? 0
   const claimed = counts?.claimed ?? 0
   const notClaimed = counts?.notClaimed ?? 0
   const withClaimHistory = counts?.withClaimHistory ?? 0
   const claimRate = total > 0 ? Math.round((claimed / total) * 100) : 0
+
+  const handleAllClick = () => {
+    onFilterChange?.('All Status', false)
+  }
+
+  const handleClaimedClick = () => {
+    if (activeFilter === 'Claimed' && !onlyWithHistory) {
+      onFilterChange?.('All Status', false)
+    } else {
+      onFilterChange?.('Claimed', false)
+    }
+  }
+
+  const handlePendingClick = () => {
+    if (activeFilter === 'Unclaimed' && !onlyWithHistory) {
+      onFilterChange?.('All Status', false)
+    } else {
+      onFilterChange?.('Unclaimed', false)
+    }
+  }
+
+  const handleHistoryClick = () => {
+    if (onlyWithHistory) {
+      onFilterChange?.('All Status', false)
+    } else {
+      onFilterChange?.('All Status', true)
+    }
+  }
 
   return (
     <section className="mb-6 overflow-hidden rounded-[28px] border border-slate-200/90 bg-white shadow-sm dark:border-slate-700/80 dark:bg-slate-900">
@@ -42,27 +76,35 @@ export default function HouseholdStats({
           helper="Resident-based records"
           variant="blue"
           icon={<UsersIcon className="h-5 w-5" />}
+          onClick={handleAllClick}
+          isSelected={activeFilter === 'All Status' && !onlyWithHistory}
         />
         <SummaryMetricCard
           label="Claimed"
           value={claimed}
-          helper="Released support"
+          helper="Released support (click to filter)"
           variant="emerald"
           icon={<CheckCircleIcon className="h-5 w-5" />}
+          onClick={handleClaimedClick}
+          isSelected={activeFilter === 'Claimed' && !onlyWithHistory}
         />
         <SummaryMetricCard
           label="Pending"
           value={notClaimed}
-          helper="Needs follow-up"
+          helper="Needs follow-up (click to filter)"
           variant="amber"
           icon={<HourglassIcon className="h-5 w-5" />}
+          onClick={handlePendingClick}
+          isSelected={activeFilter === 'Unclaimed' && !onlyWithHistory}
         />
         <SummaryMetricCard
           label="With History"
           value={withClaimHistory}
-          helper="Previously assisted"
+          helper="Previously assisted (click to filter)"
           variant="purple"
           icon={<HistoryIcon className="h-5 w-5" />}
+          onClick={handleHistoryClick}
+          isSelected={onlyWithHistory}
         />
       </div>
     </section>
