@@ -396,6 +396,7 @@ export interface AuditLogRecord {
   action: string;
   entityType: string;
   entityId: string;
+  entityLabel?: string;
   metadata: Record<string, unknown>;
   ip: string;
   userAgent: string;

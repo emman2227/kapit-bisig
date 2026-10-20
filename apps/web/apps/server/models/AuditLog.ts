@@ -67,6 +67,7 @@ export interface IAuditLog extends Document {
   action: AuditAction;
   entityType: string;
   entityId: string;
+  entityLabel?: string;
   metadata: Record<string, unknown>;
   ip: string;
   userAgent: string;
@@ -89,6 +90,7 @@ const AuditLogSchema = new Schema<IAuditLog>(
     },
     entityType: { type: String, required: true },
     entityId: { type: String, default: '' },
+    entityLabel: { type: String, default: '' },
     metadata: { type: Schema.Types.Mixed, default: {} },
     ip: { type: String, required: true },
     userAgent: { type: String, default: '' },

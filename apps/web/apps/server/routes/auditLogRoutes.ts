@@ -1,5 +1,10 @@
 import { Router, Response } from 'express';
+import mongoose from 'mongoose';
 import AuditLog from '../models/AuditLog';
+import StaffUser from '../models/StaffUser';
+import Distribution from '../models/Distribution';
+import Resident from '../models/Resident';
+import Claim from '../models/Claim';
 import { AuthRequest } from '../middleware/unifiedAuth';
 
 const router = Router();
@@ -17,7 +22,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const page = parseInt((req.query.page as string) || '1', 10);
     const limit = parseInt((req.query.limit as string) || '50', 10);
     const skip = (page - 1) * limit;
-    
+
     // Optional filters
     const action = req.query.action as string;
     const actorRole = req.query.actorRole as string;
@@ -33,20 +38,46 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     if (actorRole) andConditions.push({ actorRole });
     if (actor) {
       const escaped = escapeRegex(actor.trim());
+      const staffMatches = await StaffUser.find({
+        $or: [
+          { firstName: { $regex: escaped, $options: 'i' } },
+          { lastName: { $regex: escaped, $options: 'i' } },
+          { fullName: { $regex: escaped, $options: 'i' } },
+          { email: { $regex: escaped, $options: 'i' } },
+        ],
+      })
+        .select('_id')
+        .lean();
+      const staffIds = staffMatches.map((s) => s._id.toString());
+
       andConditions.push({
         $or: [
           { actorName: { $regex: escaped, $options: 'i' } },
           { actorId: { $regex: escaped, $options: 'i' } },
           { actorRole: { $regex: escaped, $options: 'i' } },
+          ...(staffIds.length > 0 ? [{ actorId: { $in: staffIds } }] : []),
         ],
       });
     }
     if (target) {
       const escaped = escapeRegex(target.trim());
+      const distMatches = await Distribution.find({
+        $or: [
+          { barangay: { $regex: escaped, $options: 'i' } },
+          { notes: { $regex: escaped, $options: 'i' } },
+          { location: { $regex: escaped, $options: 'i' } },
+        ],
+      })
+        .select('_id')
+        .lean();
+      const distIds = distMatches.map((d) => d._id.toString());
+
       andConditions.push({
         $or: [
           { entityType: { $regex: escaped, $options: 'i' } },
           { entityId: { $regex: escaped, $options: 'i' } },
+          { entityLabel: { $regex: escaped, $options: 'i' } },
+          ...(distIds.length > 0 ? [{ entityId: { $in: distIds } }] : []),
         ],
       });
     }
@@ -79,18 +110,169 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .skip(skip)
         .limit(limit)
         .lean(),
-      AuditLog.countDocuments(query)
+      AuditLog.countDocuments(query),
     ]);
+
+    // Batch resolve missing actor names and entity labels
+    const isObjectId = (id: string | null | undefined): boolean =>
+      Boolean(id && mongoose.Types.ObjectId.isValid(id) && /^[0-9a-fA-F]{24}$/.test(id));
+
+    const actorStaffIds = new Set<string>();
+    const distIds = new Set<string>();
+    const residentIds = new Set<string>();
+    const staffTargetIds = new Set<string>();
+    const claimIds = new Set<string>();
+
+    for (const log of logs) {
+      // If actorName is missing, empty, or equals a 24-hex ObjectId, resolve from StaffUser
+      if (!log.actorName || isObjectId(log.actorName)) {
+        if (isObjectId(log.actorId)) {
+          actorStaffIds.add(log.actorId!);
+        } else if (isObjectId(log.actorName)) {
+          actorStaffIds.add(log.actorName!);
+        }
+      }
+
+      // If entityLabel is missing, resolve by entityType
+      if (!log.entityLabel) {
+        if (log.entityType === 'Distribution' && isObjectId(log.entityId)) {
+          distIds.add(log.entityId);
+        } else if (log.entityType === 'Resident' && isObjectId(log.entityId)) {
+          residentIds.add(log.entityId);
+        } else if (log.entityType === 'StaffUser' && isObjectId(log.entityId)) {
+          staffTargetIds.add(log.entityId);
+        } else if (log.entityType === 'Claim' && log.entityId) {
+          claimIds.add(log.entityId);
+        }
+      }
+    }
+
+    // Parallel batch lookups
+    const [staffUsers, distributions, residents, targetStaff, claims] = await Promise.all([
+      actorStaffIds.size > 0
+        ? StaffUser.find({ _id: { $in: Array.from(actorStaffIds) } })
+            .select('firstName lastName fullName email')
+            .lean()
+        : [],
+      distIds.size > 0
+        ? Distribution.find({ _id: { $in: Array.from(distIds) } })
+            .select('barangay scheduled notes location')
+            .lean()
+        : [],
+      residentIds.size > 0
+        ? Resident.find({ _id: { $in: Array.from(residentIds) } })
+            .select('firstName lastName fullName residentCode')
+            .lean()
+        : [],
+      staffTargetIds.size > 0
+        ? StaffUser.find({ _id: { $in: Array.from(staffTargetIds) } })
+            .select('firstName lastName fullName email')
+            .lean()
+        : [],
+      claimIds.size > 0
+        ? Claim.find({
+            $or: [
+              { _id: { $in: Array.from(claimIds).filter((id) => isObjectId(id)) } },
+              { claimId: { $in: Array.from(claimIds) } },
+            ],
+          })
+            .select('claimId householdCode barangay staffName')
+            .lean()
+        : [],
+    ]);
+
+    const staffMap = new Map<string, string>();
+    for (const s of staffUsers) {
+      staffMap.set(
+        s._id.toString(),
+        s.fullName || `${s.firstName || ''} ${s.lastName || ''}`.trim() || s.email,
+      );
+    }
+
+    const distMap = new Map<string, string>();
+    for (const d of distributions) {
+      distMap.set(d._id.toString(), `${d.notes || 'Relief Distribution'} - Brgy. ${d.barangay} (${d.scheduled})`);
+    }
+
+    const residentMap = new Map<string, string>();
+    for (const r of residents) {
+      const name = r.fullName || `${r.firstName || ''} ${r.lastName || ''}`.trim();
+      residentMap.set(r._id.toString(), `Resident: ${name}${r.residentCode ? ` (${r.residentCode})` : ''}`);
+    }
+
+    const targetStaffMap = new Map<string, string>();
+    for (const s of targetStaff) {
+      targetStaffMap.set(
+        s._id.toString(),
+        `Staff: ${s.fullName || `${s.firstName || ''} ${s.lastName || ''}`.trim()}`,
+      );
+    }
+
+    const claimMap = new Map<string, string>();
+    for (const c of claims) {
+      const label = `Claim: ${c.householdCode || c.claimId} (${c.barangay})`;
+      claimMap.set(c._id.toString(), label);
+      if (c.claimId) claimMap.set(c.claimId, label);
+    }
+
+    // Attach resolved properties
+    const resolvedLogs = logs.map((log) => {
+      let resolvedActorName = log.actorName;
+      if (log.actorRole === 'SUPERADMIN') {
+        resolvedActorName = 'Superadmin';
+      } else if (log.actorId && staffMap.has(log.actorId)) {
+        resolvedActorName = staffMap.get(log.actorId)!;
+      } else if (log.actorName && staffMap.has(log.actorName)) {
+        resolvedActorName = staffMap.get(log.actorName)!;
+      } else if (isObjectId(resolvedActorName)) {
+        resolvedActorName = `Staff (${log.actorRole || 'LGU'})`;
+      } else if (!resolvedActorName) {
+        resolvedActorName = log.actorRole === 'ANONYMOUS' ? 'System' : (log.actorId || 'System');
+      }
+
+      let resolvedEntityLabel = log.entityLabel;
+      if (!resolvedEntityLabel) {
+        if (log.entityType === 'Distribution') {
+          resolvedEntityLabel =
+            distMap.get(log.entityId) ||
+            (log.entityId ? `Distribution (${log.entityId.slice(-6)})` : 'Distribution');
+        } else if (log.entityType === 'Resident') {
+          resolvedEntityLabel =
+            residentMap.get(log.entityId) ||
+            (log.entityId ? `Resident (${log.entityId.slice(-6)})` : 'Resident');
+        } else if (log.entityType === 'StaffUser') {
+          resolvedEntityLabel =
+            targetStaffMap.get(log.entityId) ||
+            (log.entityId ? `Staff (${log.entityId.slice(-6)})` : 'Staff User');
+        } else if (log.entityType === 'Claim') {
+          resolvedEntityLabel =
+            claimMap.get(log.entityId) ||
+            (log.entityId ? `Claim (${log.entityId})` : 'Relief Claim');
+        } else if (log.entityType === 'Auth') {
+          resolvedEntityLabel = 'Authentication Session';
+        } else if (log.entityType === 'Face') {
+          resolvedEntityLabel = 'Biometric Face Verification';
+        } else {
+          resolvedEntityLabel = log.entityType + (log.entityId ? ` (${log.entityId.slice(-6)})` : '');
+        }
+      }
+
+      return {
+        ...log,
+        actorName: resolvedActorName,
+        entityLabel: resolvedEntityLabel,
+      };
+    });
 
     return res.json({
       success: true,
-      data: logs,
+      data: resolvedLogs,
       pagination: {
         page,
         limit,
         totalDocs: total,
-        totalPages: Math.ceil(total / limit)
-      }
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error('[AuditLogRoutes] Fetch error:', error);
@@ -99,3 +281,4 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 });
 
 export default router;
+
