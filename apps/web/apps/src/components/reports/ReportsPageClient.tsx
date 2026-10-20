@@ -175,6 +175,7 @@ export default function ReportsPageClient() {
           subLabel: `${b.distributions} ${b.distributions === 1 ? 'event' : 'events'}`,
           value: Math.max(0, val),
           count: b.claimedHouseholds,
+          total: b.registeredHouseholds,
           stroke: DONUT_COLORS[i % DONUT_COLORS.length],
         }
       })
@@ -194,6 +195,7 @@ export default function ReportsPageClient() {
           subLabel: dateStr,
           value: Math.max(0, val),
           count: d.claimedHouseholds,
+          total: d.registeredHouseholds,
           percentage: d.claimRate,
           stroke: DONUT_COLORS[i % DONUT_COLORS.length],
         }
@@ -300,8 +302,8 @@ export default function ReportsPageClient() {
   return (
     <div className="space-y-6">
       {/* ── High-Density Filter Toolbar ──────────────────── */}
-      <div className="print:hidden overflow-hidden rounded-2xl sm:rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)]">
-        <div className="border-b border-slate-200/80 bg-slate-50/90 px-5 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-6">
+      <div className="print:hidden rounded-2xl sm:rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)]">
+        <div className="rounded-t-2xl sm:rounded-t-3xl border-b border-slate-200/80 bg-slate-50/90 px-5 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-6">
           <SectionHeader
             eyebrow="Reporting & Analytics"
             title="Distribution report generator"

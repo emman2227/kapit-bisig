@@ -87,12 +87,14 @@ export function Dropdown({
   onChange,
   buttonLabel,
   widthClass = 'min-w-[200px]',
+  usePortal = true,
 }: {
   value: string
   items: DropdownItem[]
   onChange: (v: string) => void
   buttonLabel: string
   widthClass?: string
+  usePortal?: boolean
 }) {
   return (
     <SelectDropdown
@@ -101,8 +103,11 @@ export function Dropdown({
       onChange={onChange}
       placeholder={buttonLabel}
       className={widthClass}
-      buttonClassName="!h-[38px] !px-3.5 !py-2 !text-xs sm:!text-sm !font-medium"
-      menuClassName="!rounded-2xl"
+      buttonClassName="!h-[38px] !px-3.5 !py-2 !text-xs sm:!text-sm !font-medium bg-white border-slate-200 text-slate-700 dark:!bg-slate-900 dark:!border-slate-700 dark:!text-slate-200"
+      menuClassName="!rounded-2xl !bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 shadow-xl dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)] border !p-1.5"
+      optionClassName="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:!bg-slate-700/80 !rounded-xl !py-2 !px-3"
+      selectedOptionClassName="!bg-emerald-600 !text-white font-semibold shadow-sm"
+      usePortal={usePortal}
     />
   )
 }
@@ -177,6 +182,7 @@ export interface DonutSegment {
   subLabel?: string
   value: number
   count?: number
+  total?: number
   percentage?: number
   stroke: string
 }
@@ -239,18 +245,31 @@ export function Donut({
   const [hoverKey, setHoverKey] = useState<string | null>(null)
   const total = segments.reduce((a, s) => a + s.value, 0) || 1
   const totalCount = segments.reduce((a, s) => a + (s.count != null ? s.count : s.value), 0)
+  const totalPossible = segments.reduce((a, s) => a + (s.total != null && s.total > 0 ? s.total : 0), 0)
+  const totalRemaining = totalPossible > 0 ? Math.max(0, totalPossible - totalCount) : 0
   const radius = 56
   const circumference = 2 * Math.PI * radius
 
   // Sorted segments for ranked display while preserving original identifiers
   const rankedSegments = useMemo(() => {
     return segments
-      .map((seg, origIdx) => ({
-        ...seg,
-        key: `${seg.label}_${seg.subLabel || origIdx}`,
-        origIdx,
-        pct: total > 0 ? Math.round((seg.value / total) * 100) : 0,
-      }))
+      .map((seg, origIdx) => {
+        const segCount = seg.count != null ? seg.count : seg.value
+        const segTotal = seg.total != null && seg.total > 0 ? seg.total : undefined
+        const remaining = segTotal != null ? Math.max(0, segTotal - segCount) : undefined
+        const completionRate = segTotal != null
+          ? Math.min(100, Math.round((segCount / segTotal) * 100))
+          : (seg.percentage != null ? seg.percentage : undefined)
+
+        return {
+          ...seg,
+          key: `${seg.label}_${seg.subLabel || origIdx}`,
+          origIdx,
+          pct: total > 0 ? Math.round((seg.value / total) * 100) : 0,
+          completionRate,
+          remaining,
+        }
+      })
       .sort((a, b) => b.value - a.value)
   }, [segments, total])
 
@@ -263,6 +282,10 @@ export function Donut({
     const others = rankedSegments.slice(maxSlices - 1)
     const otherValue = others.reduce((a, s) => a + s.value, 0)
     const otherCount = others.reduce((a, s) => a + (s.count != null ? s.count : s.value), 0)
+    const otherTotal = others.reduce((a, s) => a + (s.total != null && s.total > 0 ? s.total : 0), 0)
+    const otherRemaining = otherTotal > 0 ? Math.max(0, otherTotal - otherCount) : undefined
+    const otherCompletionRate = otherTotal > 0 ? Math.min(100, Math.round((otherCount / otherTotal) * 100)) : undefined
+
     return [
       ...top,
       {
@@ -270,6 +293,9 @@ export function Donut({
         subLabel: `${others.length} runs`,
         value: otherValue,
         count: otherCount,
+        total: otherTotal > 0 ? otherTotal : undefined,
+        remaining: otherRemaining,
+        completionRate: otherCompletionRate,
         pct: total > 0 ? Math.round((otherValue / total) * 100) : 0,
         stroke: '#94A3B8',
         key: 'other_events_group',
@@ -342,10 +368,19 @@ export function Donut({
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-2 pointer-events-none transition-all duration-200">
           {activeSegment ? (
             <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-150">
-              <span className="text-2xl font-black tracking-tight" style={{ color: activeSegment.stroke }}>
-                {metricMode === 'percentage'
-                  ? `${activeSegment.pct}%`
-                  : (activeSegment.count != null ? activeSegment.count : activeSegment.value).toLocaleString()}
+              <span className="text-xl font-black tracking-tight" style={{ color: activeSegment.stroke }}>
+                {metricMode === 'percentage' ? (
+                  `${activeSegment.pct}%`
+                ) : (
+                  <>
+                    {(activeSegment.count != null ? activeSegment.count : activeSegment.value).toLocaleString()}
+                    {activeSegment.total != null && activeSegment.total > 0 ? (
+                      <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                        {' '}/ {activeSegment.total.toLocaleString()}
+                      </span>
+                    ) : null}
+                  </>
+                )}
               </span>
               <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[105px] leading-tight mt-0.5">
                 {activeSegment.label}
@@ -353,22 +388,47 @@ export function Donut({
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
                 {metricMode === 'percentage'
                   ? `${(activeSegment.count != null ? activeSegment.count : activeSegment.value).toLocaleString()} ${unitLabel}`
+                  : activeSegment.remaining != null
+                  ? activeSegment.remaining > 0
+                    ? `${activeSegment.remaining.toLocaleString()} more to serve`
+                    : 'All served'
                   : `${activeSegment.pct}% share`}
               </span>
             </div>
           ) : (
             <div className="flex flex-col items-center animate-in fade-in duration-200">
-              <span className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                {metricMode === 'count'
-                  ? totalCount.toLocaleString()
-                  : total.toLocaleString()}
+              <span className="text-xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
+                {metricMode === 'count' ? (
+                  <>
+                    {totalCount.toLocaleString()}
+                    {totalPossible > 0 ? (
+                      <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                        {' '}/ {totalPossible.toLocaleString()}
+                      </span>
+                    ) : null}
+                  </>
+                ) : (
+                  total.toLocaleString()
+                )}
               </span>
               <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
                 {centerTitle}
               </span>
-              <span className="mt-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40">
-                {segments.length} {unitLabel === 'households' ? 'runs' : 'sectors'}
-              </span>
+              {metricMode === 'count' && totalPossible > 0 ? (
+                totalRemaining > 0 ? (
+                  <span className="mt-0.5 text-[9px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-full border border-amber-200/60 dark:border-amber-800/40">
+                    {totalRemaining.toLocaleString()} to serve
+                  </span>
+                ) : (
+                  <span className="mt-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40">
+                    All served
+                  </span>
+                )
+              ) : (
+                <span className="mt-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40">
+                  {segments.length} {unitLabel === 'households' ? 'runs' : 'sectors'}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -424,24 +484,47 @@ export function Donut({
                 </div>
 
                 {/* Metric Display */}
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex flex-col items-end shrink-0">
                   {metricMode === 'percentage' ? (
-                    <>
+                    <div className="flex items-center gap-2">
                       <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                         {displayCount} {unitLabel}
                       </span>
                       <span className="text-slate-900 dark:text-slate-100 font-bold font-mono text-xs tabular-nums">
                         {s.pct}%
                       </span>
-                    </>
+                    </div>
                   ) : (
                     <>
-                      <span className="text-slate-900 dark:text-slate-100 font-bold text-xs tabular-nums">
-                        {displayCount} <span className="font-normal text-[11px] text-slate-500 dark:text-slate-400">served</span>
-                      </span>
-                      <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 font-mono">
-                        {s.pct}%
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-slate-900 dark:text-slate-100 font-bold text-xs tabular-nums">
+                          {displayCount}
+                          {s.total != null && s.total > 0 ? (
+                            <span className="text-slate-500 dark:text-slate-400 font-normal">
+                              {' '}out of {s.total.toLocaleString()}
+                            </span>
+                          ) : null}
+                          <span className="font-normal text-[11px] text-slate-500 dark:text-slate-400 ml-1">served</span>
+                        </span>
+                        <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 font-mono">
+                          {s.completionRate != null ? `${s.completionRate}%` : `${s.pct}%`}
+                        </span>
+                      </div>
+
+                      {/* Sub-label indicating remaining households to serve */}
+                      {s.remaining != null ? (
+                        <div className="text-[10px] leading-tight mt-0.5">
+                          {s.remaining > 0 ? (
+                            <span className="text-amber-600 dark:text-amber-400 font-medium">
+                              {s.remaining.toLocaleString()} more to serve
+                            </span>
+                          ) : (
+                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                              All served
+                            </span>
+                          )}
+                        </div>
+                      ) : null}
                     </>
                   )}
                 </div>
@@ -452,7 +535,10 @@ export function Donut({
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
-                    width: `${Math.min(s.pct, 100)}%`,
+                    width: `${Math.min(
+                      metricMode === 'count' && s.completionRate != null ? s.completionRate : s.pct,
+                      100
+                    )}%`,
                     backgroundColor: s.stroke,
                   }}
                 />

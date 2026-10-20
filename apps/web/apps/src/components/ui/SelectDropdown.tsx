@@ -20,6 +20,7 @@ type SelectDropdownProps = {
   buttonClassName?: string
   menuClassName?: string
   optionClassName?: string
+  selectedOptionClassName?: string
   direction?: 'up' | 'down'
   usePortal?: boolean
 }
@@ -49,6 +50,7 @@ export default function SelectDropdown({
   buttonClassName,
   menuClassName,
   optionClassName,
+  selectedOptionClassName,
   direction = 'down',
   usePortal = false,
 }: SelectDropdownProps) {
@@ -163,13 +165,14 @@ export default function SelectDropdown({
               bottom: coords.bottom,
               left: coords.left,
               minWidth: coords.minWidth,
+              width: coords.minWidth,
               zIndex: 9999,
             }
           : undefined
       }
       className={cx(
         BASE_MENU_CLASS,
-        usePortal ? undefined : cx('absolute left-0', positionClass),
+        usePortal ? undefined : cx('absolute left-0 w-full min-w-full', positionClass),
         menuClassName
       )}
     >
@@ -187,11 +190,13 @@ export default function SelectDropdown({
             }}
             className={cx(
               BASE_OPTION_CLASS,
-              isSelected ? 'bg-[#EAB308] text-gray-900 font-medium' : 'text-slate-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-slate-600/70',
+              isSelected
+                ? (selectedOptionClassName || 'bg-[#EAB308] text-gray-900 font-medium')
+                : 'text-slate-700 dark:text-gray-200 hover:bg-white/70 dark:hover:bg-slate-600/70',
               optionClassName
             )}
           >
-            <span className="w-5 flex items-center justify-center text-gray-900 shrink-0">
+            <span className={cx("w-5 flex items-center justify-center shrink-0", isSelected && !selectedOptionClassName ? "text-gray-900" : "")}>
               {isSelected ? <CheckIcon /> : null}
             </span>
             <span className="truncate">{opt.label}</span>
@@ -233,7 +238,7 @@ export default function SelectDropdown({
 function ChevronDownIcon({ open }: { open: boolean }) {
   return (
     <svg
-      className={cx('h-4 w-4 text-gray-500 transition-transform shrink-0', open ? 'rotate-180' : '')}
+      className={cx('h-4 w-4 text-gray-500 dark:text-slate-400 transition-transform shrink-0', open ? 'rotate-180' : '')}
       fill="none"
       stroke="currentColor"
       viewBox="0 0 24 24"
