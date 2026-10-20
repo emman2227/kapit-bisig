@@ -38,16 +38,19 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     if (actorRole) andConditions.push({ actorRole });
     if (actor) {
       const escaped = escapeRegex(actor.trim());
-      const staffMatches = await StaffUser.find({
-        $or: [
-          { firstName: { $regex: escaped, $options: 'i' } },
-          { lastName: { $regex: escaped, $options: 'i' } },
-          { fullName: { $regex: escaped, $options: 'i' } },
-          { email: { $regex: escaped, $options: 'i' } },
-        ],
-      })
-        .select('_id')
-        .lean();
+      const staffMatches = await StaffUser.collection
+        .find(
+          {
+            $or: [
+              { firstName: { $regex: escaped, $options: 'i' } },
+              { lastName: { $regex: escaped, $options: 'i' } },
+              { fullName: { $regex: escaped, $options: 'i' } },
+              { email: { $regex: escaped, $options: 'i' } },
+            ],
+          },
+          { projection: { _id: 1 } },
+        )
+        .toArray();
       const staffIds = staffMatches.map((s) => s._id.toString());
 
       andConditions.push({
@@ -61,15 +64,18 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     }
     if (target) {
       const escaped = escapeRegex(target.trim());
-      const distMatches = await Distribution.find({
-        $or: [
-          { barangay: { $regex: escaped, $options: 'i' } },
-          { notes: { $regex: escaped, $options: 'i' } },
-          { location: { $regex: escaped, $options: 'i' } },
-        ],
-      })
-        .select('_id')
-        .lean();
+      const distMatches = await Distribution.collection
+        .find(
+          {
+            $or: [
+              { barangay: { $regex: escaped, $options: 'i' } },
+              { notes: { $regex: escaped, $options: 'i' } },
+              { location: { $regex: escaped, $options: 'i' } },
+            ],
+          },
+          { projection: { _id: 1 } },
+        )
+        .toArray();
       const distIds = distMatches.map((d) => d._id.toString());
 
       andConditions.push({
@@ -104,14 +110,20 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    const [logs, total] = await Promise.all([
-      AuditLog.find(query)
+    const [rawLogs, total] = await Promise.all([
+      AuditLog.collection
+        .find(query)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
-        .lean(),
-      AuditLog.countDocuments(query),
+        .toArray(),
+      AuditLog.collection.countDocuments(query),
     ]);
+
+    const logs = rawLogs.map((doc: any) => ({
+      ...doc,
+      _id: doc._id.toString(),
+    }));
 
     // Batch resolve missing actor names and entity labels
     const isObjectId = (id: string | null | undefined): boolean =>
@@ -147,37 +159,54 @@ router.get('/', async (req: AuthRequest, res: Response) => {
       }
     }
 
-    // Parallel batch lookups
+    const toObjectId = (id: string) => new mongoose.Types.ObjectId(id);
+
+    // Parallel batch lookups via native collection driver (bypasses Mongoose sanitizeFilter CastErrors)
     const [staffUsers, distributions, residents, targetStaff, claims] = await Promise.all([
       actorStaffIds.size > 0
-        ? StaffUser.find({ _id: { $in: Array.from(actorStaffIds) } })
-            .select('firstName lastName fullName email')
-            .lean()
+        ? StaffUser.collection
+            .find(
+              { _id: { $in: Array.from(actorStaffIds).map(toObjectId) } },
+              { projection: { firstName: 1, lastName: 1, fullName: 1, email: 1 } },
+            )
+            .toArray()
         : [],
       distIds.size > 0
-        ? Distribution.find({ _id: { $in: Array.from(distIds) } })
-            .select('barangay scheduled notes location')
-            .lean()
+        ? Distribution.collection
+            .find(
+              { _id: { $in: Array.from(distIds).map(toObjectId) } },
+              { projection: { barangay: 1, scheduled: 1, notes: 1, location: 1 } },
+            )
+            .toArray()
         : [],
       residentIds.size > 0
-        ? Resident.find({ _id: { $in: Array.from(residentIds) } })
-            .select('firstName lastName fullName residentCode')
-            .lean()
+        ? Resident.collection
+            .find(
+              { _id: { $in: Array.from(residentIds).map(toObjectId) } },
+              { projection: { firstName: 1, lastName: 1, fullName: 1, residentCode: 1 } },
+            )
+            .toArray()
         : [],
       staffTargetIds.size > 0
-        ? StaffUser.find({ _id: { $in: Array.from(staffTargetIds) } })
-            .select('firstName lastName fullName email')
-            .lean()
+        ? StaffUser.collection
+            .find(
+              { _id: { $in: Array.from(staffTargetIds).map(toObjectId) } },
+              { projection: { firstName: 1, lastName: 1, fullName: 1, email: 1 } },
+            )
+            .toArray()
         : [],
       claimIds.size > 0
-        ? Claim.find({
-            $or: [
-              { _id: { $in: Array.from(claimIds).filter((id) => isObjectId(id)) } },
-              { claimId: { $in: Array.from(claimIds) } },
-            ],
-          })
-            .select('claimId householdCode barangay staffName')
-            .lean()
+        ? Claim.collection
+            .find(
+              {
+                $or: [
+                  { _id: { $in: Array.from(claimIds).filter((id) => isObjectId(id)).map(toObjectId) } },
+                  { claimId: { $in: Array.from(claimIds) } },
+                ],
+              },
+              { projection: { claimId: 1, householdCode: 1, barangay: 1, staffName: 1 } },
+            )
+            .toArray()
         : [],
     ]);
 
@@ -191,7 +220,8 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const distMap = new Map<string, string>();
     for (const d of distributions) {
-      distMap.set(d._id.toString(), `${d.notes || 'Relief Distribution'} - Brgy. ${d.barangay} (${d.scheduled})`);
+      const sched = d.scheduled ? ` (${d.scheduled})` : '';
+      distMap.set(d._id.toString(), `${d.notes || 'Relief Distribution'} - Brgy. ${d.barangay}${sched}`);
     }
 
     const residentMap = new Map<string, string>();
