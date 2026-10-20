@@ -8,8 +8,8 @@ import { DetailModal } from './DetailModal'
 import SectionHeader from '@/components/ui/SectionHeader'
 import { 
   formatDate, Dropdown, StatCard, StatusPill, ClaimRateBar, 
-  Donut, MiniBarChart, SummaryCell, MenuItem, LoadingSpinner, EmptyState,
-  FilterIcon, BoltIcon, DownloadIcon, ClearIcon, DocIcon, CubeIcon, UsersIcon, TrendIcon, UnclaimedIcon, DotsIcon, EyeIcon, QRIcon, FaceIcon, QuestionIcon, downloadCSV, DropdownItem, AlertIcon,
+  Donut, type DonutSegment, MiniBarChart, SummaryCell, MenuItem, LoadingSpinner, EmptyState,
+  FilterIcon, BoltIcon, DownloadIcon, ClearIcon, DocIcon, CubeIcon, UsersIcon, TrendIcon, UnclaimedIcon, DotsIcon, EyeIcon, downloadCSV, DropdownItem, AlertIcon,
   getDatePresetRange, Pagination
 } from './ReportsHelpers'
 
@@ -45,6 +45,11 @@ export default function ReportsPageClient() {
   const [pageSize, setPageSize] = useState(10)
   const [brgyCurrentPage, setBrgyCurrentPage] = useState(1)
   const [brgyPageSize, setBrgyPageSize] = useState(10)
+
+  // Revision toggles
+  const [sectorShareView, setSectorShareView] = useState<'sector' | 'event'>('sector')
+  const [sectorShareMetric, setSectorShareMetric] = useState<'percentage' | 'count'>('percentage')
+  const [activityLogMetric, setActivityLogMetric] = useState<'percentage' | 'count'>('percentage')
 
   const [data, setData] = useState<ReportSummaryData | null>(null)
   const [loading, setLoading] = useState(false)
@@ -143,7 +148,6 @@ export default function ReportsPageClient() {
   const distributions = data?.distributions ?? []
   const monthlyTrends = data?.monthlyTrends ?? []
   const barangayBreakdown = data?.barangayBreakdown ?? []
-  const verification = data?.verificationMethods
 
   // Pagination for Distribution Activity Log
   const totalPages = Math.max(1, Math.ceil(distributions.length / pageSize))
@@ -153,6 +157,49 @@ export default function ReportsPageClient() {
   const paginatedDistributions = useMemo(() => {
     return distributions.slice(distStartIndex, distEndIndex)
   }, [distributions, distStartIndex, distEndIndex])
+
+  // Segments for Sector Allocation Share Card
+  const sectorShareSegments: DonutSegment[] = useMemo(() => {
+    if (sectorShareView === 'sector') {
+      if (!barangayBreakdown.length) return []
+      const totalClaims = barangayBreakdown.reduce((sum, b) => sum + (b.claimedHouseholds || 0), 0)
+      return barangayBreakdown.map((b, i) => {
+        const val =
+          sectorShareMetric === 'count'
+            ? b.claimedHouseholds
+            : totalClaims > 0
+            ? b.claimedHouseholds
+            : b.distributions
+        return {
+          label: b.barangay,
+          subLabel: `${b.distributions} ${b.distributions === 1 ? 'event' : 'events'}`,
+          value: Math.max(0, val),
+          count: b.claimedHouseholds,
+          stroke: DONUT_COLORS[i % DONUT_COLORS.length],
+        }
+      })
+    } else {
+      if (!distributions.length) return []
+      const totalClaims = distributions.reduce((sum, d) => sum + (d.claimedHouseholds || 0), 0)
+      return distributions.map((d, i) => {
+        const dateStr = formatDate(d.scheduled || d.createdAt)
+        const val =
+          sectorShareMetric === 'count'
+            ? d.claimedHouseholds
+            : totalClaims > 0
+            ? d.claimedHouseholds
+            : (d.registeredHouseholds || 1)
+        return {
+          label: d.barangay,
+          subLabel: dateStr,
+          value: Math.max(0, val),
+          count: d.claimedHouseholds,
+          percentage: d.claimRate,
+          stroke: DONUT_COLORS[i % DONUT_COLORS.length],
+        }
+      })
+    }
+  }, [sectorShareView, sectorShareMetric, barangayBreakdown, distributions])
 
   const applyDatePreset = (preset: 'today' | '7d' | '30d' | 'month' | 'ytd' | 'all') => {
     setActivePreset(preset)
@@ -453,9 +500,38 @@ export default function ReportsPageClient() {
                 Filtered period: <strong className="text-slate-700 dark:text-slate-300">{dateRangeLabel}</strong>
               </div>
             </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-              {distributions.length} records found
-            </span>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Metric Toggle: [% Turnout | # Households Served] */}
+              <div className="inline-flex items-center p-0.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-700/80 shadow-sm text-xs font-medium">
+                <button
+                  type="button"
+                  onClick={() => setActivityLogMetric('percentage')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    activityLogMetric === 'percentage'
+                      ? 'bg-emerald-500 text-white font-bold shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  % Turnout Rate
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActivityLogMetric('count')}
+                  className={`px-3 py-1.5 rounded-lg transition-all ${
+                    activityLogMetric === 'count'
+                      ? 'bg-emerald-500 text-white font-bold shadow-sm'
+                      : 'text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white'
+                  }`}
+                >
+                  # Households Served
+                </button>
+              </div>
+
+              <span className="text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
+                {distributions.length} records found
+              </span>
+            </div>
           </div>
 
           {distributions.length === 0 ? (
@@ -471,7 +547,9 @@ export default function ReportsPageClient() {
                       <th className="px-4 py-3.5 w-[12%] text-right">Registered</th>
                       <th className="px-4 py-3.5 w-[12%] text-right">Claimed</th>
                       <th className="px-4 py-3.5 w-[12%] text-right">Unclaimed</th>
-                      <th className="px-4 py-3.5 w-[18%]">Turnout Rate</th>
+                      <th className="px-4 py-3.5 w-[18%]">
+                        {activityLogMetric === 'percentage' ? 'Turnout Rate' : 'Households Served'}
+                      </th>
                       <th className="px-4 py-3.5 w-[11%] text-center">Status</th>
                       <th className="px-4 py-3.5 w-[5%]"></th>
                     </tr>
@@ -495,7 +573,12 @@ export default function ReportsPageClient() {
                           {r.unclaimedHouseholds.toLocaleString()}
                         </td>
                         <td className="px-4 py-3.5">
-                          <ClaimRateBar rate={r.claimRate} />
+                          <ClaimRateBar
+                            rate={r.claimRate}
+                            count={r.claimedHouseholds}
+                            total={r.registeredHouseholds}
+                            displayMode={activityLogMetric}
+                          />
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <StatusPill status={r.status} />
@@ -695,27 +778,112 @@ export default function ReportsPageClient() {
             )}
           </div>
 
-          {/* Barangay Donut */}
+          {/* ── Redesigned Sector Allocation Share Card ────────────── */}
           <div className="lg:col-span-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)] flex flex-col justify-between transition-all hover:border-slate-300 dark:hover:border-slate-700">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
-              <div>
-                <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Sector Allocation Share</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Distribution events share by barangay</p>
+            {/* Header with Title, Dynamic Subtitle and Dual Toggles */}
+            <div className="flex flex-col gap-3 mb-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center text-white shadow-sm shadow-emerald-500/20 shrink-0">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.488 9H15V3.512A9.025 9.025 0 0120.488 9z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base leading-tight">
+                      Sector Allocation Share
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                      {sectorShareView === 'sector'
+                        ? sectorShareMetric === 'percentage'
+                          ? 'Distribution events share by barangay sector'
+                          : 'Households served aggregated by barangay sector'
+                        : sectorShareMetric === 'percentage'
+                        ? 'Allocation share per distribution event'
+                        : 'Total households served per distribution event'}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Active Count Pill */}
+                <div className="self-start sm:self-auto flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/60 dark:border-emerald-800/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold whitespace-nowrap">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {sectorShareView === 'sector'
+                    ? `${barangayBreakdown.length} ${barangayBreakdown.length === 1 ? 'Sector' : 'Sectors'} Active`
+                    : `${distributions.length} ${distributions.length === 1 ? 'Event' : 'Events'} Logged`}
+                </div>
               </div>
-              {barangayBreakdown.length > 0 && (
-                <span className="self-start sm:self-auto text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40 whitespace-nowrap">
-                  {barangayBreakdown.length} {barangayBreakdown.length === 1 ? 'Sector' : 'Sectors'} Active
-                </span>
-              )}
+
+              {/* Dual Aesthetic Micro-Toggles */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                {/* View Granularity: [ By Sector | By Event ] */}
+                <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSectorShareView('sector')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      sectorShareView === 'sector'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    By Sector
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSectorShareView('event')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      sectorShareView === 'event'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    By Event
+                  </button>
+                </div>
+
+                {/* Metric Mode: [ % Share | # Households Served ] */}
+                <div className="inline-flex items-center p-0.5 rounded-xl bg-slate-100 dark:bg-slate-800/80 border border-slate-200/60 dark:border-slate-700/60 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setSectorShareMetric('percentage')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      sectorShareMetric === 'percentage'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    % Share
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSectorShareMetric('count')}
+                    className={`px-2.5 py-1 rounded-lg font-medium transition-all ${
+                      sectorShareMetric === 'count'
+                        ? 'bg-white dark:bg-slate-900 text-emerald-600 dark:text-emerald-400 font-bold shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    # Households Served
+                  </button>
+                </div>
+              </div>
             </div>
 
-            {barangayBreakdown.length > 0 ? (
+            {/* Donut Chart Body */}
+            {sectorShareSegments.length > 0 ? (
               <Donut
-                segments={barangayBreakdown.map((b, i) => ({
-                  label: b.barangay,
-                  value: b.distributions,
-                  stroke: DONUT_COLORS[i % DONUT_COLORS.length],
-                }))}
+                segments={sectorShareSegments}
+                metricMode={sectorShareMetric}
+                unitLabel={sectorShareView === 'sector' ? 'events' : 'households'}
+                centerTitle={
+                  sectorShareMetric === 'count'
+                    ? 'Served'
+                    : sectorShareView === 'sector'
+                    ? 'Distributions'
+                    : 'Turnout'
+                }
               />
             ) : (
               <div className="py-12 flex flex-col items-center justify-center text-center text-slate-400 dark:text-slate-500">
@@ -727,55 +895,6 @@ export default function ReportsPageClient() {
                 </div>
                 <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">No sector data available</span>
                 <span className="text-[11px] text-slate-400 mt-0.5">Barangay event logs will populate sector metrics</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Verification Methods Analytics Card ───────────── */}
-      {generated && !loading && verification && (verification.qr > 0 || verification.face > 0) && (
-        <div className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)]">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-base">Verification Method Distribution</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Breakdown of authentication modalities employed for claims</p>
-            </div>
-            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40">
-              Multi-factor Enabled
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            <div className="flex items-center gap-3.5 bg-blue-50/70 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-900/40 rounded-xl p-4">
-              <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 flex items-center justify-center shrink-0">
-                <QRIcon className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100">{verification.qr.toLocaleString()}</div>
-                <div className="text-xs font-semibold text-blue-700 dark:text-blue-300">QR Code Scans</div>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3.5 bg-purple-50/70 dark:bg-purple-950/40 border border-purple-100 dark:border-purple-900/40 rounded-xl p-4">
-              <div className="w-10 h-10 rounded-xl bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300 flex items-center justify-center shrink-0">
-                <FaceIcon className="w-5 h-5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100">{verification.face.toLocaleString()}</div>
-                <div className="text-xs font-semibold text-purple-700 dark:text-purple-300">Biometric Face Recognition</div>
-              </div>
-            </div>
-
-            {verification.unknown > 0 && (
-              <div className="flex items-center gap-3.5 bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 rounded-xl p-4">
-                <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0">
-                  <QuestionIcon className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100">{verification.unknown.toLocaleString()}</div>
-                  <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Manual / Override Claims</div>
-                </div>
               </div>
             )}
           </div>

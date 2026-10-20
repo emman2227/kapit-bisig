@@ -169,44 +169,122 @@ export function StatusPill({ status }: { status: string }) {
   )
 }
 
-export function ClaimRateBar({ rate }: { rate: number }) {
+export interface DonutSegment {
+  label: string
+  subLabel?: string
+  value: number
+  count?: number
+  percentage?: number
+  stroke: string
+}
+
+export function ClaimRateBar({
+  rate,
+  count,
+  total,
+  displayMode = 'percentage',
+}: {
+  rate: number
+  count?: number
+  total?: number
+  displayMode?: 'percentage' | 'count'
+}) {
   const color =
-    rate >= 80 ? 'bg-gradient-to-r from-emerald-500 to-teal-400' : rate >= 50 ? 'bg-gradient-to-r from-amber-500 to-yellow-400' : rate > 0 ? 'bg-gradient-to-r from-orange-500 to-rose-400' : 'bg-slate-300'
+    rate >= 80
+      ? 'bg-gradient-to-r from-emerald-500 to-teal-400'
+      : rate >= 50
+      ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+      : rate > 0
+      ? 'bg-gradient-to-r from-orange-500 to-rose-400'
+      : 'bg-slate-300 dark:bg-slate-700'
+
   return (
     <div className="flex items-center gap-2.5">
       <div className="flex-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-        <div className={`h-full rounded-full transition-all duration-500 ${color}`} style={{ width: `${Math.min(rate, 100)}%` }} />
+        <div
+          className={`h-full rounded-full transition-all duration-500 ${color}`}
+          style={{ width: `${Math.min(rate, 100)}%` }}
+        />
       </div>
-      <span className="w-10 text-right text-xs font-bold text-slate-700 dark:text-slate-300">{rate}%</span>
+      {displayMode === 'count' ? (
+        <span className="min-w-[70px] text-right text-xs font-bold text-slate-800 dark:text-slate-200 tabular-nums whitespace-nowrap">
+          {count != null ? count.toLocaleString() : '0'}
+          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-normal ml-1">served</span>
+        </span>
+      ) : (
+        <span className="w-10 text-right text-xs font-bold text-slate-700 dark:text-slate-300 tabular-nums">
+          {rate}%
+        </span>
+      )}
     </div>
   )
 }
 
 export function Donut({
   segments,
+  metricMode = 'percentage',
+  unitLabel = 'events',
+  centerTitle = 'Distributions',
+  maxSlices = 7,
 }: {
-  segments: { label: string; value: number; stroke: string }[]
+  segments: DonutSegment[]
+  metricMode?: 'percentage' | 'count'
+  unitLabel?: string
+  centerTitle?: string
+  maxSlices?: number
 }) {
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null)
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
   const total = segments.reduce((a, s) => a + s.value, 0) || 1
+  const totalCount = segments.reduce((a, s) => a + (s.count != null ? s.count : s.value), 0)
   const radius = 56
   const circumference = 2 * Math.PI * radius
-  let offset = 0
 
-  // Sorted segments for ranked display while preserving original indices
+  // Sorted segments for ranked display while preserving original identifiers
   const rankedSegments = useMemo(() => {
     return segments
-      .map((seg, origIdx) => ({ ...seg, origIdx }))
+      .map((seg, origIdx) => ({
+        ...seg,
+        key: `${seg.label}_${seg.subLabel || origIdx}`,
+        origIdx,
+        pct: total > 0 ? Math.round((seg.value / total) * 100) : 0,
+      }))
       .sort((a, b) => b.value - a.value)
-  }, [segments])
+  }, [segments, total])
 
-  const activeSegment = hoverIndex !== null ? segments[hoverIndex] : null
-  const activePct = activeSegment ? Math.round((activeSegment.value / total) * 100) : 0
+  // Chart slices: if > maxSlices, group top (maxSlices - 1) + "Others"
+  const chartSegments = useMemo(() => {
+    if (rankedSegments.length <= maxSlices) {
+      return rankedSegments
+    }
+    const top = rankedSegments.slice(0, maxSlices - 1)
+    const others = rankedSegments.slice(maxSlices - 1)
+    const otherValue = others.reduce((a, s) => a + s.value, 0)
+    const otherCount = others.reduce((a, s) => a + (s.count != null ? s.count : s.value), 0)
+    return [
+      ...top,
+      {
+        label: 'Other Events',
+        subLabel: `${others.length} runs`,
+        value: otherValue,
+        count: otherCount,
+        pct: total > 0 ? Math.round((otherValue / total) * 100) : 0,
+        stroke: '#94A3B8',
+        key: 'other_events_group',
+        origIdx: -1,
+      },
+    ]
+  }, [rankedSegments, maxSlices, total])
+
+  const activeSegment = hoverKey !== null
+    ? rankedSegments.find((s) => s.key === hoverKey) || chartSegments.find((s) => s.key === hoverKey)
+    : null
+
+  let offset = 0
 
   return (
     <div className="flex flex-col sm:flex-row items-center justify-between gap-6 select-none w-full">
       {/* Interactive Donut Ring Container */}
-      <div className="relative w-40 h-40 shrink-0 flex items-center justify-center">
+      <div className="relative w-44 h-44 shrink-0 flex items-center justify-center">
         <svg className="w-full h-full transform -rotate-90 overflow-visible" viewBox="0 0 140 140">
           {/* Subtle Background Track */}
           <circle
@@ -220,21 +298,21 @@ export function Donut({
           />
 
           {/* Slices */}
-          {segments.map((seg, idx) => {
+          {chartSegments.map((seg) => {
             const rawDash = (seg.value / total) * circumference
-            const gapSize = segments.length > 1 ? 2.5 : 0
+            const gapSize = chartSegments.length > 1 ? 2.5 : 0
             const dash = Math.max(0, rawDash - gapSize)
             const gap = circumference - dash
             const dashArray = `${dash} ${gap}`
             const dashOffset = -offset
             offset += rawDash
 
-            const isHovered = hoverIndex === idx
-            const isAnyHovered = hoverIndex !== null
+            const isHovered = hoverKey === seg.key
+            const isAnyHovered = hoverKey !== null
 
             return (
               <circle
-                key={idx}
+                key={seg.key}
                 cx="70"
                 cy="70"
                 r={radius}
@@ -246,12 +324,12 @@ export function Donut({
                 strokeDashoffset={dashOffset}
                 className="cursor-pointer transition-all duration-300"
                 style={{
-                  opacity: isAnyHovered ? (isHovered ? 1 : 0.4) : 0.95,
-                  filter: isHovered ? `drop-shadow(0 0 8px ${seg.stroke}99)` : 'none',
+                  opacity: isAnyHovered ? (isHovered ? 1 : 0.35) : 0.95,
+                  filter: isHovered ? `drop-shadow(0 0 10px ${seg.stroke}99)` : 'none',
                   transformOrigin: '70px 70px',
                 }}
-                onMouseEnter={() => setHoverIndex(idx)}
-                onMouseLeave={() => setHoverIndex(null)}
+                onMouseEnter={() => setHoverKey(seg.key)}
+                onMouseLeave={() => setHoverKey(null)}
               />
             )
           })}
@@ -262,44 +340,50 @@ export function Donut({
           {activeSegment ? (
             <div className="flex flex-col items-center animate-in fade-in zoom-in-95 duration-150">
               <span className="text-2xl font-black tracking-tight" style={{ color: activeSegment.stroke }}>
-                {activePct}%
+                {metricMode === 'percentage'
+                  ? `${activeSegment.pct}%`
+                  : (activeSegment.count != null ? activeSegment.count : activeSegment.value).toLocaleString()}
               </span>
-              <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[85px] leading-tight mt-0.5">
+              <span className="text-[11px] font-bold text-slate-800 dark:text-slate-200 truncate max-w-[105px] leading-tight mt-0.5">
                 {activeSegment.label}
               </span>
               <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
-                {activeSegment.value.toLocaleString()} events
+                {metricMode === 'percentage'
+                  ? `${(activeSegment.count != null ? activeSegment.count : activeSegment.value).toLocaleString()} ${unitLabel}`
+                  : `${activeSegment.pct}% share`}
               </span>
             </div>
           ) : (
             <div className="flex flex-col items-center animate-in fade-in duration-200">
               <span className="text-2xl font-black text-slate-900 dark:text-slate-100 tracking-tight">
-                {total.toLocaleString()}
+                {metricMode === 'count'
+                  ? totalCount.toLocaleString()
+                  : total.toLocaleString()}
               </span>
               <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Distributions
+                {centerTitle}
               </span>
               <span className="mt-0.5 text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded-full border border-emerald-200/60 dark:border-emerald-800/40">
-                {segments.length} sectors
+                {segments.length} {unitLabel === 'households' ? 'runs' : 'sectors'}
               </span>
             </div>
           )}
         </div>
       </div>
 
-      {/* Modern Ranked Sector Breakdown */}
-      <div className="flex-1 w-full space-y-2 max-h-48 overflow-y-auto pr-1.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
+      {/* Modern Ranked Breakdown List */}
+      <div className="flex-1 w-full space-y-2 max-h-52 overflow-y-auto pr-1.5 scrollbar-thin scrollbar-thumb-slate-200 dark:scrollbar-thumb-slate-700">
         {rankedSegments.map((s, rankIdx) => {
-          const pct = Math.round((s.value / total) * 100)
-          const isHovered = hoverIndex === s.origIdx
+          const isHovered = hoverKey === s.key
           const rank = rankIdx + 1
+          const displayCount = (s.count != null ? s.count : s.value).toLocaleString()
 
           return (
             <div
-              key={s.label}
-              onMouseEnter={() => setHoverIndex(s.origIdx)}
-              onMouseLeave={() => setHoverIndex(null)}
-              className={`group p-2 rounded-xl border transition-all duration-200 cursor-pointer ${
+              key={s.key}
+              onMouseEnter={() => setHoverKey(s.key)}
+              onMouseLeave={() => setHoverKey(null)}
+              className={`group p-2.5 rounded-xl border transition-all duration-200 cursor-pointer ${
                 isHovered
                   ? 'bg-slate-100/90 dark:bg-slate-800/90 border-slate-300 dark:border-slate-600 shadow-sm scale-[1.01]'
                   : 'bg-slate-50/70 dark:bg-slate-800/40 border-slate-100 dark:border-slate-800/80 hover:bg-slate-100/70 dark:hover:bg-slate-800/60'
@@ -324,26 +408,48 @@ export function Donut({
                     className="w-2.5 h-2.5 rounded-full shrink-0 ring-2 ring-white dark:ring-slate-900 shadow-sm"
                     style={{ background: s.stroke }}
                   />
-                  <span className="text-slate-800 dark:text-slate-200 font-semibold truncate">
-                    {s.label}
-                  </span>
+                  <div className="min-w-0 flex flex-col">
+                    <span className="text-slate-800 dark:text-slate-200 font-bold truncate leading-tight">
+                      {s.label}
+                    </span>
+                    {s.subLabel && (
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
+                        {s.subLabel}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Metric Display */}
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                    {s.value} {s.value === 1 ? 'event' : 'events'}
-                  </span>
-                  <span className="text-slate-900 dark:text-slate-100 font-bold font-mono text-xs">
-                    {pct}%
-                  </span>
+                  {metricMode === 'percentage' ? (
+                    <>
+                      <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                        {displayCount} {unitLabel}
+                      </span>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold font-mono text-xs tabular-nums">
+                        {s.pct}%
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-slate-900 dark:text-slate-100 font-bold text-xs tabular-nums">
+                        {displayCount} <span className="font-normal text-[11px] text-slate-500 dark:text-slate-400">served</span>
+                      </span>
+                      <span className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 font-mono">
+                        {s.pct}%
+                      </span>
+                    </>
+                  )}
                 </div>
               </div>
 
               {/* Proportional Mini Progress Bar */}
-              <div className="h-1.5 w-full bg-slate-200/60 dark:bg-slate-700/50 rounded-full overflow-hidden mt-1.5">
+              <div className="h-1.5 w-full bg-slate-200/60 dark:bg-slate-700/50 rounded-full overflow-hidden mt-2">
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
-                    width: `${pct}%`,
+                    width: `${Math.min(s.pct, 100)}%`,
                     backgroundColor: s.stroke,
                   }}
                 />
