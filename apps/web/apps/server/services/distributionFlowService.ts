@@ -3,6 +3,7 @@ import Distribution, { DistributionStatus, IDistribution } from '../models/Distr
 import DistributionClaim from '../models/DistributionClaim';
 import Resident from '../models/Resident';
 import BeneficiaryEligibility, { RegistrationSnapshotStatus } from '../models/BeneficiaryEligibility';
+import AuditLog from '../models/AuditLog';
 import { ProofSubmissionStatus } from '../models/ProofSubmission';
 import { isDistributionVisibleToResidents } from '../utils/distributionLifecycle';
 
@@ -411,7 +412,35 @@ export async function syncDistributionStatus(distributionId: string): Promise<{
   const nextStatus = deriveDistributionStatus(registeredHouseholds, claimedHouseholds);
   distribution.households = registeredHouseholds;
   distribution.status = nextStatus;
-  distribution.claimedAt = nextStatus === 'Claimed' ? new Date() : null;
+  if (nextStatus === 'Claimed') {
+    distribution.claimedAt = distribution.claimedAt || new Date();
+    if (!distribution.archivedAt) {
+      distribution.archivedAt = new Date();
+      distribution.archivedBy = 'SYSTEM_AUTO_ARCHIVE';
+      try {
+        await AuditLog.create({
+          actorId: null,
+          actorRole: 'SYSTEM',
+          actorName: 'SYSTEM_AUTO_ARCHIVE',
+          action: 'DISTRIBUTION_ARCHIVED',
+          entityType: 'Distribution',
+          entityId: distribution._id.toString(),
+          metadata: {
+            barangay: distribution.barangay,
+            archivedAt: distribution.archivedAt,
+            archivedBy: distribution.archivedBy,
+            reason: 'AUTO_ARCHIVED_ALL_CLAIMED',
+          },
+          ip: '127.0.0.1',
+          userAgent: 'system',
+        });
+      } catch (err) {
+        console.error('[AuditLog] auto-archive write failed:', (err as Error).message);
+      }
+    }
+  } else {
+    distribution.claimedAt = null;
+  }
   await distribution.save();
 
   return {

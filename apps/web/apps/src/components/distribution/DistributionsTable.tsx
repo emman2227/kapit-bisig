@@ -78,6 +78,7 @@ export default function DistributionsTable({
   canManageLifecycle = false,
   onArchive,
   onRestore,
+  onBulkArchive,
 }: {
   rows: DistributionRow[]
   onOpenCreate: () => void
@@ -88,10 +89,13 @@ export default function DistributionsTable({
   canManageLifecycle?: boolean
   onArchive?: (id: string) => void
   onRestore?: (id: string) => void
+  onBulkArchive?: (ids?: string[], allCompleted?: boolean, count?: number) => void
 }) {
   const [query, setQuery] = useState('')
   const [barangay, setBarangay] = useState<BarangayFilter>('All')
   const [status, setStatus] = useState<StatusFilter>('All')
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [selectAllAcrossPages, setSelectAllAcrossPages] = useState(false)
 
   const PAGE_SIZE = 5
   const [currentPage, setCurrentPage] = useState(1)
@@ -159,6 +163,51 @@ export default function DistributionsTable({
 
   const rangeStart = filtered.length === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1
   const rangeEnd = Math.min(currentPage * PAGE_SIZE, filtered.length)
+
+  useEffect(() => {
+    setSelectedIds(new Set())
+    setSelectAllAcrossPages(false)
+  }, [lifecycleView])
+
+  const isCompletedTab = lifecycleView === 'completed'
+  const isAllPageSelected = useMemo(() => {
+    if (pagedRows.length === 0) return false
+    return pagedRows.every((r) => selectedIds.has(r.id))
+  }, [pagedRows, selectedIds])
+
+  const isSomePageSelected = useMemo(() => {
+    return pagedRows.some((r) => selectedIds.has(r.id))
+  }, [pagedRows, selectedIds])
+
+  const handleToggleSelectAllPage = () => {
+    if (isAllPageSelected) {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        pagedRows.forEach((r) => next.delete(r.id))
+        return next
+      })
+      setSelectAllAcrossPages(false)
+    } else {
+      setSelectedIds((prev) => {
+        const next = new Set(prev)
+        pagedRows.forEach((r) => next.add(r.id))
+        return next
+      })
+    }
+  }
+
+  const handleToggleRow = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+    setSelectAllAcrossPages(false)
+  }
 
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
@@ -371,6 +420,18 @@ export default function DistributionsTable({
                 ) : null}
               </div>
 
+              {isCompletedTab && canManageLifecycle && completedCount > 0 && onBulkArchive ? (
+                <button
+                  type="button"
+                  onClick={() => onBulkArchive(undefined, true, completedCount)}
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm transition-all"
+                  title="Archive all completed distributions"
+                >
+                  <ArchiveIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                  <span>Archive All Completed</span>
+                </button>
+              ) : null}
+
               <button
                 type="button"
                 onClick={() => setArchiveOpen(true)}
@@ -398,10 +459,84 @@ export default function DistributionsTable({
           </div>
         </div>
 
+        {isCompletedTab && canManageLifecycle && (selectedIds.size > 0 || selectAllAcrossPages) && (
+          <div className="border-b border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/90 dark:bg-emerald-950/40 px-6 py-3 flex flex-wrap items-center justify-between gap-3 text-xs sm:text-sm animate-fadeIn">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4">
+              <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                {selectAllAcrossPages
+                  ? `All ${filtered.length} completed distributions selected across all pages`
+                  : `${selectedIds.size} distribution${selectedIds.size > 1 ? 's' : ''} selected`}
+              </span>
+              {!selectAllAcrossPages && filtered.length > pagedRows.length && (
+                <button
+                  type="button"
+                  onClick={() => setSelectAllAcrossPages(true)}
+                  className="font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
+                >
+                  Select all {filtered.length} completed distributions across all pages →
+                </button>
+              )}
+              {selectAllAcrossPages && (
+                <button
+                  type="button"
+                  onClick={() => setSelectAllAcrossPages(false)}
+                  className="font-bold text-emerald-700 dark:text-emerald-400 hover:underline"
+                >
+                  Select only current page ({pagedRows.length})
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedIds(new Set())
+                  setSelectAllAcrossPages(false)
+                }}
+                className="rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+              >
+                Clear selection
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onBulkArchive) {
+                    if (selectAllAcrossPages) {
+                      onBulkArchive(undefined, true, filtered.length)
+                    } else {
+                      onBulkArchive(Array.from(selectedIds), false, selectedIds.size)
+                    }
+                  }
+                }}
+                className="rounded-lg bg-emerald-700 hover:bg-emerald-800 px-3.5 py-1.5 text-xs font-bold text-white shadow-sm transition-all"
+              >
+                Archive Selected ({selectAllAcrossPages ? filtered.length : selectedIds.size})
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto w-full">
           <table className="w-full min-w-[900px] border-collapse text-left">
             <thead className="border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-transparent text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
               <tr>
+                {isCompletedTab && canManageLifecycle && (
+                  <th className="w-12 px-4 py-4 text-center">
+                    <input
+                      type="checkbox"
+                      checked={isAllPageSelected}
+                      ref={(input) => {
+                        if (input) {
+                          input.indeterminate = isSomePageSelected && !isAllPageSelected
+                        }
+                      }}
+                      onChange={handleToggleSelectAllPage}
+                      className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      aria-label="Select all completed distributions on current page"
+                    />
+                  </th>
+                )}
                 <th className="px-6 py-4">Barangay</th>
                 <th className="px-6 py-4">Registered Households</th>
                 <th className="px-6 py-4">Claims</th>
@@ -418,6 +553,17 @@ export default function DistributionsTable({
               {pagedRows.length ? (
                 pagedRows.map((row) => (
                   <tr key={row.id} className="group transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                    {isCompletedTab && canManageLifecycle && (
+                      <td className="w-12 px-4 py-4 text-center">
+                        <input
+                          type="checkbox"
+                          checked={selectAllAcrossPages || selectedIds.has(row.id)}
+                          onChange={() => handleToggleRow(row.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          aria-label={`Select distribution for ${row.barangay}`}
+                        />
+                      </td>
+                    )}
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-4">
                         <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-bold text-slate-700 dark:text-slate-300">
@@ -503,7 +649,7 @@ export default function DistributionsTable({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-6 py-12 text-center">
+                  <td colSpan={isCompletedTab && canManageLifecycle ? 8 : 7} className="px-6 py-12 text-center">
                     <p className="font-medium text-slate-500">No distributions found matching your filter criteria.</p>
                   </td>
                 </tr>

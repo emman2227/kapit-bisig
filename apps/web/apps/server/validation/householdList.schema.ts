@@ -8,7 +8,7 @@ import { z } from 'zod';
 export const listHouseholdsQuery = z.object({
   search: z.string().max(200).optional(),
   barangay: z.string().max(100).optional(),
-  status: z.enum(['Claimed', 'Not Claimed']).optional(),
+  status: z.enum(['Claimed', 'Unclaimed', 'Not Claimed']).optional(),
   distributionId: z.string().max(100).optional(),
   page: z.string().optional(),
   limit: z.string().optional(),

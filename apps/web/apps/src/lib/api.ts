@@ -868,6 +868,19 @@ export const api = {
     return handleResponse<ApiResponse<DistributionData>>(response);
   },
 
+  async bulkArchiveDistributions(payload: {
+    distributionIds?: string[];
+    allCompleted?: boolean;
+  }): Promise<ApiResponse<{ count: number; archivedIds: string[] }>> {
+    const response = await fetch(`${API_URL}/distributions/bulk-archive`, {
+      method: 'PATCH',
+      headers: createHeaders('PATCH'),
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    return handleResponse<ApiResponse<{ count: number; archivedIds: string[] }>>(response);
+  },
+
   async restoreDistribution(id: string): Promise<ApiResponse<DistributionData>> {
     const response = await fetch(`${API_URL}/distributions/${id}/restore`, {
       method: 'PATCH',

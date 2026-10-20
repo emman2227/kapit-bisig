@@ -38,7 +38,7 @@ router.get('/', validateRequest({ query: listHouseholdsQuery }), async (req: Aut
     const { search, barangay, status, distributionId } = req.query as {
       search?: string;
       barangay?: string;
-      status?: string; // "Claimed" | "Not Claimed"
+      status?: string; // "Claimed" | "Unclaimed" | "Not Claimed"
       distributionId?: string;
     };
 
@@ -203,7 +203,7 @@ router.get('/', validateRequest({ query: listHouseholdsQuery }), async (req: Aut
         contact: r.mobileNumber || '—',
         verificationStatus: r.verification?.aiVerificationStatus || '—',
         verificationScore: r.verification?.overallConfidence ?? null,
-        claimStatus: hasClaim ? 'Claimed' as const : 'Not Claimed' as const,
+        claimStatus: hasClaim ? 'Claimed' as const : 'Unclaimed' as const,
         lastClaimedAt: typeof lastClaimTime === 'number' && lastClaimTime > 0 ? new Date(lastClaimTime).toISOString() : null,
         registeredAt: r.createdAt ? new Date(r.createdAt).toISOString() : null,
       };
@@ -212,8 +212,8 @@ router.get('/', validateRequest({ query: listHouseholdsQuery }), async (req: Aut
     // Client-requested status filter
     if (status === 'Claimed') {
       households = households.filter((h) => h.claimStatus === 'Claimed');
-    } else if (status === 'Not Claimed') {
-      households = households.filter((h) => h.claimStatus === 'Not Claimed');
+    } else if (status === 'Unclaimed' || status === 'Not Claimed') {
+      households = households.filter((h) => h.claimStatus === 'Unclaimed' || (h.claimStatus as string) === 'Not Claimed');
     }
 
     return res.json({

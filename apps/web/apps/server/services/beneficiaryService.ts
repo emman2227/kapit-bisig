@@ -50,7 +50,7 @@ export type QrValidationOutcome =
   | 'NOT_ELIGIBLE'
   | 'INVALID_QR';
 
-export type ClaimFlowStatus = 'Not Claimed' | 'Claimed';
+export type ClaimFlowStatus = 'Unclaimed' | 'Not Claimed' | 'Claimed';
 
 export interface BeneficiaryActor {
   userId: string;
@@ -738,7 +738,7 @@ function buildValidationResult(args: {
   return {
     outcome: args.outcome,
     resultLabel: resultLabelMap[args.outcome],
-    claimStatus: args.outcome === 'ALREADY_CLAIMED' ? 'Claimed' : 'Not Claimed',
+    claimStatus: args.outcome === 'ALREADY_CLAIMED' ? 'Claimed' : 'Unclaimed',
     event: {
       id: args.event._id.toString(),
       name: args.event.name,
@@ -985,7 +985,7 @@ export async function buildOfflineBeneficiaryPack(params: {
       fullName: getResidentDisplayName(resident),
       barangay: resident.barangay,
       eligibilityStatus: 'Eligible',
-      claimStatus: claimedResidentIds.has(resident._id.toString()) ? 'Claimed' : 'Not Claimed',
+      claimStatus: claimedResidentIds.has(resident._id.toString()) ? 'Claimed' : 'Unclaimed',
     })),
   };
 }

@@ -178,6 +178,13 @@ export default function DistributionPageClient() {
     }
   }
 
+  const [pendingBulkArchive, setPendingBulkArchive] = useState<{
+    ids?: string[]
+    allCompleted?: boolean
+    count: number
+  } | null>(null)
+  const [isBulkArchiving, setIsBulkArchiving] = useState(false)
+
   const pendingArchiveDistribution = useMemo(
     () => (pendingArchiveId ? rows.find((r) => r.id === pendingArchiveId) : null),
     [pendingArchiveId, rows],
@@ -185,6 +192,37 @@ export default function DistributionPageClient() {
 
   const archiveDistribution = (id: string) => {
     setPendingArchiveId(id)
+  }
+
+  const handleBulkArchive = (ids?: string[], allCompleted?: boolean, count?: number) => {
+    setPendingBulkArchive({
+      ids,
+      allCompleted,
+      count: count ?? (ids ? ids.length : 0),
+    })
+  }
+
+  const handleConfirmBulkArchive = async () => {
+    if (!pendingBulkArchive) return
+    try {
+      setIsBulkArchiving(true)
+      const res = await api.bulkArchiveDistributions({
+        distributionIds: pendingBulkArchive.ids,
+        allCompleted: pendingBulkArchive.allCompleted,
+      })
+      if (res.success) {
+        showToast.success(`Archived ${res.data?.count ?? pendingBulkArchive.count} distribution(s). Historical records were preserved.`)
+      } else {
+        showToast.error(res.message || 'Failed to archive distributions')
+      }
+      setPendingBulkArchive(null)
+      await fetchDistributions()
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Failed to archive distributions'
+      showToast.error(message)
+    } finally {
+      setIsBulkArchiving(false)
+    }
   }
 
   const handleConfirmArchive = async () => {
@@ -324,6 +362,7 @@ export default function DistributionPageClient() {
         canManageLifecycle={isSuperadmin}
         onArchive={archiveDistribution}
         onRestore={restoreDistribution}
+        onBulkArchive={handleBulkArchive}
       />
 
       {isSuperadmin && (
@@ -350,6 +389,23 @@ export default function DistributionPageClient() {
           if (!isArchiving) setPendingArchiveId(null)
         }}
         onConfirm={handleConfirmArchive}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(pendingBulkArchive)}
+        title="Archive Completed Distributions"
+        body={
+          pendingBulkArchive?.allCompleted
+            ? `Archive all ${pendingBulkArchive.count} completed distribution(s)? Residents and scanners will no longer see them, but claims and telemetry records will be preserved.`
+            : `Archive ${pendingBulkArchive?.count ?? 0} selected distribution(s)? Residents and scanners will no longer see them, but claims and telemetry records will be preserved.`
+        }
+        confirmLabel={pendingBulkArchive?.allCompleted ? 'Archive All' : 'Archive Selected'}
+        cancelLabel="Cancel"
+        loading={isBulkArchiving}
+        onCancel={() => {
+          if (!isBulkArchiving) setPendingBulkArchive(null)
+        }}
+        onConfirm={handleConfirmBulkArchive}
       />
     </div>
   )

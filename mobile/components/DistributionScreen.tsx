@@ -326,7 +326,7 @@ export default function DistributionScreen({
                 </View>
                 <Text style={styles.proofEndedDescription}>
                   {selected?.isBeneficiaryApproved
-                    ? 'This distribution event has concluded. Your damage assessment was verified, but relief aid was not claimed during the scheduled window.'
+                    ? 'This distribution event has concluded. Your damage assessment was verified, but relief aid was unclaimed during the scheduled window.'
                     : 'This distribution event has concluded and is no longer accepting claims or proof submissions.'}
                 </Text>
                 <View style={styles.windowClosedBadge}>

@@ -228,7 +228,7 @@ export default function DistributionBeneficiariesModal({
                 style={{ marginRight: 3 }}
               />
               <Text style={[styles.badgeText, isClaimed ? styles.badgeTextClaimed : styles.badgeTextPending]}>
-                {isClaimed ? 'CLAIMED' : 'NOT CLAIMED'}
+                {isClaimed ? 'CLAIMED' : 'UNCLAIMED'}
               </Text>
             </View>
           </View>
@@ -322,7 +322,7 @@ export default function DistributionBeneficiariesModal({
               </View>
               <View style={styles.metricDivider} />
               <View style={styles.metricItem}>
-                <Text style={styles.metricLabel}>NOT CLAIMED</Text>
+                <Text style={styles.metricLabel}>UNCLAIMED</Text>
                 <Text style={[styles.metricValue, { color: '#D97706' }]}>{totalNotClaimed}</Text>
               </View>
             </View>
@@ -376,7 +376,7 @@ export default function DistributionBeneficiariesModal({
               onPress={() => setActiveTab('notYetClaimed')}
             >
               <Text style={[styles.tabText, activeTab === 'notYetClaimed' && styles.tabTextActive]}>
-                Not Claimed ({totalNotClaimed})
+                Unclaimed ({totalNotClaimed})
               </Text>
             </TouchableOpacity>
 

@@ -265,7 +265,7 @@ export default function ViewHouseholdsModal({
                     icon={<CheckCircleIcon className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />}
                   />
                   <SummaryCard
-                    label="Not Yet Claimed"
+                    label="Unclaimed"
                     value={data.totals.notYetClaimed}
                     color="text-amber-600 dark:text-amber-400"
                     bg="bg-amber-50/50 dark:bg-amber-950/20"
@@ -302,7 +302,7 @@ export default function ViewHouseholdsModal({
                 <div className="flex rounded-2xl bg-slate-100 dark:bg-slate-800/80 p-1.5 border border-slate-200/60 dark:border-slate-700/60">
                   <TabButton
                     active={activeTab === 'notYetClaimed'}
-                    label="Not Yet Claimed"
+                    label="Unclaimed"
                     count={data.totals.notYetClaimed}
                     onClick={() => setActiveTab('notYetClaimed')}
                   />

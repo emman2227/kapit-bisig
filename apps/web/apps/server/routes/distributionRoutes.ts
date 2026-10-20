@@ -1482,6 +1482,16 @@ router.patch(
 
       distribution.status = 'Claimed';
       distribution.claimedAt = new Date();
+      if (!distribution.archivedAt) {
+        distribution.archivedAt = new Date();
+        distribution.archivedBy = req.authUser?.sub || 'SUPERADMIN';
+        await logAudit(req, 'DISTRIBUTION_ARCHIVED', 'Distribution', distribution._id.toString(), {
+          barangay: distribution.barangay,
+          archivedAt: distribution.archivedAt,
+          archivedBy: distribution.archivedBy,
+          reason: 'MANUAL_CLAIM_COMPLETE_AUTO_ARCHIVE',
+        });
+      }
       await distribution.save();
 
       await logAudit(req, 'DISTRIBUTION_CLAIMED', 'Distribution', distribution._id.toString(), {
@@ -1497,6 +1507,90 @@ router.patch(
       console.error('Error claiming distribution:', error);
       const message = error instanceof Error ? error.message : 'Failed to claim distribution';
       res.status(500).json({ success: false, message });
+    }
+  }
+);
+
+/**
+ * PATCH /api/distributions/bulk-archive
+ *
+ * Bulk archive distributions. Superadmin only.
+ */
+router.patch(
+  '/bulk-archive',
+  requireSuperadmin,
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const { distributionIds, allCompleted } = req.body || {};
+
+      let filter: Record<string, any> = { archivedAt: null };
+
+      if (allCompleted) {
+        filter = {
+          archivedAt: null,
+          $or: [
+            { status: 'Claimed' },
+            { endsAt: { $lte: new Date() } },
+          ],
+        };
+      } else if (Array.isArray(distributionIds) && distributionIds.length > 0) {
+        const validIds = distributionIds.filter((id: string) => mongoose.Types.ObjectId.isValid(id));
+        if (validIds.length === 0) {
+          return res.status(400).json({
+            success: false,
+            message: 'No valid distribution IDs provided',
+          });
+        }
+        filter = {
+          _id: { $in: validIds.map((id: string) => new mongoose.Types.ObjectId(id)) },
+          archivedAt: null,
+        };
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Either distributionIds or allCompleted must be specified',
+        });
+      }
+
+      const distributionsToArchive = await Distribution.find(filter);
+
+      if (distributionsToArchive.length === 0) {
+        return res.json({
+          success: true,
+          message: 'No unarchived distributions matched the criteria',
+          count: 0,
+          archivedIds: [],
+        });
+      }
+
+      const now = new Date();
+      const archivedBy = req.authUser?.sub || 'SUPERADMIN';
+      const archivedIds: string[] = [];
+
+      for (const dist of distributionsToArchive) {
+        dist.archivedAt = now;
+        dist.archivedBy = archivedBy;
+        await dist.save();
+        archivedIds.push(dist._id.toString());
+
+        await logAudit(req, 'DISTRIBUTION_ARCHIVED', 'Distribution', dist._id.toString(), {
+          barangay: dist.barangay,
+          archivedAt: now,
+          archivedBy,
+          reason: allCompleted ? 'BULK_ARCHIVE_ALL_COMPLETED' : 'BULK_ARCHIVE_SELECTED',
+        });
+      }
+
+      return res.json({
+        success: true,
+        message: `Successfully archived ${archivedIds.length} distribution(s)`,
+        count: archivedIds.length,
+        archivedIds,
+      });
+    } catch (error: unknown) {
+      console.error('Error bulk archiving distributions:', error);
+      const message = error instanceof Error ? error.message : 'Failed to bulk archive distributions';
+      return res.status(500).json({ success: false, message });
     }
   }
 );

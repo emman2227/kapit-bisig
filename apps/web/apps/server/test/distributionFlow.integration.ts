@@ -76,7 +76,11 @@ export async function runDistributionFlowIntegrationTests(): Promise<void> {
   const dayOneWindow = buildFutureDistributionWindow(1);
   const dayTwoWindow = buildFutureDistributionWindow(2);
   process.env.JWT_SECRET = 'test-secret-123456789012345678901234567890';
-  const mongo = await MongoMemoryServer.create();
+  const mongo = await MongoMemoryServer.create({
+    instance: {
+      launchTimeout: 60000,
+    },
+  });
   const uri = mongo.getUri();
   await mongoose.connect(uri);
 
@@ -465,6 +469,25 @@ export async function runDistributionFlowIntegrationTests(): Promise<void> {
       { $set: { scheduled: new Date(Date.now() - 60 * 1000), endsAt: new Date(Date.now() + 60 * 60 * 1000) } },
     );
 
+    await BeneficiaryEligibility.create([
+      {
+        residentId: resA._id,
+        distributionId: new mongoose.Types.ObjectId(secondDistributionId),
+        proofSubmissionId: new mongoose.Types.ObjectId(),
+        status: 'Eligible',
+        registrationStatus: 'Approved',
+        proofStatus: 'Approved',
+      },
+      {
+        residentId: resB._id,
+        distributionId: new mongoose.Types.ObjectId(secondDistributionId),
+        proofSubmissionId: new mongoose.Types.ObjectId(),
+        status: 'Eligible',
+        registrationStatus: 'Approved',
+        proofStatus: 'Approved',
+      },
+    ]);
+
     const claimFromAutomaticEnrollment = await request(app)
       .post('/api/claims/record-claim')
       .send({
@@ -472,6 +495,9 @@ export async function runDistributionFlowIntegrationTests(): Promise<void> {
         distributionId: secondDistributionId,
         distributionSite: 'Bolo Covered Court',
       });
+    if (claimFromAutomaticEnrollment.status !== 201) {
+      console.log('claimFromAutomaticEnrollment.body:', claimFromAutomaticEnrollment.body);
+    }
     assert.strictEqual(claimFromAutomaticEnrollment.status, 201);
 
     await waitFor(
@@ -487,6 +513,7 @@ export async function runDistributionFlowIntegrationTests(): Promise<void> {
     );
     assert.ok(dist);
     assert.strictEqual(dist?.status, 'Claimed');
+    assert.ok(dist?.archivedAt);
 
     const duplicateWithSameKey = await request(app)
       .post('/api/claims/record-claim')
@@ -593,7 +620,22 @@ export async function runDistributionFlowIntegrationTests(): Promise<void> {
     assert.strictEqual(completedStaffUpdateResponse.status, 400);
     assert.strictEqual(completedStaffUpdateResponse.body?.code, 'DISTRIBUTION_COMPLETED');
 
-    // Archive test: superadmin can archive completed distribution
+    // Auto-archive test: attempting to archive already auto-archived distribution returns 400
+    const alreadyArchivedResponse = await request(app)
+      .patch(`/api/distributions/${distributionId}/archive`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .set('x-test-role', 'SUPERADMIN');
+    assert.strictEqual(alreadyArchivedResponse.status, 400);
+
+    // Restore test: superadmin can restore auto-archived distribution
+    const restoreResponse = await request(app)
+      .patch(`/api/distributions/${distributionId}/restore`)
+      .set('Authorization', `Bearer ${authToken}`)
+      .set('x-test-role', 'SUPERADMIN');
+    assert.strictEqual(restoreResponse.status, 200);
+    assert.strictEqual(restoreResponse.body?.success, true);
+
+    // Manual archive test: superadmin can manually archive restored completed distribution
     const archiveResponse = await request(app)
       .patch(`/api/distributions/${distributionId}/archive`)
       .set('Authorization', `Bearer ${authToken}`)
@@ -602,13 +644,37 @@ export async function runDistributionFlowIntegrationTests(): Promise<void> {
     assert.strictEqual(archiveResponse.body?.success, true);
     assert.strictEqual(archiveResponse.body?.data?.lifecycleStatus, 'Archived');
 
-    // Restore test: superadmin can restore archived distribution
-    const restoreResponse = await request(app)
+    // Restore again for bulk archive test
+    await request(app)
       .patch(`/api/distributions/${distributionId}/restore`)
       .set('Authorization', `Bearer ${authToken}`)
       .set('x-test-role', 'SUPERADMIN');
-    assert.strictEqual(restoreResponse.status, 200);
-    assert.strictEqual(restoreResponse.body?.success, true);
+
+    // Bulk archive RBAC test: LGU_STAFF cannot bulk-archive
+    const staffBulkArchiveAttempt = await request(app)
+      .patch('/api/distributions/bulk-archive')
+      .set('Authorization', `Bearer ${authToken}`)
+      .send({ distributionIds: [distributionId] });
+    assert.strictEqual(staffBulkArchiveAttempt.status, 403);
+
+    // Bulk archive test: superadmin can bulk-archive selected distributions
+    const bulkArchiveResponse = await request(app)
+      .patch('/api/distributions/bulk-archive')
+      .set('Authorization', `Bearer ${authToken}`)
+      .set('x-test-role', 'SUPERADMIN')
+      .send({ distributionIds: [distributionId] });
+    assert.strictEqual(bulkArchiveResponse.status, 200);
+    assert.strictEqual(bulkArchiveResponse.body?.success, true);
+    assert.strictEqual(bulkArchiveResponse.body?.count, 1);
+
+    // Bulk archive test: allCompleted
+    const bulkArchiveAllResponse = await request(app)
+      .patch('/api/distributions/bulk-archive')
+      .set('Authorization', `Bearer ${authToken}`)
+      .set('x-test-role', 'SUPERADMIN')
+      .send({ allCompleted: true });
+    assert.strictEqual(bulkArchiveAllResponse.status, 200);
+    assert.strictEqual(bulkArchiveAllResponse.body?.success, true);
 
   } finally {
     await mongoose.disconnect();

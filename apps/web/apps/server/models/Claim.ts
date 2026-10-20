@@ -18,7 +18,7 @@ export type ClaimStatus =
   | 'CONFIRMED';
 
 export type ClaimCategory = 'DISTRIBUTION' | 'DISASTER_EVENT';
-export type ResidentClaimStatus = 'Not Claimed' | 'Claimed';
+export type ResidentClaimStatus = 'Unclaimed' | 'Not Claimed' | 'Claimed';
 export type ClaimSource = 'ONLINE' | 'OFFLINE_SYNC';
 
 export interface IClaim extends Document {
@@ -101,7 +101,7 @@ const ClaimSchema = new Schema<IClaim>(
     },
     claimStatus: {
       type: String,
-      enum: ['Not Claimed', 'Claimed'],
+      enum: ['Unclaimed', 'Not Claimed', 'Claimed'],
       default: 'Claimed',
       index: true,
     },

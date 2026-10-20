@@ -17,13 +17,13 @@ export interface HouseholdRow {
   contact: string
   verificationStatus: string
   verificationScore: number | null
-  claimStatus: 'Claimed' | 'Not Claimed'
+  claimStatus: 'Claimed' | 'Unclaimed'
   lastClaimedAt: string | null
   registeredAt: string | null
 }
 
 type BarangayFilter = string
-const STATUS_OPTIONS = ['All Status', 'Claimed', 'Not Claimed'] as const
+const STATUS_OPTIONS = ['All Status', 'Claimed', 'Unclaimed'] as const
 type StatusFilter = (typeof STATUS_OPTIONS)[number]
 
 export default function HouseholdsPage() {
@@ -121,7 +121,11 @@ export default function HouseholdsPage() {
           distributionId: selectedDistributionId,
         })
         if (!res.success || !Array.isArray(res.data)) break
-        mergedRows.push(...(res.data as HouseholdRow[]))
+        const normalized = (res.data as any[]).map((row) => ({
+          ...row,
+          claimStatus: row.claimStatus === 'Claimed' ? ('Claimed' as const) : ('Unclaimed' as const),
+        }))
+        mergedRows.push(...normalized)
         totalPages = res.pagination?.totalPages || 1
         page += 1
       } while (page <= totalPages)
@@ -170,7 +174,7 @@ export default function HouseholdsPage() {
   const statCounts = useMemo(() => {
     const total = allRows.length
     const claimed = allRows.filter((h) => h.claimStatus === 'Claimed').length
-    const notClaimed = allRows.filter((h) => h.claimStatus === 'Not Claimed').length
+    const notClaimed = allRows.filter((h) => h.claimStatus === 'Unclaimed').length
     const withClaimHistory = allRows.filter((h) => Boolean(h.lastClaimedAt)).length
     return { total, claimed, notClaimed, withClaimHistory }
   }, [allRows])
