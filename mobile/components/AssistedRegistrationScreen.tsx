@@ -490,32 +490,6 @@ export default function AssistedRegistrationScreen({
   };
 
   // -------------------------------------------------------------
-  // Vulnerable Members Assessment
-  // -------------------------------------------------------------
-  const toggleVulnerableMember = (id: string) => {
-    setVulnerableMembers((prev) => {
-      if (prev.includes(id)) {
-        const next = prev.filter((m) => m !== id);
-        const nextCounts = { ...vulnerableCounts };
-        delete nextCounts[id];
-        setVulnerableCounts(nextCounts);
-        return next;
-      } else {
-        setVulnerableCounts((counts) => ({ ...counts, [id]: counts[id] || 1 }));
-        return [...prev, id];
-      }
-    });
-  };
-
-  const updateVulnerableCount = (id: string, delta: number) => {
-    setVulnerableCounts((counts) => {
-      const current = counts[id] || 1;
-      const nextVal = Math.max(1, current + delta);
-      return { ...counts, [id]: nextVal };
-    });
-  };
-
-  // -------------------------------------------------------------
   // Reset & Discard
   // -------------------------------------------------------------
   const resetForm = async () => {
@@ -1489,73 +1463,6 @@ export default function AssistedRegistrationScreen({
                         onChangeText={setHouseholdSize}
                       />
                       <Ionicons name="people" size={20} color="#2E7D32" style={styles.inputIconRight} />
-                    </View>
-                  </View>
-
-                  {/* The 4 Priority Assessment Cards */}
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Priority Assessment</Text>
-                    <Text style={styles.fieldHint}>
-                      Select any special sectors present in this household:
-                    </Text>
-                    <View style={styles.vulnerableGrid}>
-                      {VULNERABLE_MEMBER_OPTIONS.map((item) => {
-                        const isSelected = vulnerableMembers.includes(item.id);
-                        const count = vulnerableCounts[item.id] || 1;
-                        return (
-                          <View
-                            key={item.id}
-                            style={[
-                              styles.vulnerableCard,
-                              isSelected && styles.vulnerableCardActive,
-                            ]}
-                          >
-                            <TouchableOpacity
-                              style={styles.vulnerableCardHeader}
-                              onPress={() => toggleVulnerableMember(item.id)}
-                              activeOpacity={0.7}
-                            >
-                              <Ionicons
-                                name={item.icon as any}
-                                size={22}
-                                color={isSelected ? '#2E7D32' : '#666'}
-                              />
-                              <View style={{ flex: 1 }}>
-                                <Text
-                                  style={[
-                                    styles.vulnerableCardText,
-                                    isSelected && styles.vulnerableCardTextActive,
-                                  ]}
-                                >
-                                  {item.label}
-                                </Text>
-                                <Text style={styles.vulnerableCardDesc}>{item.desc}</Text>
-                              </View>
-                            </TouchableOpacity>
-
-                            {isSelected && (
-                              <View style={styles.vulnerableCounterRow}>
-                                <Text style={styles.vulnerableCounterLabel}>Count:</Text>
-                                <View style={styles.vulnerableStepper}>
-                                  <TouchableOpacity
-                                    style={styles.stepperBtn}
-                                    onPress={() => updateVulnerableCount(item.id, -1)}
-                                  >
-                                    <Text style={styles.stepperBtnText}>-</Text>
-                                  </TouchableOpacity>
-                                  <Text style={styles.stepperValue}>{count}</Text>
-                                  <TouchableOpacity
-                                    style={styles.stepperBtn}
-                                    onPress={() => updateVulnerableCount(item.id, 1)}
-                                  >
-                                    <Text style={styles.stepperBtnText}>+</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              </View>
-                            )}
-                          </View>
-                        );
-                      })}
                     </View>
                   </View>
                 </View>

@@ -182,7 +182,6 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
   const [householdMembers, setHouseholdMembers] = useState<HouseholdMemberItem[]>([]);
   const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
   const [vulnerableCounts, setVulnerableCounts] = useState<{ [key: string]: number }>({});
-  const [showVulnerableDetailsModal, setShowVulnerableDetailsModal] = useState(false);
 
   const handleHouseholdMembersChange = (updatedMembers: HouseholdMemberItem[]) => {
     setHouseholdMembers(updatedMembers);
@@ -442,7 +441,6 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
     barangay: false,
     streetAddress: false,
     householdToken: false,
-    vulnerableCountExceeded: false,
   });
   const [step3Errors, setStep3Errors] = useState({
     idType: false,
@@ -803,17 +801,10 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
   };
 
   const validateStep2 = () => {
-    const totalVulnerableMembers = vulnerableMembers.reduce(
-      (sum, memberId) => sum + Math.max(1, vulnerableCounts[memberId] || 1),
-      0,
-    );
-    const vulnerableCountExceeded = totalVulnerableMembers > householdSize;
-
     const errors = {
       barangay: !barangay.trim(),
       streetAddress: !streetAddress.trim(),
       householdToken: !tokenValidated,  // Token must be validated
-      vulnerableCountExceeded,
     };
     setStep2Errors(errors);
 
@@ -822,8 +813,6 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
       scrollViewRef.current?.scrollTo({ y: 0, animated: true });
     } else if (errors.streetAddress) {
       scrollViewRef.current?.scrollTo({ y: 100, animated: true });
-    } else if (errors.vulnerableCountExceeded) {
-      scrollViewRef.current?.scrollTo({ y: 520, animated: true });
     }
 
     return !Object.values(errors).some(Boolean);
@@ -2202,10 +2191,6 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
         setShowImagePickerModal(false);
         return true;
       }
-      if (showVulnerableDetailsModal) {
-        setShowVulnerableDetailsModal(false);
-        return true;
-      }
       if (showOtpModal) {
         setShowOtpModal(false);
         return true;
@@ -2254,7 +2239,6 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
     currentStep,
     showFaceScanner,
     showImagePickerModal,
-    showVulnerableDetailsModal,
     showOtpModal,
     showTermsModal,
     showDatePicker,
@@ -2835,113 +2819,18 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
           <View style={styles.householdSizeControls}>
             <TouchableOpacity
               style={styles.sizeButton}
-              onPress={() =>
-                setHouseholdSize(prev => {
-                  const nextSize = Math.max(1, prev - 1);
-                  if (showErrors) {
-                    const totalSelected = vulnerableMembers.reduce(
-                      (sum, memberId) => sum + Math.max(1, vulnerableCounts[memberId] || 1),
-                      0,
-                    );
-                    setStep2Errors(current => ({
-                      ...current,
-                      vulnerableCountExceeded: totalSelected > nextSize,
-                    }));
-                  }
-                  return nextSize;
-                })
-              }
+              onPress={() => setHouseholdSize(prev => Math.max(1, prev - 1))}
             >
               <Ionicons name="remove" size={24} color="#333" />
             </TouchableOpacity>
             <Text style={styles.sizeValue}>{householdSize}</Text>
             <TouchableOpacity
               style={[styles.sizeButton, styles.sizeButtonPlus]}
-              onPress={() =>
-                setHouseholdSize(prev => {
-                  const nextSize = prev + 1;
-                  if (showErrors) {
-                    const totalSelected = vulnerableMembers.reduce(
-                      (sum, memberId) => sum + Math.max(1, vulnerableCounts[memberId] || 1),
-                      0,
-                    );
-                    setStep2Errors(current => ({
-                      ...current,
-                      vulnerableCountExceeded: totalSelected > nextSize,
-                    }));
-                  }
-                  return nextSize;
-                })
-              }
+              onPress={() => setHouseholdSize(prev => prev + 1)}
             >
               <Ionicons name="add" size={24} color="#FFF" />
             </TouchableOpacity>
           </View>
-        </View>
-
-        {/* Vulnerable Members */}
-        <View style={styles.vulnerableSection}>
-          <Text style={styles.vulnerableTitle}>Vulnerable Members</Text>
-          <Text style={styles.vulnerableSubtitle}>
-            Select all groups present in your household to help us prioritize special needs.
-          </Text>
-
-          <View style={styles.vulnerableGrid}>
-            {VULNERABLE_MEMBER_OPTIONS.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={[
-                  styles.vulnerableCard,
-                  vulnerableMembers.includes(item.id) && styles.vulnerableCardActive,
-                ]}
-                onPress={() => toggleVulnerableMember(item.id)}
-              >
-                <Ionicons
-                  name={item.icon as any}
-                  size={28}
-                  color={vulnerableMembers.includes(item.id) ? '#2E7D32' : '#666'}
-                />
-                <Text style={[
-                  styles.vulnerableCardText,
-                  vulnerableMembers.includes(item.id) && styles.vulnerableCardTextActive,
-                ]}>
-                  {item.label}
-                </Text>
-                {vulnerableMembers.includes(item.id) && vulnerableCounts[item.id] > 1 && (
-                  <View style={styles.vulnerableCountBadge}>
-                    <Text style={styles.vulnerableCountText}>{vulnerableCounts[item.id]}</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Specify Count Button - shows when any vulnerable category is selected */}
-          {vulnerableMembers.length >= 1 && (
-            <TouchableOpacity
-              style={styles.specifyCountButton}
-              onPress={() => setShowVulnerableDetailsModal(true)}
-            >
-              <Ionicons name="people" size={20} color="#2E7D32" />
-              <Text style={styles.specifyCountButtonText}>
-                {vulnerableMembers.length === 1
-                  ? 'More than 1 person? Tap to specify'
-                  : 'Specify count per category'}
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color="#2E7D32" />
-            </TouchableOpacity>
-          )}
-          <Text style={styles.vulnerableCountSummary}>
-            Selected vulnerable members: {vulnerableMembers.reduce(
-              (sum, memberId) => sum + Math.max(1, vulnerableCounts[memberId] || 1),
-              0,
-            )} / {householdSize}
-          </Text>
-          {showErrors && step2Errors.vulnerableCountExceeded && (
-            <Text style={styles.errorText}>
-              Vulnerable member count cannot be greater than household size.
-            </Text>
-          )}
         </View>
       </View>
     </View>
@@ -3585,95 +3474,6 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
           onSuccess={handleOtpSuccess}
           onClose={() => setShowOtpModal(false)}
         />
-
-        {/* Vulnerable Details Modal */}
-        <Modal
-          visible={showVulnerableDetailsModal}
-          transparent={true}
-          animationType="slide"
-          onRequestClose={() => setShowVulnerableDetailsModal(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowVulnerableDetailsModal(false)}
-          >
-            <View style={styles.vulnerableDetailsModalContent}>
-              <View style={styles.modalHandle} />
-              <Text style={styles.modalTitle}>Specify Vulnerable Members</Text>
-              <Text style={styles.vulnerableModalSubtitle}>
-                How many people are in each category?
-              </Text>
-
-              {VULNERABLE_MEMBER_OPTIONS.filter(item => vulnerableMembers.includes(item.id)).map((item) => (
-                <View key={item.id} style={styles.vulnerableCountRow}>
-                  <View style={styles.vulnerableCountInfo}>
-                    <Ionicons name={item.icon as any} size={22} color="#2E7D32" />
-                    <Text style={styles.vulnerableCountLabel}>{item.label}</Text>
-                  </View>
-                  <View style={styles.vulnerableCountControls}>
-                    <TouchableOpacity
-                      style={styles.countButton}
-                      onPress={() =>
-                        setVulnerableCounts(prev => {
-                          const nextCounts = {
-                            ...prev,
-                            [item.id]: Math.max(1, (prev[item.id] || 1) - 1),
-                          };
-                          if (showErrors) {
-                            const totalSelected = vulnerableMembers.reduce(
-                              (sum, memberId) => sum + Math.max(1, nextCounts[memberId] || 1),
-                              0,
-                            );
-                            setStep2Errors(current => ({
-                              ...current,
-                              vulnerableCountExceeded: totalSelected > householdSize,
-                            }));
-                          }
-                          return nextCounts;
-                        })
-                      }
-                    >
-                      <Ionicons name="remove" size={18} color="#333" />
-                    </TouchableOpacity>
-                    <Text style={styles.countValue}>{vulnerableCounts[item.id] || 1}</Text>
-                    <TouchableOpacity
-                      style={[styles.countButton, styles.countButtonPlus]}
-                      onPress={() =>
-                        setVulnerableCounts(prev => {
-                          const nextCounts = {
-                            ...prev,
-                            [item.id]: (prev[item.id] || 1) + 1,
-                          };
-                          if (showErrors) {
-                            const totalSelected = vulnerableMembers.reduce(
-                              (sum, memberId) => sum + Math.max(1, nextCounts[memberId] || 1),
-                              0,
-                            );
-                            setStep2Errors(current => ({
-                              ...current,
-                              vulnerableCountExceeded: totalSelected > householdSize,
-                            }));
-                          }
-                          return nextCounts;
-                        })
-                      }
-                    >
-                      <Ionicons name="add" size={18} color="#FFF" />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ))}
-
-              <TouchableOpacity
-                style={styles.vulnerableModalDoneButton}
-                onPress={() => setShowVulnerableDetailsModal(false)}
-              >
-                <Text style={styles.vulnerableModalDoneText}>Done</Text>
-              </TouchableOpacity>
-            </View>
-          </TouchableOpacity>
-        </Modal>
 
         {/* Image Picker Modal */}
         <Modal
