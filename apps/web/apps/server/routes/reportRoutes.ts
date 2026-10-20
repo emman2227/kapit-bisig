@@ -15,6 +15,7 @@ import Resident from '../models/Resident';
 import Claim from '../models/Claim';
 import { AuthRequest } from '../middleware/unifiedAuth';
 import { BARANGAY_OPTIONS } from '../models/Distribution';
+import { deriveDistributionLifecycle } from '../utils/distributionLifecycle';
 
 const router = Router();
 
@@ -155,14 +156,16 @@ router.get('/summary', async (req: AuthRequest, res: Response) => {
       totalFace += claims.face;
       totalUnknownMethod += claims.unknown;
 
-      let derivedStatus = d.status as string;
-      if (derivedStatus !== 'Claimed') {
-        if (claimed >= registered && registered > 0) {
-          derivedStatus = 'Claimed';
-        } else if (claimed > 0) {
-          derivedStatus = 'Partially Claimed';
-        }
-      }
+      const lifecycle = deriveDistributionLifecycle({
+        scheduled: d.scheduled,
+        endsAt: d.endsAt,
+        archivedAt: d.archivedAt,
+        status: d.status,
+        claimedHouseholds: claimed,
+        registeredHouseholds: registered,
+      });
+
+      const derivedStatus = lifecycle === 'Upcoming' ? 'Scheduled' : lifecycle;
 
       return {
         id,

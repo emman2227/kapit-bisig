@@ -152,18 +152,21 @@ export function StatCard({
 export function StatusPill({ status }: { status: string }) {
   const isClaimed = status === 'Claimed' || status === 'Completed'
   const isActive = status === 'Partially Claimed' || status === 'Active'
+  const isArchived = status === 'Archived'
 
   const cls = isClaimed
     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800/40'
     : isActive
     ? 'bg-amber-50 text-amber-700 border-amber-200/60 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800/40'
+    : isArchived
+    ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
     : 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
 
-  const label = isClaimed ? 'Completed' : isActive ? 'Active' : 'Scheduled'
+  const label = isClaimed ? 'Completed' : isActive ? 'Active' : isArchived ? 'Archived' : 'Scheduled'
 
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border ${cls}`}>
-      <span className={`w-1.5 h-1.5 rounded-full ${isClaimed ? 'bg-emerald-500' : isActive ? 'bg-amber-500 animate-pulse' : 'bg-slate-400'}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${isClaimed ? 'bg-emerald-500' : isActive ? 'bg-amber-500 animate-pulse' : isArchived ? 'bg-slate-400' : 'bg-blue-400'}`} />
       {label}
     </span>
   )
