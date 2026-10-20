@@ -91,10 +91,10 @@ export async function checkHouseholdDuplicates(params: {
   const warnings: string[] = [];
 
   const baseFilter: Record<string, any> = {
-    status: { $in: ['Pending', 'Approved', 'Needs Revision'] },
+    status: mongoose.trusted({ $in: ['Pending', 'Approved', 'Needs Revision'] }),
   };
   if (excludeResidentId) {
-    baseFilter._id = { $ne: new mongoose.Types.ObjectId(excludeResidentId.toString()) };
+    baseFilter._id = mongoose.trusted({ $ne: new mongoose.Types.ObjectId(excludeResidentId.toString()) });
   }
 
   // ─────────────────────────────────────────────────────────────────
@@ -112,6 +112,7 @@ export async function checkHouseholdDuplicates(params: {
       firstName: regFirstNameRegex,
       lastName: regLastNameRegex,
     })
+      .setOptions({ sanitizeFilter: false })
       .select('_id residentCode barangay firstName lastName dateOfBirth status')
       .lean();
 
@@ -145,6 +146,7 @@ export async function checkHouseholdDuplicates(params: {
       'householdMembers.firstName': regFirstNameRegex,
       'householdMembers.lastName': regLastNameRegex,
     })
+      .setOptions({ sanitizeFilter: false })
       .select('_id residentCode barangay firstName lastName householdMembers status')
       .lean();
 
@@ -196,6 +198,7 @@ export async function checkHouseholdDuplicates(params: {
       firstName: memFirstNameRegex,
       lastName: memLastNameRegex,
     })
+      .setOptions({ sanitizeFilter: false })
       .select('_id residentCode barangay firstName lastName dateOfBirth status')
       .lean();
 
@@ -229,6 +232,7 @@ export async function checkHouseholdDuplicates(params: {
       'householdMembers.firstName': memFirstNameRegex,
       'householdMembers.lastName': memLastNameRegex,
     })
+      .setOptions({ sanitizeFilter: false })
       .select('_id residentCode barangay firstName lastName householdMembers status')
       .lean();
 
