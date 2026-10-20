@@ -547,12 +547,12 @@ export default function ReportsPageClient() {
                       <th className="px-4 py-3 w-[15%]">Scheduled Date</th>
                       <th className="px-4 py-3 w-[16%]">Barangay Sector</th>
                       <th className="px-3 py-3 w-[11%] text-right">Registered</th>
-                      <th className="px-3 py-3 w-[11%] text-right">Claimed</th>
-                      <th className="px-3 py-3 w-[11%] text-right">Unclaimed</th>
-                      <th className="px-4 py-3 w-[20%]">
+                      <th className="px-3 py-3 w-[10%] text-right">Claimed</th>
+                      <th className="px-3 py-3 w-[10%] text-right">Unclaimed</th>
+                      <th className="px-4 py-3 w-[19%]">
                         {activityLogMetric === 'percentage' ? 'Turnout Rate' : 'Households Served'}
                       </th>
-                      <th className="px-3 py-3 w-[12%] text-center">Status</th>
+                      <th className="px-3 py-3 w-[15%] text-center whitespace-nowrap">Lifecycle Status</th>
                       <th className="px-3 py-3 w-[4%]"></th>
                     </tr>
                   </thead>
