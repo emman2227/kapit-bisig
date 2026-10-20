@@ -545,7 +545,7 @@ export default function DistributionsTable({
                 <th className="px-6 py-4">Barangay</th>
                 <th className="px-6 py-4">Registered Households</th>
                 <th className="px-6 py-4">Claims</th>
-                <th className="px-6 py-4">Scheduled For</th>
+                <th className="px-6 py-4">Scheduled</th>
                 <th className="px-6 py-4">Lifecycle / Claim Progress</th>
                 <th className="px-6 py-4">Claimed On</th>
                 <th className="px-6 py-4 text-right pr-6">
