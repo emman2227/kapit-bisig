@@ -325,48 +325,49 @@ export default function DistributionsTable({
         </div>
 
         <div className="border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-5 py-4 sm:px-6">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:max-w-md">
-              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
-                <SearchIcon />
-              </span>
-              <input
-                type="text"
-                maxLength={MAX_SEARCH_LENGTH}
-                value={query}
-                onChange={(e) => setQuery(sanitizeSearchQuery(e.target.value))}
-                placeholder="Search distributions..."
-                className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-10 pr-20 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-slate-400 dark:focus:border-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-0"
-              />
-              <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                {query ? (
-                  <button
-                    type="button"
-                    onClick={() => setQuery('')}
-                    className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-md"
-                    aria-label="Clear search"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                ) : null}
-                <span
-                  className={[
-                    'text-[11px] font-mono tabular-nums select-none px-1.5 py-0.5 rounded border',
-                    query.length >= MAX_SEARCH_LENGTH
-                      ? 'font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700'
-                      : 'text-slate-600 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-700/80 border-slate-300 dark:border-slate-600',
-                  ].join(' ')}
-                  title={`Character limit: ${query.length}/${MAX_SEARCH_LENGTH}`}
-                >
-                  {query.length}/{MAX_SEARCH_LENGTH}
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            {/* Filters: Search, Barangay, Claim Status */}
+            <div className="flex flex-1 flex-wrap items-center gap-2.5 sm:gap-3">
+              <div className="relative w-full sm:w-64 md:w-72">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <SearchIcon />
                 </span>
+                <input
+                  type="text"
+                  maxLength={MAX_SEARCH_LENGTH}
+                  value={query}
+                  onChange={(e) => setQuery(sanitizeSearchQuery(e.target.value))}
+                  placeholder="Search distributions..."
+                  className="w-full rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 py-2.5 pl-10 pr-20 text-sm text-slate-800 dark:text-slate-200 placeholder-slate-400 shadow-sm outline-none transition-colors focus:border-slate-400 dark:focus:border-slate-500 focus:bg-white dark:focus:bg-slate-900 focus:ring-0"
+                />
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  {query ? (
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-md"
+                      aria-label="Clear search"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ) : null}
+                  <span
+                    className={[
+                      'text-[11px] font-mono tabular-nums select-none px-1.5 py-0.5 rounded border',
+                      query.length >= MAX_SEARCH_LENGTH
+                        ? 'font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700'
+                        : 'text-slate-600 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-700/80 border-slate-300 dark:border-slate-600',
+                    ].join(' ')}
+                    title={`Character limit: ${query.length}/${MAX_SEARCH_LENGTH}`}
+                  >
+                    {query.length}/{MAX_SEARCH_LENGTH}
+                  </span>
+                </div>
               </div>
-            </div>
 
-            <div className="flex w-full flex-wrap items-center gap-3 lg:w-auto">
-              <div className="relative min-w-[180px]">
+              <div className="relative min-w-[150px] sm:min-w-[160px]">
                 <button
                   ref={barangayBtnRef}
                   type="button"
@@ -375,7 +376,7 @@ export default function DistributionsTable({
                     setStatusOpen(false)
                     setActiveMenu(null)
                   }}
-                  className="flex w-full items-center justify-between rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-colors hover:bg-white dark:hover:bg-slate-700"
+                  className="flex w-full items-center justify-between rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-colors hover:bg-white dark:hover:bg-slate-700"
                 >
                   <span className="truncate">{barangayLabel}</span>
                   <ChevronDownIcon />
@@ -393,7 +394,7 @@ export default function DistributionsTable({
                 ) : null}
               </div>
 
-              <div className="relative min-w-[190px]">
+              <div className="relative min-w-[160px] sm:min-w-[170px]">
                 <button
                   ref={statusBtnRef}
                   type="button"
@@ -402,7 +403,7 @@ export default function DistributionsTable({
                     setBarangayOpen(false)
                     setActiveMenu(null)
                   }}
-                  className="flex w-full items-center justify-between rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-colors hover:bg-white dark:hover:bg-slate-700"
+                  className="flex w-full items-center justify-between rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3.5 py-2.5 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-colors hover:bg-white dark:hover:bg-slate-700"
                 >
                   <span className="truncate">{statusLabel}</span>
                   <ChevronDownIcon />
@@ -419,12 +420,15 @@ export default function DistributionsTable({
                   />
                 ) : null}
               </div>
+            </div>
 
+            {/* Actions: Archive All Completed, Archive, and + New Distribution */}
+            <div className="flex flex-wrap items-center justify-end gap-2.5 sm:gap-3 xl:ml-auto">
               {isCompletedTab && canManageLifecycle && completedCount > 0 && onBulkArchive ? (
                 <button
                   type="button"
                   onClick={() => onBulkArchive(undefined, true, completedCount)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm transition-all"
+                  className="inline-flex items-center gap-2 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 px-3.5 py-2.5 text-sm font-semibold text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 shadow-sm transition-all whitespace-nowrap"
                   title="Archive all completed distributions"
                 >
                   <ArchiveIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
@@ -435,7 +439,7 @@ export default function DistributionsTable({
               <button
                 type="button"
                 onClick={() => setArchiveOpen(true)}
-                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-700"
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap"
               >
                 <ArchiveIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                 <span>Archive</span>
@@ -450,7 +454,7 @@ export default function DistributionsTable({
                 <button
                   type="button"
                   onClick={onOpenCreate}
-                  className="ml-1 inline-flex items-center justify-center whitespace-nowrap gap-2 rounded-xl bg-[#0F533A] px-5 py-2.5 text-sm font-bold text-white shadow-[0_2px_10px_rgba(0,0,0,0.10)] transition-all duration-300 hover:bg-[#0a3f2c] hover:scale-[1.02] hover:shadow-[0_4px_14px_rgba(0,0,0,0.15)]"
+                  className="inline-flex items-center justify-center whitespace-nowrap gap-2 rounded-xl bg-[#0F533A] px-5 py-2.5 text-sm font-bold text-white shadow-[0_2px_10px_rgba(0,0,0,0.10)] transition-all duration-300 hover:bg-[#0a3f2c] hover:scale-[1.02] hover:shadow-[0_4px_14px_rgba(0,0,0,0.15)]"
                 >
                   + New Distribution
                 </button>
