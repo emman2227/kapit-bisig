@@ -29,7 +29,7 @@ const BASE_BUTTON_CLASS =
   'inline-flex h-11 w-full items-center justify-between rounded-xl border border-gray-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-4 text-left text-sm shadow-[0_2px_10px_rgba(0,0,0,0.06)] dark:shadow-[0_2px_10px_rgba(0,0,0,0.2)] outline-none transition focus:ring-2 focus:ring-[#0F533A]/20 dark:focus:ring-emerald-500/20 disabled:cursor-not-allowed disabled:bg-gray-50 dark:disabled:bg-slate-700 disabled:text-gray-400 dark:disabled:text-gray-500'
 
 const BASE_MENU_CLASS =
-  'z-50 max-h-64 overflow-y-auto rounded-2xl border border-[#DCDCDC] dark:border-slate-600 bg-[#ECECEC] dark:bg-slate-700 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)]'
+  'z-50 max-h-64 overflow-y-auto overscroll-contain rounded-2xl border border-[#DCDCDC] dark:border-slate-600 bg-[#ECECEC] dark:bg-slate-700 p-2 shadow-[0_10px_30px_rgba(0,0,0,0.14)] dark:shadow-[0_10px_30px_rgba(0,0,0,0.4)]'
 
 const BASE_OPTION_CLASS =
   'w-full flex items-center gap-2 rounded-xl px-4 py-2.5 text-left text-sm transition-colors'
@@ -75,8 +75,8 @@ export default function SelectDropdown({
 
     const onMouseDown = (event: MouseEvent) => {
       const target = event.target as Node
-      const inButton = buttonRef.current?.contains(target)
-      const inMenu = menuRef.current?.contains(target)
+      const inButton = buttonRef.current && (buttonRef.current === target || buttonRef.current.contains(target))
+      const inMenu = menuRef.current && (menuRef.current === target || menuRef.current.contains(target))
       if (!inButton && !inMenu) setOpen(false)
     }
 
@@ -115,7 +115,13 @@ export default function SelectDropdown({
     }
 
     updateCoords()
-    const handleClose = () => setOpen(false)
+    const handleClose = (e: Event) => {
+      const target = e.target as Node | null
+      if (target && menuRef.current && (menuRef.current === target || menuRef.current.contains(target))) {
+        return
+      }
+      setOpen(false)
+    }
     window.addEventListener('scroll', handleClose, true)
     window.addEventListener('resize', handleClose)
 

@@ -302,7 +302,7 @@ export default function ReportsPageClient() {
   return (
     <div className="space-y-6">
       {/* ── High-Density Filter Toolbar ──────────────────── */}
-      <div className="print:hidden rounded-2xl sm:rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)]">
+      <div className="relative z-20 print:hidden rounded-2xl sm:rounded-3xl border border-slate-200/90 bg-white shadow-[0_1px_3px_rgba(0,0,0,0.05),0_6px_16px_rgba(0,0,0,0.03)] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-[0_1px_3px_rgba(0,0,0,0.25)]">
         <div className="rounded-t-2xl sm:rounded-t-3xl border-b border-slate-200/80 bg-slate-50/90 px-5 py-5 dark:border-slate-700/80 dark:bg-slate-800/80 sm:px-6">
           <SectionHeader
             eyebrow="Reporting & Analytics"

@@ -87,7 +87,7 @@ export function Dropdown({
   onChange,
   buttonLabel,
   widthClass = 'min-w-[200px]',
-  usePortal = true,
+  usePortal = false,
 }: {
   value: string
   items: DropdownItem[]
@@ -103,10 +103,7 @@ export function Dropdown({
       onChange={onChange}
       placeholder={buttonLabel}
       className={widthClass}
-      buttonClassName="!h-[38px] !px-3.5 !py-2 !text-xs sm:!text-sm !font-medium bg-white border-slate-200 text-slate-700 dark:!bg-slate-900 dark:!border-slate-700 dark:!text-slate-200"
-      menuClassName="!rounded-2xl !bg-white dark:!bg-slate-800 !border-slate-200 dark:!border-slate-700 shadow-xl dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)] border !p-1.5"
-      optionClassName="text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:!bg-slate-700/80 !rounded-xl !py-2 !px-3"
-      selectedOptionClassName="!bg-emerald-600 !text-white font-semibold shadow-sm"
+      buttonClassName="!h-[38px] !px-3.5 !py-2 !text-xs sm:!text-sm !font-medium"
       usePortal={usePortal}
     />
   )
