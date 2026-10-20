@@ -1528,10 +1528,10 @@ router.patch(
       if (allCompleted) {
         filter = {
           archivedAt: null,
-          $or: [
+          $or: mongoose.trusted([
             { status: 'Claimed' },
-            { endsAt: { $lte: new Date() } },
-          ],
+            { endsAt: mongoose.trusted({ $lte: new Date() }) },
+          ]),
         };
       } else if (Array.isArray(distributionIds) && distributionIds.length > 0) {
         const validIds = distributionIds.filter((id: string) => mongoose.Types.ObjectId.isValid(id));
@@ -1542,7 +1542,7 @@ router.patch(
           });
         }
         filter = {
-          _id: { $in: validIds.map((id: string) => new mongoose.Types.ObjectId(id)) },
+          _id: mongoose.trusted({ $in: validIds.map((id: string) => new mongoose.Types.ObjectId(id)) }),
           archivedAt: null,
         };
       } else {
@@ -1552,7 +1552,7 @@ router.patch(
         });
       }
 
-      const distributionsToArchive = await Distribution.find(filter);
+      const distributionsToArchive = await Distribution.find(filter).setOptions({ sanitizeFilter: false });
 
       if (distributionsToArchive.length === 0) {
         return res.json({
@@ -1589,8 +1589,10 @@ router.patch(
       });
     } catch (error: unknown) {
       console.error('Error bulk archiving distributions:', error);
-      const message = error instanceof Error ? error.message : 'Failed to bulk archive distributions';
-      return res.status(500).json({ success: false, message });
+      return res.status(500).json({
+        success: false,
+        message: 'Unable to archive the selected distributions. Please try again.',
+      });
     }
   }
 );

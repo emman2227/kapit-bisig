@@ -204,6 +204,7 @@ export default function DistributionPageClient() {
 
   const handleConfirmBulkArchive = async () => {
     if (!pendingBulkArchive) return
+    const targetCount = pendingBulkArchive.count
     try {
       setIsBulkArchiving(true)
       const res = await api.bulkArchiveDistributions({
@@ -211,17 +212,21 @@ export default function DistributionPageClient() {
         allCompleted: pendingBulkArchive.allCompleted,
       })
       if (res.success) {
-        showToast.success(`Archived ${res.data?.count ?? pendingBulkArchive.count} distribution(s). Historical records were preserved.`)
+        showToast.success(`Archived ${res.data?.count ?? targetCount} distribution(s). Historical records were preserved.`)
+        await fetchDistributions()
       } else {
-        showToast.error(res.message || 'Failed to archive distributions')
+        showToast.error(res.message || 'Unable to archive distributions. Please try again.')
       }
-      setPendingBulkArchive(null)
-      await fetchDistributions()
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to archive distributions'
+      const raw = err instanceof Error ? err.message : ''
+      const isTechnical = !raw || raw.includes('Cast to') || raw.includes('ObjectId') || raw.includes('status 500')
+      const message = isTechnical
+        ? 'Unable to archive the selected distributions. Please refresh and try again.'
+        : raw
       showToast.error(message)
     } finally {
       setIsBulkArchiving(false)
+      setPendingBulkArchive(null)
     }
   }
 
