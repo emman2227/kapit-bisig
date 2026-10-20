@@ -22,6 +22,7 @@ import {
   residentStatusUpdateBody,
   assistedRevisionBody,
 } from '../validation/resident.schema';
+import { reviewHouseholdMemberRevisionBody } from '../validation/household.schema';
 import {
   isValidPhilippineMobileNumber,
   normalizePhilippineMobileNumber,
@@ -1226,5 +1227,160 @@ router.get('/stats/summary', requireAuth, requireStaffOrSuperadmin, async (_req:
     });
   }
 });
+
+/**
+ * GET /api/residents/household-member-requests
+ * Lists residents with pending household member revisions, scoped by staff assigned barangays.
+ */
+router.get('/household-member-requests', requireAuth, requireStaffOrSuperadmin, async (req: AuthRequest, res: Response) => {
+  try {
+    const query: Record<string, any> = {
+      'pendingHouseholdRevision.status': 'PENDING',
+    };
+
+    if (req.authUser?.role === 'LGU_STAFF') {
+      const assigned = req.authUser.assignedBarangays ?? [];
+      query.barangay = mongoose.trusted({ $in: assigned });
+    }
+
+    const residents = await Resident.find(query)
+      .select('_id residentCode fullName firstName lastName barangay streetAddress householdSize householdMembers pendingHouseholdRevision createdAt')
+      .sort({ 'pendingHouseholdRevision.requestedAt': -1 })
+      .lean();
+
+    return res.json({
+      success: true,
+      data: residents,
+      count: residents.length,
+    });
+  } catch (err: any) {
+    console.error('[ResidentRoutes] Get household member requests error:', err);
+    return res.status(500).json({ success: false, message: 'Server error fetching member requests' });
+  }
+});
+
+/**
+ * POST /api/residents/:id/household-members/review
+ * Approves or rejects a pending household member revision.
+ */
+router.post(
+  '/:id/household-members/review',
+  requireAuth,
+  requireStaffOrSuperadmin,
+  validateRequest({ body: reviewHouseholdMemberRevisionBody }),
+  async (req: AuthRequest, res: Response) => {
+    try {
+      const residentId = req.params.id;
+      const { action, rejectionReason } = req.body;
+      const resident = await Resident.findById(residentId);
+
+      if (!resident) {
+        return res.status(404).json({ success: false, message: 'Resident not found' });
+      }
+
+      if (req.authUser?.role === 'LGU_STAFF') {
+        const assigned = req.authUser.assignedBarangays ?? [];
+        if (!assigned.includes(resident.barangay)) {
+          return res.status(403).json({ success: false, message: 'Forbidden: You do not have permission for this barangay.' });
+        }
+      }
+
+      if (!resident.pendingHouseholdRevision || resident.pendingHouseholdRevision.status !== 'PENDING') {
+        return res.status(400).json({ success: false, message: 'No pending household member revision for this resident.' });
+      }
+
+      const staffUserId = req.authUser?.userId || req.authUser?.sub || 'staff';
+      const staffName = (req.authUser as any)?.email || (req.authUser as any)?.fullName || 'Barangay Staff';
+
+      if (action === 'APPROVE') {
+        resident.householdMembers = resident.pendingHouseholdRevision.members || [];
+        resident.householdSize = (resident.householdMembers.length || 0) + 1;
+
+        // Recalculate vulnerable counts from head & members
+        const vCounts: Record<string, number> = {};
+        const vMembersSet = new Set<string>();
+        for (const m of resident.householdMembers) {
+          for (const v of m.vulnerabilities || []) {
+            vMembersSet.add(v);
+            vCounts[v] = (vCounts[v] || 0) + 1;
+          }
+        }
+        resident.vulnerableMembers = Array.from(vMembersSet);
+        resident.vulnerableCounts = vCounts;
+
+        resident.pendingHouseholdRevision.status = 'APPROVED';
+        resident.pendingHouseholdRevision.reviewedBy = staffUserId;
+        resident.pendingHouseholdRevision.reviewedByName = staffName;
+        resident.pendingHouseholdRevision.reviewedAt = new Date();
+
+        await resident.save();
+
+        await logAudit(req, 'HOUSEHOLD_MEMBERS_REVISION_APPROVED', 'Resident', resident._id.toString(), {
+          householdSize: resident.householdSize,
+          membersCount: resident.householdMembers.length,
+          barangay: resident.barangay,
+        });
+
+        await createNotification({
+          userId: resident._id.toString(),
+          title: 'Household Members Update Approved',
+          message: 'Your request to update household members has been approved by your barangay office.',
+          type: 'status_update',
+          meta: {
+            screen: 'profile',
+            residentId: resident._id.toString(),
+          },
+        });
+
+        return res.json({
+          success: true,
+          message: 'Household member revision approved successfully',
+          data: {
+            householdMembers: resident.householdMembers,
+            householdSize: resident.householdSize,
+            pendingHouseholdRevision: resident.pendingHouseholdRevision,
+          },
+        });
+      } else {
+        resident.pendingHouseholdRevision.status = 'REJECTED';
+        resident.pendingHouseholdRevision.rejectionReason = rejectionReason || 'Request rejected by staff.';
+        resident.pendingHouseholdRevision.reviewedBy = staffUserId;
+        resident.pendingHouseholdRevision.reviewedByName = staffName;
+        resident.pendingHouseholdRevision.reviewedAt = new Date();
+
+        await resident.save();
+
+        await logAudit(req, 'HOUSEHOLD_MEMBERS_REVISION_REJECTED', 'Resident', resident._id.toString(), {
+          rejectionReason,
+          barangay: resident.barangay,
+        });
+
+        await createNotification({
+          userId: resident._id.toString(),
+          title: 'Household Members Update Rejected',
+          message: rejectionReason
+            ? `Your household members update was rejected: ${rejectionReason}`
+            : 'Your household members update was not approved. Please contact your barangay office.',
+          type: 'status_update',
+          meta: {
+            screen: 'profile',
+            residentId: resident._id.toString(),
+          },
+        });
+
+        return res.json({
+          success: true,
+          message: 'Household member revision rejected',
+          data: {
+            pendingHouseholdRevision: resident.pendingHouseholdRevision,
+          },
+        });
+      }
+    } catch (err: any) {
+      console.error('[ResidentRoutes] Review household member request error:', err);
+      return res.status(500).json({ success: false, message: 'Server error reviewing member revision' });
+    }
+  }
+);
 
 export default router;

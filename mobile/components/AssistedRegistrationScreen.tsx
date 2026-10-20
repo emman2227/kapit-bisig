@@ -24,6 +24,7 @@ import {
   submitAssistedRegistration,
   AssistedRegistrationPayload,
 } from '../services/api/AssistedRegistrationService';
+import HouseholdMembersEditor, { HouseholdMemberItem } from './registration/HouseholdMembersEditor';
 import { resolveApiBaseUrl } from '../services/config/apiSecurity';
 import { getIdFormatInfo, isStep3IdNumberFormatValid } from '../utils/idFormat';
 
@@ -117,8 +118,26 @@ export default function AssistedRegistrationScreen({
   } | null>(null);
   const [streetAddress, setStreetAddress] = useState('');
   const [householdSize, setHouseholdSize] = useState('1');
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMemberItem[]>([]);
   const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
   const [vulnerableCounts, setVulnerableCounts] = useState<{ [key: string]: number }>({});
+
+  const handleHouseholdMembersChange = (updatedMembers: HouseholdMemberItem[]) => {
+    setHouseholdMembers(updatedMembers);
+    const newSize = Math.max(1, 1 + updatedMembers.length);
+    setHouseholdSize(String(newSize));
+
+    const vCounts: { [key: string]: number } = {};
+    const vSet = new Set<string>();
+    updatedMembers.forEach((m) => {
+      (m.vulnerabilities || []).forEach((v) => {
+        vSet.add(v);
+        vCounts[v] = (vCounts[v] || 0) + 1;
+      });
+    });
+    setVulnerableMembers(Array.from(vSet));
+    setVulnerableCounts(vCounts);
+  };
 
   // Step 3: ID Verification
   const [idType, setIdType] = useState<string>('STAFF_ATTESTATION');
@@ -871,6 +890,14 @@ export default function AssistedRegistrationScreen({
       streetAddress: streetAddress.trim(),
       city: 'Labrador',
       householdSize: parseInt(householdSize, 10) || 1,
+      householdMembers: householdMembers.map((m) => ({
+        firstName: m.firstName,
+        lastName: m.lastName,
+        relationship: m.relationship,
+        birthYear: m.birthYear ? parseInt(m.birthYear, 10) : undefined,
+        gender: m.gender,
+        vulnerabilities: m.vulnerabilities,
+      })),
       vulnerableMembers,
       vulnerableCounts,
       idType,
@@ -1441,6 +1468,13 @@ export default function AssistedRegistrationScreen({
                       <Text style={styles.fieldErrorText}>{fieldErrors.streetAddress}</Text>
                     ) : null}
                   </View>
+
+                  {/* Household Members */}
+                  <HouseholdMembersEditor
+                    members={householdMembers}
+                    onChange={handleHouseholdMembersChange}
+                    accentColor="#2E7D32"
+                  />
 
                   {/* Household Size */}
                   <View style={styles.fieldContainer}>

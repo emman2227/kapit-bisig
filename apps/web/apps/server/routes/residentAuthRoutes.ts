@@ -15,7 +15,8 @@ import {
   householdChangePasswordRequestOtpSchema,
   householdChangePasswordConfirmSchema,
 } from '../schemas/authSchemas';
-import { residentRevisionSubmitBody } from '../validation/household.schema';
+import { residentRevisionSubmitBody, requestHouseholdMemberRevisionBody } from '../validation/household.schema';
+import { checkHouseholdDuplicates } from '../services/householdDuplicateService';
 import {
   isValidPhilippineMobileNumber,
   normalizePhilippineMobileNumber,
@@ -228,7 +229,7 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
     }
 
     const resident = await Resident.findById(userId).select(
-      'residentCode avatarUrl firstName lastName fullName mobileNumber email barangay city streetAddress householdSize status rejectionReason lastProfileUpdateAt createdAt'
+      'residentCode avatarUrl firstName lastName fullName mobileNumber email barangay city streetAddress householdSize householdMembers pendingHouseholdRevision vulnerableMembers vulnerableCounts status rejectionReason lastProfileUpdateAt createdAt'
     );
 
     if (!resident) {
@@ -259,6 +260,10 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
         city: resident.city || '',
         streetAddress: resident.streetAddress,
         householdSize: resident.householdSize,
+        householdMembers: resident.householdMembers || [],
+        pendingHouseholdRevision: resident.pendingHouseholdRevision || null,
+        vulnerableMembers: resident.vulnerableMembers || [],
+        vulnerableCounts: resident.vulnerableCounts || {},
         status: resident.status,
         rejectionReason: resident.rejectionReason || '',
         lastProfileUpdateAt: resident.lastProfileUpdateAt || null,
@@ -1458,6 +1463,116 @@ router.post(
         success: false,
         message: 'Unable to upload avatar.',
       });
+    }
+  }
+);
+
+/**
+ * GET /api/household/auth/me/household-members
+ * Fetches current family members and any pending revision request
+ */
+router.get(
+  '/auth/me/household-members',
+  authMiddleware,
+  authenticatedResidentReadRateLimiter,
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (req.user?.role !== 'Resident') {
+        return res.status(403).json({ success: false, message: 'Only resident accounts can access this endpoint.' });
+      }
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const resident = await Resident.findById(userId).select('householdMembers pendingHouseholdRevision householdSize vulnerableMembers vulnerableCounts').lean();
+      if (!resident) {
+        return res.status(404).json({ success: false, message: 'Resident not found' });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          householdMembers: resident.householdMembers || [],
+          pendingHouseholdRevision: resident.pendingHouseholdRevision || null,
+          householdSize: resident.householdSize || 1,
+          vulnerableMembers: resident.vulnerableMembers || [],
+          vulnerableCounts: resident.vulnerableCounts || {},
+        },
+      });
+    } catch (err: any) {
+      console.error('[HouseholdRoutes] GET /auth/me/household-members error:', err);
+      return res.status(500).json({ success: false, message: 'Failed to fetch household members' });
+    }
+  }
+);
+
+/**
+ * POST /api/household/auth/me/household-members/request
+ * Submits household members addition, removal, or update for staff verification with mandatory reason.
+ */
+router.post(
+  '/auth/me/household-members/request',
+  authMiddleware,
+  authenticatedResidentReadRateLimiter,
+  validateRequest({ body: requestHouseholdMemberRevisionBody }),
+  async (req: AuthenticatedRequest, res: Response) => {
+    try {
+      if (req.user?.role !== 'Resident') {
+        return res.status(403).json({ success: false, message: 'Only resident accounts can update household members.' });
+      }
+      const userId = req.user?.userId;
+      if (!userId) {
+        return res.status(401).json({ success: false, message: 'Authentication required' });
+      }
+
+      const resident = await Resident.findById(userId);
+      if (!resident) {
+        return res.status(404).json({ success: false, message: 'Resident not found' });
+      }
+
+      const { reason, members } = req.body;
+
+      // 2-Way Duplicate check against other households (excluding self)
+      const dupCheck = await checkHouseholdDuplicates({
+        members,
+        excludeResidentId: resident._id,
+      });
+
+      if (dupCheck.hardBlocked) {
+        return res.status(400).json({
+          success: false,
+          message: dupCheck.hardBlockMessage || 'A submitted family member is already registered in another household.',
+          errorCode: 'DUPLICATE_HOUSEHOLD_MEMBER',
+          conflict: dupCheck.hardBlockConflict,
+        });
+      }
+
+      resident.pendingHouseholdRevision = {
+        status: 'PENDING',
+        reason: reason.trim(),
+        members: members || [],
+        householdSize: (members?.length || 0) + 1,
+        requestedAt: new Date(),
+        reviewedBy: null,
+        reviewedByName: null,
+        reviewedAt: null,
+        rejectionReason: null,
+      };
+
+      await resident.save();
+
+      return res.status(200).json({
+        success: true,
+        message: 'Household member update request submitted. An admin or barangay staff member will review and verify your request.',
+        data: {
+          pendingHouseholdRevision: resident.pendingHouseholdRevision,
+          warnings: dupCheck.warnings,
+        },
+      });
+    } catch (err: any) {
+      console.error('[HouseholdRoutes] POST /auth/me/household-members/request error:', err);
+      return res.status(500).json({ success: false, message: 'Failed to submit household member change request' });
     }
   }
 );

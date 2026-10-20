@@ -19,7 +19,7 @@
  */
 
 import mongoose from 'mongoose';
-import Resident, { IResident } from '../models/Resident';
+import Resident, { IResident, IHouseholdMember } from '../models/Resident';
 import { householdTokenService, generateRequestId } from './householdTokenService';
 import RegistrationAuditLog from '../models/RegistrationAuditLog';
 import { validatePassword, isCommonPassword } from '../utils/passwordValidator';
@@ -38,6 +38,7 @@ import {
   screenSubmittedId,
 } from './idScreeningService';
 import { enrollResidentFaceEmbedding } from './duplicateFaceService';
+import { checkHouseholdDuplicates } from './householdDuplicateService';
 
 export interface RegistrationData {
   // Personal Info (Step 1)
@@ -54,6 +55,7 @@ export interface RegistrationData {
   barangay: string;
   streetAddress: string;
   householdSize?: number;
+  householdMembers?: IHouseholdMember[];
   vulnerableMembers?: string[];
   vulnerableCounts?: Record<string, number>;
   
@@ -438,6 +440,53 @@ export class HouseholdRegistrationService {
         };
       }
 
+      // Step 3B: 2-Way Household Duplicate Check (Registrant vs Members / Members vs Heads & Members)
+      const duplicateHouseholdCheck = await checkHouseholdDuplicates({
+        registrant: {
+          firstName: data.firstName,
+          lastName: data.lastName,
+          dateOfBirth: data.dateOfBirth,
+        },
+        members: data.householdMembers,
+      });
+
+      if (duplicateHouseholdCheck.hardBlocked) {
+        await householdTokenService.releaseLock(
+          tokenId,
+          lockerId,
+          ipAddress,
+          userAgent,
+          requestId,
+          'Duplicate household member detected'
+        );
+
+        const blockedMessage = duplicateHouseholdCheck.hardBlockMessage || 'A member of this household is already registered in another household.';
+        await RegistrationAuditLog.log({
+          eventType: 'REGISTRATION_FAILED',
+          severity: 'WARNING',
+          tokenPrefix: data.householdToken.replace(/-/g, '').slice(0, 4),
+          tokenId,
+          ipAddress,
+          userAgent,
+          requestId,
+          message: `Registration failed - ${blockedMessage}`,
+          success: false,
+          errorCode: 'DUPLICATE_HOUSEHOLD_MEMBER',
+          processingTimeMs: Date.now() - startTime,
+        });
+
+        return {
+          success: false,
+          message: blockedMessage,
+          errorCode: 'DUPLICATE_HOUSEHOLD_MEMBER',
+          validationErrors: [{
+            field: 'householdMembers',
+            code: 'DUPLICATE_HOUSEHOLD_MEMBER',
+            message: blockedMessage,
+          }],
+        };
+      }
+
       let idScreening: IdScreeningResult;
       try {
         idScreening = await screenSubmittedId({
@@ -529,7 +578,23 @@ export class HouseholdRegistrationService {
 
       // Step 4: Create resident record
       const verificationPayload = buildVerificationPayload(data.verification, idScreening);
+      if (duplicateHouseholdCheck.warnings.length > 0) {
+        verificationPayload.warnings = [
+          ...(verificationPayload.warnings || []),
+          ...duplicateHouseholdCheck.warnings,
+        ];
+        if (!verificationPayload.reviewFlags) {
+          verificationPayload.reviewFlags = [];
+        }
+        if (!verificationPayload.reviewFlags.includes('POTENTIAL_DUPLICATE_MEMBER')) {
+          verificationPayload.reviewFlags.push('POTENTIAL_DUPLICATE_MEMBER');
+        }
+      }
       const isAutoApproved = false;
+
+      const computedHouseholdSize = (data.householdMembers && data.householdMembers.length > 0)
+        ? data.householdMembers.length + 1
+        : (data.householdSize || 1);
 
       const resident = new Resident({
         firstName: data.firstName,
@@ -543,7 +608,8 @@ export class HouseholdRegistrationService {
         city: data.city || '',
         barangay: data.barangay,
         streetAddress: data.streetAddress,
-        householdSize: data.householdSize || 1,
+        householdSize: computedHouseholdSize,
+        householdMembers: data.householdMembers || [],
         vulnerableMembers: data.vulnerableMembers || [],
         vulnerableCounts: data.vulnerableCounts || {},
         idType: data.idType,

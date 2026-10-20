@@ -1,7 +1,7 @@
 'use client'
 
 import React from 'react'
-import type { ResidentRecord } from '@/lib/api'
+import api, { type ResidentRecord } from '@/lib/api'
 import { ResidentStatusBadge } from './ResidentTableBadges'
 
 interface ResidentReviewModalProps {
@@ -15,6 +15,7 @@ interface ResidentReviewModalProps {
   onReject?: (residentId: string) => void
   onReturnRevision?: (residentId: string) => void
   onHardReject?: (residentId: string) => void
+  onHouseholdRevisionReviewed?: (resident: ResidentRecord) => void
   readOnly?: boolean
   approvedLabel?: string
   titleEyebrow?: string
@@ -257,11 +258,17 @@ export default function ResidentReviewModal({
   onReject,
   onReturnRevision,
   onHardReject,
+  onHouseholdRevisionReviewed,
   readOnly = false,
   approvedLabel = 'Approved',
   titleEyebrow,
   description,
 }: ResidentReviewModalProps) {
+  const [revisionActionLoading, setRevisionActionLoading] = React.useState(false)
+  const [revisionError, setRevisionError] = React.useState<string | null>(null)
+  const [showRejectInput, setShowRejectInput] = React.useState(false)
+  const [rejectionReasonInput, setRejectionReasonInput] = React.useState('')
+
   if (!isOpen) return null
 
   const residentId = resident?._id || resident?.id || ''
@@ -273,6 +280,32 @@ export default function ResidentReviewModal({
     (readOnly
       ? 'Review the approved registration details, uploaded proof, and screening history.'
       : 'Review uploaded proof before approving or returning this resident registration.')
+
+  const handleReviewRevision = async (action: 'APPROVE' | 'REJECT') => {
+    if (!residentId) return
+    if (action === 'REJECT' && !showRejectInput) {
+      setShowRejectInput(true)
+      return
+    }
+    setRevisionActionLoading(true)
+    setRevisionError(null)
+    try {
+      const res = await api.reviewHouseholdMemberRevision(residentId, {
+        action,
+        rejectionReason: action === 'REJECT' ? rejectionReasonInput.trim() : undefined,
+      })
+      if (!res.success || !res.data?.resident) {
+        throw new Error(res.message || 'Failed to review household revision.')
+      }
+      setShowRejectInput(false)
+      setRejectionReasonInput('')
+      onHouseholdRevisionReviewed?.(res.data.resident)
+    } catch (err: any) {
+      setRevisionError(err.message || 'Failed to process request.')
+    } finally {
+      setRevisionActionLoading(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-[120] overflow-y-auto" role="dialog" aria-modal="true">
@@ -421,6 +454,173 @@ export default function ResidentReviewModal({
                             }
                           />
                         </div>
+                      </div>
+                    </div>
+
+                    {/* Household Members Card */}
+                    <div className="rounded-2xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-5 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">
+                          Household Members ({1 + (resident.householdMembers?.length || 0)} Total)
+                        </h3>
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                          1 Head + {resident.householdMembers?.length || 0} Declared
+                        </span>
+                      </div>
+
+                      {/* Pending Revision Callout Banner */}
+                      {resident.pendingHouseholdRevision?.status === 'PENDING' && (
+                        <div className="rounded-xl border border-amber-300 dark:border-amber-800/80 bg-amber-50 dark:bg-amber-950/40 p-4 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="inline-flex h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-amber-900 dark:text-amber-200">
+                                  Pending Member Update Requested
+                                </h4>
+                              </div>
+                              <p className="mt-1 text-xs text-amber-800 dark:text-amber-300">
+                                Requested on {formatDate(resident.pendingHouseholdRevision.requestedAt)}
+                              </p>
+                              {resident.pendingHouseholdRevision.reason && (
+                                <p className="mt-1 text-xs italic text-amber-900 dark:text-amber-200 font-medium">
+                                  Reason: "{resident.pendingHouseholdRevision.reason}"
+                                </p>
+                              )}
+                            </div>
+                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-200 shrink-0">
+                              Needs Verification
+                            </span>
+                          </div>
+
+                          <div className="rounded-lg border border-amber-200 dark:border-amber-900/60 bg-white/80 dark:bg-slate-900/80 p-3">
+                            <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2">
+                              Proposed Members ({resident.pendingHouseholdRevision.members?.length || 0}):
+                            </p>
+                            {resident.pendingHouseholdRevision.members && resident.pendingHouseholdRevision.members.length > 0 ? (
+                              <div className="divide-y divide-gray-100 dark:divide-slate-800 text-xs">
+                                {resident.pendingHouseholdRevision.members.map((m, idx) => (
+                                  <div key={idx} className="py-2 flex items-center justify-between gap-2">
+                                    <div>
+                                      <span className="font-bold text-slate-900 dark:text-slate-100">
+                                        {m.firstName} {m.lastName}
+                                      </span>
+                                      <span className="text-slate-500 dark:text-slate-400 ml-2">
+                                        ({m.relationship}{m.birthYear ? ` • Born ${m.birthYear}` : ''}{m.gender ? ` • ${m.gender}` : ''})
+                                      </span>
+                                    </div>
+                                    {m.vulnerabilities && m.vulnerabilities.length > 0 && (
+                                      <div className="flex gap-1 flex-wrap">
+                                        {m.vulnerabilities.map((v) => (
+                                          <span key={v} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                                            {v}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-slate-500 italic">Resident requested removing all declared family members.</p>
+                            )}
+                          </div>
+
+                          {revisionError && (
+                            <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/60 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300 font-medium">
+                              {revisionError}
+                            </div>
+                          )}
+
+                          {showRejectInput && (
+                            <div className="space-y-1.5 pt-1">
+                              <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                                Reason for Rejecting Update:
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="e.g. Duplicate records detected, unverified names..."
+                                value={rejectionReasonInput}
+                                onChange={(e) => setRejectionReasonInput(e.target.value)}
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100"
+                              />
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-end gap-2 pt-1">
+                            {showRejectInput && (
+                              <button
+                                type="button"
+                                disabled={revisionActionLoading}
+                                onClick={() => setShowRejectInput(false)}
+                                className="px-3 py-1.5 rounded-lg border border-slate-300 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:border-slate-700 cursor-pointer"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              disabled={revisionActionLoading}
+                              onClick={() => handleReviewRevision('REJECT')}
+                              className="px-3.5 py-1.5 rounded-lg border border-rose-300 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs font-bold hover:bg-rose-100 transition-colors cursor-pointer"
+                            >
+                              {revisionActionLoading ? 'Processing...' : showRejectInput ? 'Confirm Reject' : 'Reject Update'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={revisionActionLoading}
+                              onClick={() => handleReviewRevision('APPROVE')}
+                              className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer shadow-sm"
+                            >
+                              {revisionActionLoading ? 'Approving...' : 'Approve & Verify Members'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Current Declared Members List */}
+                      <div className="divide-y divide-gray-100 dark:divide-slate-700 border-t border-gray-100 dark:border-slate-700 pt-3">
+                        <div className="py-2.5 flex items-center justify-between">
+                          <div>
+                            <span className="font-bold text-xs text-slate-900 dark:text-slate-100">
+                              {getDisplayName(resident)}
+                            </span>
+                            <span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                              Household Head
+                            </span>
+                          </div>
+                          <span className="text-xs text-slate-400">Primary Registrant</span>
+                        </div>
+
+                        {resident.householdMembers && resident.householdMembers.length > 0 ? (
+                          resident.householdMembers.map((m, idx) => (
+                            <div key={m._id || idx} className="py-2.5 flex items-center justify-between gap-2">
+                              <div>
+                                <span className="font-medium text-xs text-slate-800 dark:text-slate-200">
+                                  {m.firstName} {m.lastName}
+                                </span>
+                                <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">
+                                  ({m.relationship}{m.birthYear ? ` • Born ${m.birthYear}` : ''}{m.gender ? ` • ${m.gender}` : ''})
+                                </span>
+                              </div>
+                              {m.vulnerabilities && m.vulnerabilities.length > 0 ? (
+                                <div className="flex gap-1 flex-wrap">
+                                  {m.vulnerabilities.map((v) => (
+                                    <span key={v} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                      {v}
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-slate-400">-</span>
+                              )}
+                            </div>
+                          ))
+                        ) : (
+                          <div className="py-3 text-xs text-slate-500 dark:text-slate-400 italic">
+                            No additional family members registered on file.
+                          </div>
+                        )}
                       </div>
                     </div>
 

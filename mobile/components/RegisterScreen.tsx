@@ -28,6 +28,7 @@ import { VerificationResult } from '../services/ai';
 import { resolveApiBaseUrl, resolveDevApiFallbackUrl } from '../services/config/apiSecurity';
 import RegistrationOtpModal from './registration/RegistrationOtpModal';
 import { smsVerificationService } from '../services/auth/SmsVerificationService';
+import HouseholdMembersEditor, { HouseholdMemberItem } from './registration/HouseholdMembersEditor';
 import {
   normalizeStep3IdNumber,
   getIdFormatInfo,
@@ -178,9 +179,27 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
   const [barangay, setBarangay] = useState('');
   const [streetAddress, setStreetAddress] = useState('');
   const [householdSize, setHouseholdSize] = useState(1);
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMemberItem[]>([]);
   const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
   const [vulnerableCounts, setVulnerableCounts] = useState<{ [key: string]: number }>({});
   const [showVulnerableDetailsModal, setShowVulnerableDetailsModal] = useState(false);
+
+  const handleHouseholdMembersChange = (updatedMembers: HouseholdMemberItem[]) => {
+    setHouseholdMembers(updatedMembers);
+    const newSize = Math.max(1, 1 + updatedMembers.length);
+    setHouseholdSize(newSize);
+
+    const vCounts: { [key: string]: number } = {};
+    const vSet = new Set<string>();
+    updatedMembers.forEach((m) => {
+      (m.vulnerabilities || []).forEach((v) => {
+        vSet.add(v);
+        vCounts[v] = (vCounts[v] || 0) + 1;
+      });
+    });
+    setVulnerableMembers(Array.from(vSet));
+    setVulnerableCounts(vCounts);
+  };
 
   // Barangay dropdown
   const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
@@ -1877,6 +1896,14 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
         barangay,
         streetAddress,
         householdSize,
+        householdMembers: householdMembers.map((m) => ({
+          firstName: m.firstName,
+          lastName: m.lastName,
+          relationship: m.relationship,
+          birthYear: m.birthYear ? parseInt(m.birthYear, 10) : undefined,
+          gender: m.gender,
+          vulnerabilities: m.vulnerabilities,
+        })),
         vulnerableMembers,
         vulnerableCounts,
         idType,
@@ -1946,6 +1973,12 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
           setTokenError(data.message);
         } else if (data.errorCode === 'DUPLICATE_MOBILE') {
           Alert.alert('Already Registered', 'This mobile number is already registered.', [{ text: 'OK' }]);
+        } else if (data.errorCode === 'DUPLICATE_HOUSEHOLD_MEMBER') {
+          Alert.alert(
+            'Household Member Conflict',
+            data.message || 'A person listed in this household is already registered or listed in another active household. Under relief guidelines, each individual may only belong to one household. If you believe this is an error, please contact your Barangay Hall.',
+            [{ text: 'OK' }]
+          );
         } else {
           returnToFaceStepAfterSubmissionError(data.message || 'Failed to submit registration');
           return;
@@ -2779,6 +2812,16 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
             <Text style={styles.errorText}>Please verify your household registration token</Text>
           )}
         </View>
+
+        {/* Divider */}
+        <View style={styles.divider} />
+
+        {/* Household Members */}
+        <HouseholdMembersEditor
+          members={householdMembers}
+          onChange={handleHouseholdMembersChange}
+          accentColor="#2E7D32"
+        />
 
         {/* Divider */}
         <View style={styles.divider} />

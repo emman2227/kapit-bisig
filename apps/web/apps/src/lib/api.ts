@@ -255,6 +255,29 @@ export interface ReportSummaryData {
   };
 }
 
+export interface HouseholdMember {
+  _id?: string;
+  firstName: string;
+  lastName: string;
+  relationship: string;
+  birthYear?: number | null;
+  dateOfBirth?: string | null;
+  gender?: 'Male' | 'Female' | 'Other' | null;
+  vulnerabilities?: string[];
+}
+
+export interface PendingHouseholdRevision {
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reason: string;
+  members: HouseholdMember[];
+  householdSize: number;
+  requestedAt: string;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+}
+
 export interface ResidentRecord {
   id?: string;
   _id?: string;
@@ -270,6 +293,8 @@ export interface ResidentRecord {
   city?: string;
   streetAddress?: string;
   householdSize?: number;
+  householdMembers?: HouseholdMember[];
+  pendingHouseholdRevision?: PendingHouseholdRevision | null;
   vulnerableMembers?: string[];
   vulnerableCounts?: Record<string, number>;
   idType?: string;
@@ -940,6 +965,43 @@ export const api = {
       body: JSON.stringify(payload),
     });
     return handleResponse<ApiResponse<{ id: string; residentCode: string; status: string }>>(response);
+  },
+
+  /**
+   * Get pending household member change requests for staff review.
+   */
+  async getHouseholdMemberRequests(params?: {
+    barangay?: string;
+    search?: string;
+  }): Promise<ApiResponse<{ requests: Array<ResidentRecord & { pendingHouseholdRevision: PendingHouseholdRevision }> }>> {
+    const sp = new URLSearchParams();
+    if (params?.barangay && params.barangay !== 'All Barangays') sp.append('barangay', params.barangay);
+    if (params?.search) sp.append('search', params.search);
+    const qs = sp.toString();
+    const response = await fetch(`${API_URL}/residents/household-member-requests${qs ? `?${qs}` : ''}`, {
+      headers: createHeaders(),
+      credentials: 'include',
+    });
+    return handleResponse(response);
+  },
+
+  /**
+   * Review (Approve or Reject) a resident's household member change request.
+   */
+  async reviewHouseholdMemberRevision(
+    residentId: string,
+    payload: {
+      action: 'APPROVE' | 'REJECT';
+      rejectionReason?: string;
+    }
+  ): Promise<ApiResponse<{ resident: ResidentRecord }>> {
+    const response = await fetch(`${API_URL}/residents/${residentId}/household-members/review`, {
+      method: 'POST',
+      headers: createHeaders('POST'),
+      credentials: 'include',
+      body: JSON.stringify(payload),
+    });
+    return handleResponse(response);
   },
 
   /**

@@ -21,10 +21,24 @@ import {
   Check,
   Eye,
   EyeOff,
+  Plus,
+  Trash2,
+  Users,
 } from 'lucide-react';
-import api, { BARANGAY_OPTIONS } from '@/lib/api';
+import api, { BARANGAY_OPTIONS, HouseholdMember } from '@/lib/api';
 import SelectDropdown from '@/components/ui/SelectDropdown';
 import ConfirmModal from '@/components/ui/ConfirmModal';
+
+const RELATIONSHIP_OPTIONS = [
+  { value: 'Spouse', label: 'Spouse / Partner' },
+  { value: 'Child', label: 'Child / Dependent' },
+  { value: 'Parent', label: 'Parent' },
+  { value: 'Sibling', label: 'Sibling' },
+  { value: 'Grandparent', label: 'Grandparent' },
+  { value: 'Grandchild', label: 'Grandchild' },
+  { value: 'Other Relative', label: 'Other Relative' },
+  { value: 'Non-Relative', label: 'Non-Relative / Housemate' },
+];
 
 const GENDER_OPTIONS = [
   { value: 'Male', label: 'Male' },
@@ -101,9 +115,36 @@ export default function AssistedRegistrationModal({
     barangay?: string;
   } | null>(null);
   const [streetAddress, setStreetAddress] = useState('');
-  const [householdSize, setHouseholdSize] = useState('1');
+  const [householdMembers, setHouseholdMembers] = useState<HouseholdMember[]>([]);
+  const householdSize = (1 + householdMembers.length).toString();
   const [vulnerableMembers, setVulnerableMembers] = useState<string[]>([]);
   const [vulnerableCounts, setVulnerableCounts] = useState<Record<string, number>>({});
+
+  const handleAddMember = () => {
+    setHouseholdMembers((prev) => [
+      ...prev,
+      {
+        firstName: '',
+        lastName: '',
+        relationship: 'Spouse',
+        birthYear: null,
+        gender: null,
+        vulnerabilities: [],
+      },
+    ]);
+  };
+
+  const handleUpdateMember = (index: number, updates: Partial<HouseholdMember>) => {
+    setHouseholdMembers((prev) => {
+      const copy = [...prev];
+      copy[index] = { ...copy[index], ...updates };
+      return copy;
+    });
+  };
+
+  const handleRemoveMember = (index: number) => {
+    setHouseholdMembers((prev) => prev.filter((_, i) => i !== index));
+  };
 
   // Step 3: Identification
   const [idType, setIdType] = useState<string>('STAFF_ATTESTATION');
@@ -152,7 +193,7 @@ export default function AssistedRegistrationModal({
     setTokenError(null);
     setTokenHouseholdInfo(null);
     setStreetAddress('');
-    setHouseholdSize('1');
+    setHouseholdMembers([]);
     setVulnerableMembers([]);
     setVulnerableCounts({});
     setIdType('STAFF_ATTESTATION');
@@ -526,6 +567,13 @@ export default function AssistedRegistrationModal({
         setErrorMsg('Street address is required.');
         return false;
       }
+      for (let i = 0; i < householdMembers.length; i++) {
+        const m = householdMembers[i];
+        if (!m.firstName.trim() || !m.lastName.trim()) {
+          setErrorMsg(`Please provide both first and last name for Family Member #${i + 1}.`);
+          return false;
+        }
+      }
       return true;
     }
 
@@ -598,7 +646,15 @@ export default function AssistedRegistrationModal({
       householdToken: householdToken.trim(),
       streetAddress: streetAddress.trim(),
       city: 'Labrador',
-      householdSize: parseInt(householdSize, 10) || 1,
+      householdSize: 1 + householdMembers.length,
+      householdMembers: householdMembers.map((m) => ({
+        firstName: m.firstName.trim(),
+        lastName: m.lastName.trim(),
+        relationship: m.relationship,
+        birthYear: m.birthYear ? Number(m.birthYear) : undefined,
+        gender: m.gender || undefined,
+        vulnerabilities: m.vulnerabilities || [],
+      })),
       vulnerableMembers,
       vulnerableCounts,
       idType,
@@ -1098,17 +1154,194 @@ export default function AssistedRegistrationModal({
                   </div>
                   <div>
                     <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 mb-1.5">
-                      Household Members Count
+                      Household Size (Auto-Calculated)
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={30}
-                      value={householdSize}
-                      onChange={(e) => setHouseholdSize(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors"
-                    />
+                    <div className="px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/80 text-xs text-slate-800 dark:text-slate-200 font-bold flex items-center justify-between">
+                      <span>{1 + householdMembers.length} {1 + householdMembers.length === 1 ? 'Person' : 'Persons'}</span>
+                      <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">
+                        1 Head + {householdMembers.length} Members
+                      </span>
+                    </div>
                   </div>
+                </div>
+
+                {/* Declared Family Members */}
+                <div className="pt-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                        Declared Family Members ({householdMembers.length})
+                      </label>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                        List all members residing in this household to prevent duplicate registrations.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleAddMember}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-xs font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors cursor-pointer shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Member</span>
+                    </button>
+                  </div>
+
+                  {householdMembers.length === 0 ? (
+                    <div className="p-4 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/40 text-center">
+                      <Users className="w-6 h-6 text-slate-400 mx-auto mb-1.5" />
+                      <p className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                        No family members added yet.
+                      </p>
+                      <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-2">
+                        If the resident lives alone, you can proceed. Otherwise, click below to add spouse, children, or extended family.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleAddMember}
+                        className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400 hover:underline cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add first family member</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {householdMembers.map((member, idx) => (
+                        <div
+                          key={idx}
+                          className="p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 shadow-sm space-y-3"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-300">
+                              Member #{idx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveMember(idx)}
+                              className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 transition-colors p-1"
+                              title="Remove member"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                First Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="First name"
+                                value={member.firstName}
+                                onChange={(e) => handleUpdateMember(idx, { firstName: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                Last Name <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Last name"
+                                value={member.lastName}
+                                onChange={(e) => handleUpdateMember(idx, { lastName: e.target.value })}
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                Relationship
+                              </label>
+                              <select
+                                value={member.relationship}
+                                onChange={(e) => handleUpdateMember(idx, { relationship: e.target.value })}
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+                              >
+                                {RELATIONSHIP_OPTIONS.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                Birth Year / Approx Age
+                              </label>
+                              <input
+                                type="number"
+                                placeholder="e.g. 1995"
+                                min={1900}
+                                max={2026}
+                                value={member.birthYear ?? ''}
+                                onChange={(e) =>
+                                  handleUpdateMember(idx, {
+                                    birthYear: e.target.value ? parseInt(e.target.value, 10) : null,
+                                  })
+                                }
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                                Gender
+                              </label>
+                              <select
+                                value={member.gender || ''}
+                                onChange={(e) =>
+                                  handleUpdateMember(idx, {
+                                    gender: (e.target.value as 'Male' | 'Female' | 'Other') || null,
+                                  })
+                                }
+                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+                              >
+                                <option value="">Unspecified</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <span className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
+                              Special Categories / Vulnerabilities
+                            </span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {['Senior Citizen', 'PWD', 'Pregnant', 'Child (0-5)'].map((vuln) => {
+                                const active = member.vulnerabilities?.includes(vuln);
+                                return (
+                                  <button
+                                    key={vuln}
+                                    type="button"
+                                    onClick={() => {
+                                      const current = member.vulnerabilities || [];
+                                      const next = active
+                                        ? current.filter((v) => v !== vuln)
+                                        : [...current, vuln];
+                                      handleUpdateMember(idx, { vulnerabilities: next });
+                                    }}
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
+                                      active
+                                        ? 'bg-emerald-600 text-white font-bold'
+                                        : 'bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                                    }`}
+                                  >
+                                    {vuln}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* Vulnerability Sector Cards */}

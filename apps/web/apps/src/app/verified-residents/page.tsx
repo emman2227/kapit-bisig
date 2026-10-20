@@ -44,7 +44,7 @@ export default function VerifiedResidentsPage() {
 
   const [barangay, setBarangay] = useState('All Barangays')
   const [currentPage, setCurrentPage] = useState(1)
-  const [quickFilter, setQuickFilter] = useState<'all' | 'high_match' | 'recent'>('all')
+  const [quickFilter, setQuickFilter] = useState<'all' | 'high_match' | 'recent' | 'pending_updates'>('all')
 
   const barangayOptions = useMemo(
     () => ['All Barangays', ...getScopedBarangays(user?.role, user?.assignedBarangays)],
@@ -124,6 +124,10 @@ export default function VerifiedResidentsPage() {
     () => rows.filter((r) => isHighMatchResident(r)).length,
     [rows],
   )
+  const pendingUpdatesCount = useMemo(
+    () => rows.filter((r) => r.pendingHouseholdRevision?.status === 'PENDING').length,
+    [rows],
+  )
   const verifiedLast7Days = useMemo(() => {
     const now = Date.now()
     const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
@@ -138,6 +142,8 @@ export default function VerifiedResidentsPage() {
     let result = rows
     if (quickFilter === 'high_match') {
       result = result.filter((r) => isHighMatchResident(r))
+    } else if (quickFilter === 'pending_updates') {
+      result = result.filter((r) => r.pendingHouseholdRevision?.status === 'PENDING')
     } else if (quickFilter === 'recent') {
       const now = Date.now()
       const sevenDaysMs = 7 * 24 * 60 * 60 * 1000
@@ -183,7 +189,7 @@ export default function VerifiedResidentsPage() {
           />
         </div>
 
-        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-5">
           <SummaryMetricCard
             label="Verified"
             value={rows.length}
@@ -195,6 +201,18 @@ export default function VerifiedResidentsPage() {
               setCurrentPage(1)
             }}
             isSelected={quickFilter === 'all'}
+          />
+          <SummaryMetricCard
+            label="Pending Updates"
+            value={pendingUpdatesCount}
+            helper="Family revisions (click to filter)"
+            variant="amber"
+            icon={<ClockIcon className="h-5 w-5" />}
+            onClick={() => {
+              setQuickFilter((prev) => (prev === 'pending_updates' ? 'all' : 'pending_updates'))
+              setCurrentPage(1)
+            }}
+            isSelected={quickFilter === 'pending_updates'}
           />
           <SummaryMetricCard
             label="Barangays"
@@ -311,9 +329,17 @@ export default function VerifiedResidentsPage() {
                               <RowCheckIcon className="h-4 w-4" />
                             </span>
                             <div className="min-w-0">
-                              <p className="truncate font-bold text-gray-900 dark:text-slate-100">{residentName}</p>
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="truncate font-bold text-gray-900 dark:text-slate-100">{residentName}</p>
+                                {r.pendingHouseholdRevision?.status === 'PENDING' && (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                                    Pending Member Update
+                                  </span>
+                                )}
+                              </div>
                               <p className="mt-1 text-xs font-medium text-slate-500 dark:text-slate-400">
-                                Verified {formatVerifiedTimestamp(verifiedTimestamp)}
+                                Verified {formatVerifiedTimestamp(verifiedTimestamp)} • Household Size: {r.householdSize || (1 + (r.householdMembers?.length || 0))}
                               </p>
                             </div>
                           </div>
@@ -356,6 +382,10 @@ export default function VerifiedResidentsPage() {
         loading={reviewLoading}
         error={reviewError}
         onClose={closeReview}
+        onHouseholdRevisionReviewed={(updated) => {
+          setReviewResident(updated)
+          setRows((prev) => prev.map((r) => ((r._id || r.id) === (updated._id || updated.id) ? updated : r)))
+        }}
         readOnly
         approvedLabel="Verified"
         titleEyebrow="Verified Resident"
@@ -422,3 +452,13 @@ function EyeIcon({ className = "w-4 h-4" }: { className?: string }) {
     </svg>
   )
 }
+
+function ClockIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" strokeWidth={2.5} />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 7v5l3 3" />
+    </svg>
+  )
+}
+

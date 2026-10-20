@@ -4,6 +4,7 @@
 
 import { z } from 'zod';
 import { barangayEnum, nameString, trimmedString } from './shared';
+import { householdMemberInputSchema } from './household.schema';
 
 export const assistedRegistrationBody = z.object({
   firstName: nameString(2, 100),
@@ -26,6 +27,7 @@ export const assistedRegistrationBody = z.object({
   householdToken: z.string().trim().regex(/^[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$/i, 'Invalid household token format (XXXX-XXXX-XXXX)'),
   city: z.string().max(100).optional(),
   householdSize: z.number().int().min(1).max(50).optional(),
+  householdMembers: z.array(householdMemberInputSchema).optional(),
   vulnerableMembers: z.array(z.string().max(50)).optional(),
   vulnerableCounts: z.record(z.string(), z.number()).optional(),
   idType: z.string().min(1, 'ID type is required').max(80),

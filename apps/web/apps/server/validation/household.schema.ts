@@ -18,6 +18,17 @@ export const recordDuplicateBlockBody = z.object({
   similarity: z.number().min(0).max(1).optional(),
 }).strict();
 
+/* Household member item */
+export const householdMemberInputSchema = z.object({
+  firstName: trimmedString(1, 100),
+  lastName: trimmedString(1, 100),
+  relationship: z.string().max(50).default('Other'),
+  birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
+  dateOfBirth: z.string().max(30).optional().nullable(),
+  gender: z.enum(['Male', 'Female', 'Other']).optional().nullable(),
+  vulnerabilities: z.array(z.string().max(50)).optional(),
+});
+
 /* POST /api/household/register */
 export const registerHouseholdBody = z.object({
   firstName: trimmedString(1, 100),
@@ -33,6 +44,7 @@ export const registerHouseholdBody = z.object({
   // Optional fields
   city: z.string().max(100).optional(),
   householdSize: z.number().int().min(1).max(50).optional(),
+  householdMembers: z.array(householdMemberInputSchema).optional(),
   vulnerableMembers: z.array(z.string().max(50)).optional(),
   vulnerableCounts: z.record(z.string(), z.number()).optional(),
   idType: z.string().min(1, 'ID type is required').max(50),
@@ -44,6 +56,18 @@ export const registerHouseholdBody = z.object({
   verificationResult: z.any().optional(),
   verifiedToken: z.string().optional(),
 }); // Not strict — service layer handles extra fields
+
+/* POST /api/household/auth/me/household-members/request */
+export const requestHouseholdMemberRevisionBody = z.object({
+  reason: z.string().trim().min(3, 'A reason is required for household changes').max(500),
+  members: z.array(householdMemberInputSchema).min(0).max(50),
+}).strict();
+
+/* POST /api/residents/:id/household-members/review */
+export const reviewHouseholdMemberRevisionBody = z.object({
+  action: z.enum(['APPROVE', 'REJECT']),
+  rejectionReason: z.string().trim().max(500).optional(),
+}).strict();
 
 /* POST /api/household/check-mobile */
 export const checkMobileBody = z.object({

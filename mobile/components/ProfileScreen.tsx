@@ -14,6 +14,7 @@ import {
   TouchableWithoutFeedback,
   useWindowDimensions,
   View,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,7 +22,11 @@ import {
   changeResidentPassword,
   confirmProfileUpdateOtp,
   confirmResidentChangePassword,
+  getHouseholdMembers,
   getResidentToken,
+  HouseholdMember,
+  PendingHouseholdRevision,
+  requestHouseholdMemberRevision,
   requestProfileUpdateOtp,
   requestResidentChangePasswordOtp,
   ResidentProfile,
@@ -34,6 +39,7 @@ import {
 import { residentTheme, theme } from '../theme';
 import { formatResidentFullName } from '../utils/residentName';
 import { validateEmail, cleanEmailInput } from '../utils/emailValidation';
+import HouseholdMembersEditor, { HouseholdMemberItem } from './registration/HouseholdMembersEditor';
 import PendingAccessBanner from './PendingAccessBanner';
 import BottomNavigation from './ui/BottomNavigation';
 import { Typography } from './ui/Typography';
@@ -303,6 +309,124 @@ export default function ProfileScreen({
   const [streetAddressInput, setStreetAddressInput] = useState('');
   const [cityInput, setCityInput] = useState('');
 
+  const [householdMembersList, setHouseholdMembersList] = useState<HouseholdMember[]>(
+    residentProfile?.householdMembers || []
+  );
+  const [pendingRevision, setPendingRevision] = useState<PendingHouseholdRevision | null>(
+    residentProfile?.pendingHouseholdRevision || null
+  );
+  const [isManageMembersOpen, setIsManageMembersOpen] = useState(false);
+  const [membersDraft, setMembersDraft] = useState<HouseholdMemberItem[]>([]);
+  const [revisionReason, setRevisionReason] = useState('');
+  const [isSubmittingRevision, setIsSubmittingRevision] = useState(false);
+
+  useEffect(() => {
+    if (residentProfile?.householdMembers) {
+      setHouseholdMembersList(residentProfile.householdMembers);
+    }
+    if (residentProfile?.pendingHouseholdRevision !== undefined) {
+      setPendingRevision(residentProfile.pendingHouseholdRevision);
+    }
+  }, [residentProfile]);
+
+  useEffect(() => {
+    if (!isVolunteer) {
+      getResidentToken().then((token) => {
+        if (!token) return;
+        getHouseholdMembers(token).then((res) => {
+          if (res.success && res.data) {
+            setHouseholdMembersList(res.data.householdMembers || []);
+            setPendingRevision(res.data.pendingHouseholdRevision || null);
+          }
+        });
+      });
+    }
+  }, [isVolunteer]);
+
+  const openManageMembersModal = () => {
+    const baseMembers: HouseholdMember[] = pendingRevision?.status === 'PENDING' && pendingRevision.members
+      ? pendingRevision.members
+      : householdMembersList;
+    const mapped: HouseholdMemberItem[] = (baseMembers || []).map((m, idx) => ({
+      id: m._id || String(idx + 1),
+      firstName: m.firstName || '',
+      lastName: m.lastName || '',
+      relationship: m.relationship || 'Other',
+      birthYear: m.birthYear !== undefined && m.birthYear !== null ? String(m.birthYear) : undefined,
+      gender: m.gender || undefined,
+      vulnerabilities: m.vulnerabilities || [],
+    }));
+    setMembersDraft(mapped);
+    setRevisionReason(pendingRevision?.status === 'PENDING' ? pendingRevision.reason || '' : '');
+    setIsManageMembersOpen(true);
+  };
+
+  const closeManageMembersModal = () => {
+    if (isSubmittingRevision) return;
+    setIsManageMembersOpen(false);
+  };
+
+  const handleSubmitHouseholdRevision = async () => {
+    if (isSubmittingRevision) return;
+    const trimmedReason = revisionReason.trim();
+    if (!trimmedReason || trimmedReason.length < 3) {
+      Alert.alert('Reason Required', 'Please provide a clear reason for modifying your household members (e.g. newborn, member moved away, corrected birth year).');
+      return;
+    }
+
+    setIsSubmittingRevision(true);
+    try {
+      const token = await getResidentToken();
+      if (!token) {
+        Alert.alert('Session Expired', 'Please log in again.');
+        return;
+      }
+
+      const membersPayload: HouseholdMember[] = membersDraft.map((m) => {
+        const parsedYear = m.birthYear ? parseInt(m.birthYear, 10) : undefined;
+        return {
+          firstName: m.firstName.trim(),
+          lastName: m.lastName.trim(),
+          relationship: m.relationship,
+          birthYear: parsedYear && !isNaN(parsedYear) ? parsedYear : undefined,
+          gender: m.gender,
+          vulnerabilities: m.vulnerabilities || [],
+        };
+      });
+
+      const res = await requestHouseholdMemberRevision(token, {
+        reason: trimmedReason,
+        members: membersPayload,
+      });
+
+      if (!res.success) {
+        if (res.errorCode === 'DUPLICATE_HOUSEHOLD_MEMBER') {
+          Alert.alert(
+            'Duplicate Member Detected',
+            res.message || 'One or more family members declared are already registered or listed in another active household. Please contact your barangay office.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert('Request Failed', res.message || 'Unable to submit household member change request.');
+        }
+        return;
+      }
+
+      if (res.data?.pendingHouseholdRevision) {
+        setPendingRevision(res.data.pendingHouseholdRevision);
+      }
+      setIsManageMembersOpen(false);
+      Alert.alert(
+        'Request Submitted',
+        'Your household update request has been submitted. A barangay staff member will review and verify your request.'
+      );
+    } catch {
+      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+    } finally {
+      setIsSubmittingRevision(false);
+    }
+  };
+
   const residentName = useMemo(() => {
     return formatResidentFullName({
       firstName: residentProfile?.firstName,
@@ -354,14 +478,12 @@ export default function ProfileScreen({
       {
         icon: 'people-outline',
         label: 'Household size',
-        value: residentProfile?.householdSize && residentProfile.householdSize > 0
-          ? `${residentProfile.householdSize} ${residentProfile.householdSize === 1 ? 'member' : 'members'}`
-          : 'Not provided',
+        value: `${(householdMembersList.length || 0) + 1} ${((householdMembersList.length || 0) + 1) === 1 ? 'member' : 'members'}`,
       },
     ];
 
     return residentItems;
-  }, [isVolunteer, residentAddress, residentProfile, volunteerUser]);
+  }, [householdMembersList.length, isVolunteer, residentAddress, residentProfile, volunteerUser]);
 
   const initialFields = useMemo(() => {
     if (isVolunteer) {
@@ -965,6 +1087,125 @@ export default function ProfileScreen({
             />
           ))}
         </View>
+
+        {!isVolunteer ? (
+          <>
+            <View style={styles.householdHeaderRow}>
+              <Typography variant="label" weight="semiBold" color={residentColors.inkSoft} style={styles.sectionLabel}>
+                Household members
+              </Typography>
+              <TouchableOpacity
+                onPress={openManageMembersModal}
+                style={styles.manageMembersHeaderBtn}
+                activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel="Manage household members"
+              >
+                <Ionicons name="people-outline" size={15} color={residentColors.icon} />
+                <Typography variant="caption" weight="semiBold" color={residentColors.icon}>
+                  Manage
+                </Typography>
+              </TouchableOpacity>
+            </View>
+
+            {pendingRevision?.status === 'PENDING' ? (
+              <View style={styles.pendingRevisionCard}>
+                <View style={styles.pendingRevisionHeader}>
+                  <Ionicons name="time" size={18} color="#D97706" />
+                  <Typography variant="body" weight="semiBold" color="#B45309" style={{ marginLeft: 6, flex: 1 }}>
+                    Update Pending Verification
+                  </Typography>
+                </View>
+                <Typography variant="caption" color="#92400E" style={{ marginTop: 4 }}>
+                  You requested an update ({pendingRevision.members?.length || 0} declared family members). A barangay staff member will review and verify your request.
+                </Typography>
+                {pendingRevision.reason ? (
+                  <Typography variant="caption" color="#78350F" style={{ marginTop: 4, fontStyle: 'italic' }}>
+                    Reason: "{pendingRevision.reason}"
+                  </Typography>
+                ) : null}
+              </View>
+            ) : null}
+
+            <View style={[styles.card, styles.residentDetailCard]}>
+              {/* Household Head (Self) */}
+              <View style={styles.memberCardRow}>
+                <View style={styles.memberAvatar}>
+                  <Ionicons name="person" size={18} color={residentColors.icon} />
+                </View>
+                <View style={styles.memberInfo}>
+                  <View style={styles.memberNameRow}>
+                    <Typography variant="body" weight="semiBold">
+                      {displayName}
+                    </Typography>
+                    <View style={styles.headTag}>
+                      <Typography variant="caption" weight="bold" color="#15803D" style={{ fontSize: 10 }}>
+                        Head
+                      </Typography>
+                    </View>
+                  </View>
+                  <Typography variant="caption" color={theme.colors.textSecondary}>
+                    Primary Household Head • {residentProfile?.barangay || 'Registered'}
+                  </Typography>
+                </View>
+              </View>
+
+              {/* Declared Members */}
+              {householdMembersList.length > 0 ? (
+                householdMembersList.map((m, idx) => (
+                  <View key={m._id || `${m.firstName}-${m.lastName}-${idx}`}>
+                    <View style={styles.divider} />
+                    <View style={styles.memberCardRow}>
+                      <View style={[styles.memberAvatar, { backgroundColor: '#F3F4F6' }]}>
+                        <Ionicons name="people" size={16} color="#6B7280" />
+                      </View>
+                      <View style={styles.memberInfo}>
+                        <Typography variant="body" weight="medium">
+                          {m.firstName} {m.lastName}
+                        </Typography>
+                        <Typography variant="caption" color={theme.colors.textSecondary}>
+                          {m.relationship}
+                          {m.birthYear ? ` • Born ${m.birthYear}` : ''}
+                          {m.gender ? ` • ${m.gender}` : ''}
+                        </Typography>
+                        {m.vulnerabilities && m.vulnerabilities.length > 0 ? (
+                          <View style={styles.vulnTagsRow}>
+                            {m.vulnerabilities.map((v) => (
+                              <View key={v} style={styles.vulnBadge}>
+                                <Typography variant="caption" color="#4B5563" style={{ fontSize: 10 }}>
+                                  {v}
+                                </Typography>
+                              </View>
+                            ))}
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <>
+                  <View style={styles.divider} />
+                  <View style={styles.emptyMembersBox}>
+                    <Typography variant="caption" color={theme.colors.textSecondary}>
+                      No additional family members registered yet.
+                    </Typography>
+                    <TouchableOpacity
+                      onPress={openManageMembersModal}
+                      style={styles.addFamilyMembersLink}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="add-circle-outline" size={16} color={residentColors.icon} />
+                      <Typography variant="caption" weight="semiBold" color={residentColors.icon} style={{ marginLeft: 4 }}>
+                        Add family members
+                      </Typography>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          </>
+        ) : null}
 
         {!isVolunteer ? (
           <>
@@ -1775,6 +2016,97 @@ export default function ProfileScreen({
           </View>
         </View>
       </Modal>
+
+      <Modal
+        visible={isManageMembersOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={closeManageMembersModal}
+      >
+        <SafeAreaView style={styles.manageMembersOverlay}>
+          <KeyboardAvoidingView
+            style={{ flex: 1 }}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          >
+            <View style={styles.manageMembersContainer}>
+              <View style={styles.manageMembersHeader}>
+                <View style={{ flex: 1 }}>
+                  <Typography variant="h3" weight="bold">
+                    Household Members
+                  </Typography>
+                  <Typography variant="caption" color={theme.colors.textSecondary}>
+                    Updates require verification & approval from your barangay staff.
+                  </Typography>
+                </View>
+                <TouchableOpacity
+                  onPress={closeManageMembersModal}
+                  disabled={isSubmittingRevision}
+                  style={styles.closeBtn}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close household members modal"
+                >
+                  <Ionicons name="close" size={24} color="#374151" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ padding: 16 }}
+                keyboardShouldPersistTaps="handled"
+              >
+                <HouseholdMembersEditor
+                  members={membersDraft}
+                  onChange={setMembersDraft}
+                />
+
+                <View style={styles.reasonContainer}>
+                  <Text style={styles.reasonLabel}>
+                    Reason for update / revision <Text style={{ color: '#DC2626' }}>*</Text>
+                  </Text>
+                  <Typography variant="caption" color={theme.colors.textSecondary} style={{ marginBottom: 8 }}>
+                    State why members are being added, removed, or updated (e.g. newborn child, family member moved away, correcting spelling/birth year).
+                  </Typography>
+                  <TextInput
+                    style={styles.reasonInput}
+                    placeholder="Enter reason for this change..."
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    numberOfLines={3}
+                    value={revisionReason}
+                    onChangeText={setRevisionReason}
+                    maxLength={300}
+                  />
+                </View>
+              </ScrollView>
+
+              <View style={styles.manageMembersFooter}>
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={closeManageMembersModal}
+                  disabled={isSubmittingRevision}
+                >
+                  <Typography variant="body" weight="medium" color="#4B5563">
+                    Cancel
+                  </Typography>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.submitRevisionBtn, isSubmittingRevision && { opacity: 0.6 }]}
+                  onPress={handleSubmitHouseholdRevision}
+                  disabled={isSubmittingRevision}
+                >
+                  {isSubmittingRevision ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Typography variant="body" weight="semiBold" color="#FFFFFF">
+                      Submit for Verification
+                    </Typography>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -2337,5 +2669,157 @@ const styles = StyleSheet.create({
     borderColor: '#FCD34D',
     backgroundColor: '#FFFBEB',
   },
+  householdHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  manageMembersHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#F3F4F6',
+  },
+  pendingRevisionCard: {
+    backgroundColor: '#FFFBEB',
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+  },
+  pendingRevisionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  memberCardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  memberAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  memberInfo: {
+    flex: 1,
+  },
+  memberNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  vulnTagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 4,
+  },
+  vulnBadge: {
+    backgroundColor: '#F3F4F6',
+    borderRadius: 4,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  emptyMembersBox: {
+    padding: 16,
+    alignItems: 'center',
+    gap: 6,
+  },
+  addFamilyMembersLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  manageMembersOverlay: {
+    flex: 1,
+    backgroundColor: '#F9FAFB',
+  },
+  manageMembersContainer: {
+    flex: 1,
+    display: 'flex',
+  },
+  manageMembersHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  manageMembersFooter: {
+    flexDirection: 'row',
+    gap: 12,
+    padding: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  cancelBtn: {
+    flex: 1,
+    height: 44,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
+  },
+  submitRevisionBtn: {
+    flex: 2,
+    height: 44,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: residentColors.brand,
+  },
+  reasonContainer: {
+    marginTop: 16,
+    padding: 14,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  reasonLabel: {
+    fontSize: 13,
+    fontFamily: theme.typography.fontFamily.semiBold,
+    color: '#374151',
+    marginBottom: 4,
+  },
+  reasonInput: {
+    borderWidth: 1,
+    borderColor: '#D1D5DB',
+    borderRadius: 8,
+    padding: 10,
+    minHeight: 70,
+    textAlignVertical: 'top',
+    fontSize: 13,
+    color: '#1F2937',
+    fontFamily: theme.typography.fontFamily.regular,
+  },
 });
+
 

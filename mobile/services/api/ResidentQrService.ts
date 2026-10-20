@@ -51,6 +51,29 @@ export interface ResidentQrData {
   };
 }
 
+export interface HouseholdMember {
+  _id?: string;
+  firstName: string;
+  lastName: string;
+  relationship: string;
+  birthYear?: number | null;
+  dateOfBirth?: string | null;
+  gender?: 'Male' | 'Female' | 'Other' | null;
+  vulnerabilities?: string[];
+}
+
+export interface PendingHouseholdRevision {
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reason: string;
+  members: HouseholdMember[];
+  householdSize: number;
+  requestedAt: string;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+}
+
 export interface ResidentProfile {
   id: string;
   residentCode: string;
@@ -64,6 +87,10 @@ export interface ResidentProfile {
   city: string;
   streetAddress: string;
   householdSize: number;
+  householdMembers?: HouseholdMember[];
+  pendingHouseholdRevision?: PendingHouseholdRevision | null;
+  vulnerableMembers?: string[];
+  vulnerableCounts?: Record<string, number>;
   status: string;
   rejectionReason?: string;
   lastProfileUpdateAt?: string | null;
@@ -654,6 +681,107 @@ export async function confirmProfileUpdateOtp(
   }
 }
 
+export async function getHouseholdMembers(
+  token: string
+): Promise<{
+  success: boolean;
+  message?: string;
+  data?: {
+    householdMembers: HouseholdMember[];
+    pendingHouseholdRevision: PendingHouseholdRevision | null;
+    householdSize: number;
+    vulnerableMembers?: string[];
+    vulnerableCounts?: Record<string, number>;
+  };
+}> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/household/auth/me/household-members`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const parsed = await parseApiResponse<{
+      householdMembers: HouseholdMember[];
+      pendingHouseholdRevision: PendingHouseholdRevision | null;
+      householdSize: number;
+      vulnerableMembers?: string[];
+      vulnerableCounts?: Record<string, number>;
+    }>(response);
+
+    if (!response.ok || !parsed.success) {
+      return {
+        success: false,
+        message: parsed.message || 'Failed to fetch household members.',
+      };
+    }
+
+    return {
+      success: true,
+      data: parsed.data,
+    };
+  } catch {
+    return {
+      success: false,
+      message: 'Network error while fetching household members.',
+    };
+  }
+}
+
+export async function requestHouseholdMemberRevision(
+  token: string,
+  payload: {
+    reason: string;
+    members: HouseholdMember[];
+  }
+): Promise<{
+  success: boolean;
+  message?: string;
+  errorCode?: string;
+  conflict?: any;
+  data?: {
+    pendingHouseholdRevision: PendingHouseholdRevision;
+    warnings?: any[];
+  };
+}> {
+  try {
+    const response = await fetch(`${API_BASE_URL}/household/auth/me/household-members/request`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const parsed = await parseApiResponse<{
+      pendingHouseholdRevision: PendingHouseholdRevision;
+      warnings?: any[];
+    }>(response);
+
+    if (!response.ok || !parsed.success) {
+      return {
+        success: false,
+        message: parsed.message || 'Failed to submit household member change request.',
+        errorCode: parsed.errorCode || (parsed as any).code,
+        conflict: (parsed as any).conflict,
+      };
+    }
+
+    return {
+      success: true,
+      message: parsed.message,
+      data: parsed.data,
+    };
+  } catch {
+    return {
+      success: false,
+      message: 'Network error while submitting household member update request.',
+    };
+  }
+}
 
 export async function uploadResidentAvatar(
   token: string,

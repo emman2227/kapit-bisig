@@ -62,6 +62,29 @@ async function generateResidentCode(barangay: string): Promise<string> {
   return `${code}-${year}-${String(sequence).padStart(6, '0')}`;
 }
 
+export interface IHouseholdMember {
+  _id?: mongoose.Types.ObjectId;
+  firstName: string;
+  lastName: string;
+  relationship: string;
+  birthYear?: number;
+  dateOfBirth?: string;
+  gender?: 'Male' | 'Female' | 'Other';
+  vulnerabilities?: string[];
+}
+
+export interface IPendingHouseholdRevision {
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reason: string;
+  members: IHouseholdMember[];
+  householdSize: number;
+  requestedAt: Date;
+  reviewedBy?: string | null;
+  reviewedByName?: string | null;
+  reviewedAt?: Date | null;
+  rejectionReason?: string | null;
+}
+
 export interface IResident extends Document {
   residentCode: string;
   avatarUrl?: string | null;
@@ -87,6 +110,8 @@ export interface IResident extends Document {
   householdSize: number;
   vulnerableMembers: string[];
   vulnerableCounts: Record<string, number>;
+  householdMembers?: IHouseholdMember[];
+  pendingHouseholdRevision?: IPendingHouseholdRevision | null;
   
   // Identity Verification (Step 3)
   idType: string;
@@ -147,6 +172,86 @@ export interface IResident extends Document {
   // Methods
   comparePassword(candidatePassword: string): Promise<boolean>;
 }
+
+export const HouseholdMemberSchema: Schema = new Schema(
+  {
+    firstName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    lastName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    relationship: {
+      type: String,
+      default: 'Other',
+      trim: true,
+    },
+    birthYear: {
+      type: Number,
+      default: null,
+    },
+    dateOfBirth: {
+      type: String,
+      default: null,
+    },
+    gender: {
+      type: String,
+      enum: ['Male', 'Female', 'Other', null],
+      default: null,
+    },
+    vulnerabilities: [{
+      type: String,
+      trim: true,
+    }],
+  },
+  { _id: true }
+);
+
+export const PendingHouseholdRevisionSchema: Schema = new Schema(
+  {
+    status: {
+      type: String,
+      enum: ['PENDING', 'APPROVED', 'REJECTED'],
+      default: 'PENDING',
+      index: true,
+    },
+    reason: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    members: [HouseholdMemberSchema],
+    householdSize: {
+      type: Number,
+      default: 1,
+    },
+    requestedAt: {
+      type: Date,
+      default: Date.now,
+    },
+    reviewedBy: {
+      type: String,
+      default: null,
+    },
+    reviewedByName: {
+      type: String,
+      default: null,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
+  },
+  { _id: false }
+);
 
 const ResidentSchema: Schema = new Schema(
   {
@@ -281,6 +386,14 @@ const ResidentSchema: Schema = new Schema(
       type: Map,
       of: Number,
       default: {},
+    },
+    householdMembers: {
+      type: [HouseholdMemberSchema],
+      default: [],
+    },
+    pendingHouseholdRevision: {
+      type: PendingHouseholdRevisionSchema,
+      default: null,
     },
     
     // Identity Verification
@@ -544,5 +657,7 @@ ResidentSchema.index(
     partialFilterExpression: { mobileNumber: { $gt: '' } },
   }
 );
+ResidentSchema.index({ 'householdMembers.lastName': 1, 'householdMembers.firstName': 1 });
+ResidentSchema.index({ 'pendingHouseholdRevision.status': 1 });
 
 export default mongoose.model<IResident>('Resident', ResidentSchema);

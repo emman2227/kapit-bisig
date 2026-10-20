@@ -24,6 +24,7 @@ import { checkDuplicateFace, enrollResidentFaceEmbedding } from './duplicateFace
 import { householdTokenService, generateRequestId } from './householdTokenService';
 import { sendAssistedRegistrationCredentialsSms } from '../utils/smsService';
 import { sendAssistedRegistrationCredentialsEmail } from '../utils/mailer';
+import { checkHouseholdDuplicates } from './householdDuplicateService';
 import mongoose from 'mongoose';
 
 export interface AssistedStaffUser {
@@ -191,6 +192,23 @@ export async function registerAssistedResident(
       }
     }
 
+    // 2B. 2-Way Household Duplicate Check (Registrant vs Members / Members vs Heads & Members)
+    const householdDupCheck = await checkHouseholdDuplicates({
+      registrant: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        dateOfBirth: data.dateOfBirth,
+      },
+      members: data.householdMembers,
+    });
+
+    if (householdDupCheck.hardBlocked) {
+      return await abortWithLockRelease(
+        householdDupCheck.hardBlockMessage || 'A member of this household is already registered in another household.',
+        'DUPLICATE_HOUSEHOLD_MEMBER'
+      );
+    }
+
     // 3. Face verification & duplicate check
     if (!data.faceImage || data.faceImage.trim().length === 0) {
       return await abortWithLockRelease(
@@ -242,6 +260,16 @@ export async function registerAssistedResident(
     }
 
     // 6. Build Resident record
+    const computedHouseholdSize = (data.householdMembers && data.householdMembers.length > 0)
+      ? data.householdMembers.length + 1
+      : (data.householdSize || 1);
+
+    const assistedWarnings = ['Assisted walk-in registration by staff', ...(householdDupCheck.warnings || [])];
+    const assistedReviewFlags = ['ASSISTED_REGISTRATION'];
+    if (householdDupCheck.warnings.length > 0) {
+      assistedReviewFlags.push('POTENTIAL_DUPLICATE_MEMBER');
+    }
+
     const resident = new Resident({
       firstName: data.firstName,
       lastName: data.lastName,
@@ -254,7 +282,8 @@ export async function registerAssistedResident(
       barangay: data.barangay,
       streetAddress: data.streetAddress,
       city: 'Labrador',
-      householdSize: data.householdSize || 1,
+      householdSize: computedHouseholdSize,
+      householdMembers: data.householdMembers || [],
       vulnerableMembers: data.vulnerableMembers || [],
       vulnerableCounts: data.vulnerableCounts || {},
       idType: data.idType,
@@ -276,12 +305,12 @@ export async function registerAssistedResident(
         riskScore: 10,
         isVerified: false,
         aiVerificationStatus: 'Medium Match',
-        warnings: ['Assisted walk-in registration by staff'],
+        warnings: assistedWarnings,
         riskFactors: [],
         idCheckDecision: 'REVIEW',
         idCheckRequiresManualReview: true,
         idCheckReasons: ['Assisted walk-in registration flagged for administrative review'],
-        reviewFlags: ['ASSISTED_REGISTRATION'],
+        reviewFlags: assistedReviewFlags,
       },
     });
 
