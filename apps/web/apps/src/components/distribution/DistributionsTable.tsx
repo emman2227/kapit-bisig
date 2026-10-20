@@ -440,9 +440,10 @@ export default function DistributionsTable({
                 type="button"
                 onClick={() => setArchiveOpen(true)}
                 className="inline-flex items-center gap-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 px-4 py-2.5 text-sm font-semibold text-slate-700 dark:text-slate-300 shadow-sm transition-all hover:bg-slate-50 dark:hover:bg-slate-700 whitespace-nowrap"
+                title="View completed operations history and statistics"
               >
-                <ArchiveIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
-                <span>Archive</span>
+                <HistoryIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
+                <span>View History</span>
                 {completedCount > 0 && (
                   <span className="rounded-full bg-emerald-100 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 text-xs font-bold">
                     {completedCount}
@@ -1012,4 +1013,13 @@ function UsersStaffIcon({ className = 'h-4 w-4' }: { className?: string }) {
     </svg>
   )
 }
+
+function HistoryIcon({ className = 'h-4 w-4' }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </svg>
+  )
+}
+
 
