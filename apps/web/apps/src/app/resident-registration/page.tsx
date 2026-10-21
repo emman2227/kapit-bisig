@@ -477,6 +477,7 @@ export default function ResidentRegistrationPage() {
 
   const [activeTab, setActiveTab] = useState<'Pending' | 'Needs Revision' | 'Rejected'>('Pending')
   const [queueSubFilter, setQueueSubFilter] = useState<'all' | 'manual' | 'proof_ready' | 'blocked'>('all')
+  const [channelFilter, setChannelFilter] = useState<'all' | 'assisted' | 'self'>('all')
   const [rows, setRows] = useState<ResidentRecord[]>([])
   const [fetching, setFetching] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -597,27 +598,52 @@ export default function ResidentRegistrationPage() {
     setSearchQuery('')
     setAppliedSearch('')
     setSelectedStaffFilter('All Staff')
+    setChannelFilter('all')
+    setQueueSubFilter('all')
   }, [])
 
-  const filteredRows = useMemo(() => {
+  const isAssistedRecord = useCallback((row: ResidentRecord) => {
+    return row.registrationMethod === 'assisted' || Boolean((row as any).assistedBy)
+  }, [])
+
+  const searchScopedRows = useMemo(() => {
     const query = appliedSearch.trim()
     return rows.filter((row) => matchesSearch(row, query))
   }, [rows, appliedSearch])
 
-  const pendingRows = useMemo(() => {
-    let list = filteredRows.filter((row) => row.status === 'Pending')
-    if (queueSubFilter === 'manual') {
-      list = list.filter((row) => {
-        const decision = row.verification?.idCheckDecision
-        return row.verification?.idCheckRequiresManualReview || decision === 'REVIEW'
-      })
-    } else if (queueSubFilter === 'proof_ready') {
-      list = list.filter((row) => getProofPackageCount(row) >= 2)
-    } else if (queueSubFilter === 'blocked') {
-      list = list.filter((row) => row.verification?.idCheckDecision === 'BLOCK')
+  const displayedRows = useMemo(() => {
+    let list = searchScopedRows
+
+    // 1. Channel Filter (All / Walk-In / Citizen App)
+    if (channelFilter === 'assisted') {
+      list = list.filter((row) => isAssistedRecord(row))
+    } else if (channelFilter === 'self') {
+      list = list.filter((row) => !isAssistedRecord(row))
     }
+
+    // 2. Queue Sub-filter (for Pending tab)
+    if (activeTab === 'Pending') {
+      if (queueSubFilter === 'manual') {
+        list = list.filter((row) => {
+          const decision = row.verification?.idCheckDecision
+          return row.verification?.idCheckRequiresManualReview || decision === 'REVIEW'
+        })
+      } else if (queueSubFilter === 'proof_ready') {
+        list = list.filter((row) => getProofPackageCount(row) >= 2)
+      } else if (queueSubFilter === 'blocked') {
+        list = list.filter((row) => row.verification?.idCheckDecision === 'BLOCK')
+      }
+    }
+
     return list
-  }, [filteredRows, queueSubFilter])
+  }, [searchScopedRows, channelFilter, activeTab, queueSubFilter, isAssistedRecord])
+
+  // Alias for backward compatibility
+  const filteredRows = displayedRows
+
+  const pendingRows = useMemo(() => {
+    return displayedRows.filter((row) => row.status === 'Pending')
+  }, [displayedRows])
 
   const pendingIds = useMemo(
     () => pendingRows.map((row) => getResidentId(row)).filter(Boolean),
@@ -635,43 +661,49 @@ export default function ResidentRegistrationPage() {
   )
 
   const queueMetrics = useMemo(() => {
-    const manualReviewCount = filteredRows.filter((row) => {
+    const manualReviewCount = searchScopedRows.filter((row) => {
       const decision = row.verification?.idCheckDecision
       return row.verification?.idCheckRequiresManualReview || decision === 'REVIEW'
     }).length
 
-    const blockedCount = filteredRows.filter(
+    const blockedCount = searchScopedRows.filter(
       (row) => row.verification?.idCheckDecision === 'BLOCK',
     ).length
 
-    const passCount = filteredRows.filter((row) => row.verification?.idCheckDecision === 'PASS')
+    const passCount = searchScopedRows.filter((row) => row.verification?.idCheckDecision === 'PASS')
       .length
 
-    const proofReadyCount = filteredRows.filter((row) => getProofPackageCount(row) >= 2).length
+    const proofReadyCount = searchScopedRows.filter((row) => getProofPackageCount(row) >= 2).length
 
-    const assistedRevisionCount = filteredRows.filter(
-      (row) => row.status === 'Needs Revision' && (row.registrationMethod === 'assisted' || Boolean((row as any).assistedBy)),
+    const assistedCount = searchScopedRows.filter((row) => isAssistedRecord(row)).length
+
+    const selfCount = searchScopedRows.filter((row) => !isAssistedRecord(row)).length
+
+    const assistedRevisionCount = searchScopedRows.filter(
+      (row) => row.status === 'Needs Revision' && isAssistedRecord(row),
     ).length
 
-    const selfRevisionCount = filteredRows.filter(
-      (row) => row.status === 'Needs Revision' && row.registrationMethod !== 'assisted' && !(row as any).assistedBy,
+    const selfRevisionCount = searchScopedRows.filter(
+      (row) => row.status === 'Needs Revision' && !isAssistedRecord(row),
     ).length
 
-    const rejectedCount = filteredRows.filter(
+    const rejectedCount = searchScopedRows.filter(
       (row) => row.status === 'Rejected',
     ).length
 
     return {
-      total: filteredRows.length,
+      total: searchScopedRows.length,
       manualReviewCount,
       blockedCount,
       passCount,
       proofReadyCount,
+      assistedCount,
+      selfCount,
       assistedRevisionCount,
       selfRevisionCount,
       rejectedCount,
     }
-  }, [filteredRows])
+  }, [searchScopedRows, isAssistedRecord])
 
   const closeReview = useCallback(() => {
     setReviewResidentId(null)
@@ -1024,49 +1056,62 @@ export default function ResidentRegistrationPage() {
             />
           </div>
 
-          <div className="p-5 sm:p-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="p-5 sm:p-6 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <SummaryMetricCard 
               label={activeTab === 'Pending' ? 'Visible Queue' : activeTab === 'Needs Revision' ? 'Needs Revision' : 'Disqualified Total'} 
               value={queueMetrics.total} 
-              helper={activeTab === 'Pending' ? 'Total records loaded (click to show all)' : activeTab === 'Needs Revision' ? 'Total returned records' : 'Total disqualified records'} 
+              helper={activeTab === 'Pending' ? 'All records (click to reset)' : activeTab === 'Needs Revision' ? 'Total returned records' : 'Total disqualified records'} 
               variant={activeTab === 'Rejected' ? 'rose' : 'blue'}
               icon={<UsersIcon className="h-5 w-5" />} 
               onClick={() => {
-                if (activeTab === 'Pending') setQueueSubFilter('all')
-                else setActiveTab('Pending')
+                setQueueSubFilter('all')
+                setChannelFilter('all')
               }}
-              isSelected={activeTab === 'Pending' && queueSubFilter === 'all'}
+              isSelected={queueSubFilter === 'all' && channelFilter === 'all'}
             />
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Ready for Review' : activeTab === 'Needs Revision' ? 'Walk-In Returned' : 'Walk-In Disqualified'} 
+              label={activeTab === 'Pending' ? 'Walk-Ins' : activeTab === 'Needs Revision' ? 'Walk-In Returned' : 'Walk-In Disqualified'} 
+              value={
+                activeTab === 'Pending'
+                  ? queueMetrics.assistedCount
+                  : activeTab === 'Needs Revision'
+                  ? queueMetrics.assistedRevisionCount
+                  : queueMetrics.assistedCount
+              } 
+              helper={activeTab === 'Pending' ? 'Assisted walk-in (click to filter)' : activeTab === 'Needs Revision' ? 'Staff can update & resubmit' : 'Barangay assisted records'} 
+              variant="emerald" 
+              icon={<UserCheckIcon className="h-5 w-5" />} 
+              onClick={() => {
+                setChannelFilter((prev) => (prev === 'assisted' ? 'all' : 'assisted'))
+              }}
+              isSelected={channelFilter === 'assisted'}
+            />
+            <SummaryMetricCard 
+              label={activeTab === 'Pending' ? 'Ready for Review' : activeTab === 'Needs Revision' ? 'Self-Registered' : 'Citizen Disqualified'} 
               value={
                 activeTab === 'Pending'
                   ? queueMetrics.manualReviewCount
                   : activeTab === 'Needs Revision'
-                  ? queueMetrics.assistedRevisionCount
-                  : filteredRows.filter((r) => r.registrationMethod === 'assisted' || Boolean((r as any).assistedBy)).length
+                  ? queueMetrics.selfRevisionCount
+                  : queueMetrics.selfCount
               } 
-              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation (click to filter)' : activeTab === 'Needs Revision' ? 'Staff can update & resubmit' : 'Barangay assisted records'} 
-              variant="amber"
+              helper={activeTab === 'Pending' ? 'Awaiting staff confirmation (click to filter)' : activeTab === 'Needs Revision' ? 'Citizen mobile revision' : 'Mobile citizen applications'} 
+              variant="amber" 
               icon={<ClipboardCheckIcon className="h-5 w-5" />} 
               onClick={() => {
                 if (activeTab === 'Pending') {
                   setQueueSubFilter((prev) => (prev === 'manual' ? 'all' : 'manual'))
+                } else {
+                  setChannelFilter((prev) => (prev === 'self' ? 'all' : 'self'))
                 }
               }}
-              isSelected={activeTab === 'Pending' && queueSubFilter === 'manual'}
+              isSelected={activeTab === 'Pending' ? queueSubFilter === 'manual' : channelFilter === 'self'}
             />
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Proof Ready' : activeTab === 'Needs Revision' ? 'Self-Registered' : 'Citizen Disqualified'} 
-              value={
-                activeTab === 'Pending'
-                  ? queueMetrics.proofReadyCount
-                  : activeTab === 'Needs Revision'
-                  ? queueMetrics.selfRevisionCount
-                  : filteredRows.filter((r) => r.registrationMethod !== 'assisted' && !Boolean((r as any).assistedBy)).length
-              } 
-              helper={activeTab === 'Pending' ? '2+ assets detected (click to filter)' : activeTab === 'Needs Revision' ? 'Citizen mobile revision' : 'Mobile citizen applications'} 
-              variant={activeTab === 'Pending' ? 'emerald' : 'purple'}
+              label={activeTab === 'Pending' ? 'Proof Ready' : activeTab === 'Needs Revision' ? 'Proof Attached' : 'Preserved Proofs'} 
+              value={queueMetrics.proofReadyCount} 
+              helper={activeTab === 'Pending' ? '2+ assets detected (click to filter)' : 'Assets retained on record'} 
+              variant="purple" 
               icon={<FileCheckIcon className="h-5 w-5" />} 
               onClick={() => {
                 if (activeTab === 'Pending') {
@@ -1076,10 +1121,10 @@ export default function ResidentRegistrationPage() {
               isSelected={activeTab === 'Pending' && queueSubFilter === 'proof_ready'}
             />
             <SummaryMetricCard 
-              label={activeTab === 'Pending' ? 'Needs Attention' : activeTab === 'Needs Revision' ? 'Proof Attached' : 'Preserved Proofs'} 
-              value={activeTab === 'Pending' ? queueMetrics.blockedCount : queueMetrics.proofReadyCount} 
-              helper={activeTab === 'Pending' ? 'Review AI red flags (click to filter)' : 'Assets retained on record'} 
-              variant={activeTab === 'Pending' ? 'rose' : 'emerald'}
+              label={activeTab === 'Pending' ? 'Needs Attention' : activeTab === 'Needs Revision' ? 'Flagged Records' : 'Flagged Records'} 
+              value={queueMetrics.blockedCount} 
+              helper={activeTab === 'Pending' ? 'Review AI red flags (click to filter)' : 'Flagged during screening'} 
+              variant="rose" 
               icon={<AlertCircleIcon className="h-5 w-5" />} 
               onClick={() => {
                 if (activeTab === 'Pending') {
@@ -1098,7 +1143,10 @@ export default function ResidentRegistrationPage() {
           <div className="flex items-center gap-2 border-b border-gray-100 bg-slate-50/70 px-5 pt-3 dark:border-slate-800 dark:bg-slate-800/40">
             <button
               type="button"
-              onClick={() => setActiveTab('Pending')}
+              onClick={() => {
+                setActiveTab('Pending')
+                setQueueSubFilter('all')
+              }}
               className={`flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-bold transition-all ${
                 activeTab === 'Pending'
                   ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400'
@@ -1109,7 +1157,10 @@ export default function ResidentRegistrationPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('Needs Revision')}
+              onClick={() => {
+                setActiveTab('Needs Revision')
+                setQueueSubFilter('all')
+              }}
               className={`flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-bold transition-all ${
                 activeTab === 'Needs Revision'
                   ? 'border-amber-600 text-amber-600 dark:border-amber-400 dark:text-amber-400'
@@ -1120,7 +1171,10 @@ export default function ResidentRegistrationPage() {
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('Rejected')}
+              onClick={() => {
+                setActiveTab('Rejected')
+                setQueueSubFilter('all')
+              }}
               className={`flex items-center gap-2 border-b-2 px-4 pb-3 text-sm font-bold transition-all ${
                 activeTab === 'Rejected'
                   ? 'border-rose-600 text-rose-600 dark:border-rose-400 dark:text-rose-400'
@@ -1134,7 +1188,7 @@ export default function ResidentRegistrationPage() {
           {/* Header & Controls */}
           <div className="border-b border-gray-100 px-5 py-4 dark:border-slate-800">
              <div className="flex flex-col gap-4">
-                <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_260px_auto]">
+                <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_220px_220px_auto]">
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
@@ -1165,6 +1219,16 @@ export default function ResidentRegistrationPage() {
                     value={barangay}
                     options={barangayOptions.map((item) => ({ value: item, label: item }))}
                     onChange={(val) => setBarangay(val)}
+                  />
+
+                  <FilterDropdown
+                    value={channelFilter}
+                    options={[
+                      { value: 'all', label: 'All Channels' },
+                      { value: 'assisted', label: 'Walk-In (Assisted)' },
+                      { value: 'self', label: 'Citizen App (Self)' },
+                    ]}
+                    onChange={(val) => setChannelFilter(val as 'all' | 'assisted' | 'self')}
                   />
 
                   <button
@@ -1257,7 +1321,7 @@ export default function ResidentRegistrationPage() {
                    {filteredRows.length} registration{filteredRows.length === 1 ? '' : 's'}
                 </span>
                 
-                {(appliedSearch || barangay !== 'All Barangays' || selectedStaffFilter !== 'All Staff') && (
+                {(appliedSearch || barangay !== 'All Barangays' || channelFilter !== 'all' || queueSubFilter !== 'all' || selectedStaffFilter !== 'All Staff') && (
                   <button
                     type="button"
                     onClick={handleClearFilters}
@@ -1528,3 +1592,14 @@ function UserPlusIcon({ className }: { className?: string }) {
     </svg>
   )
 }
+
+function UserCheckIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+      <circle cx="8.5" cy="7" r="4" strokeWidth={2.2} />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M17 11l2 2 4-4" />
+    </svg>
+  )
+}
+
