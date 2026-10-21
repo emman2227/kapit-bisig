@@ -11,6 +11,7 @@ import SectionHeader from '@/components/ui/SectionHeader'
 import Pagination from '@/components/ui/Pagination'
 import { isHighMatchResident } from '@/components/residents/ResidentTableBadges'
 import ResidentReviewModal from '@/components/residents/ResidentReviewModal'
+import { sanitizeSearchQuery, MAX_SEARCH_LENGTH } from '@/lib/inputValidation'
 
 function getVerifiedTimestamp(record: ResidentRecord): string | undefined {
   return record.verifiedAt || record.createdAt
@@ -295,12 +296,17 @@ export default function VerifiedResidentsPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
               <div className="relative flex-1 min-w-[240px]">
-                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 dark:text-slate-500">
+                  <SearchIcon />
+                </span>
                 <input
                   type="text"
+                  maxLength={MAX_SEARCH_LENGTH}
+                  placeholder="Search by resident, code, barangay, or address..."
                   value={searchQuery}
                   onChange={(e) => {
-                    setSearchQuery(e.target.value)
+                    const sanitized = sanitizeSearchQuery(e.target.value)
+                    setSearchQuery(sanitized)
                     setCurrentPage(1)
                   }}
                   onKeyDown={(e) => {
@@ -309,23 +315,37 @@ export default function VerifiedResidentsPage() {
                       fetchResidents(searchQuery)
                     }
                   }}
-                  placeholder="Search by name, resident code, or address..."
-                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-sm text-gray-700 placeholder:text-gray-400 outline-none transition-colors focus:border-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
+                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-10 pr-20 text-sm text-gray-900 placeholder-gray-400 transition-colors focus:border-blue-500 focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSearchQuery('')
-                      setCurrentPage(1)
-                      fetchResidents('')
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                    aria-label="Clear search"
+                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                  {searchQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchQuery('')
+                        setCurrentPage(1)
+                        fetchResidents('')
+                      }}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded-md"
+                      aria-label="Clear search"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  ) : null}
+                  <span
+                    className={[
+                      'text-[11px] font-mono tabular-nums select-none px-1.5 py-0.5 rounded border',
+                      searchQuery.length >= MAX_SEARCH_LENGTH
+                        ? 'font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 border-amber-300 dark:border-amber-700'
+                        : 'text-slate-600 dark:text-slate-300 bg-slate-200/80 dark:bg-slate-700/80 border-slate-300 dark:border-slate-600',
+                    ].join(' ')}
+                    title={`Character limit: ${searchQuery.length}/${MAX_SEARCH_LENGTH}`}
                   >
-                    ✕
-                  </button>
-                )}
+                    {searchQuery.length}/{MAX_SEARCH_LENGTH}
+                  </span>
+                </div>
               </div>
               <div className="w-full sm:w-[220px]">
                 <FilterDropdown
