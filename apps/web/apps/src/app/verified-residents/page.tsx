@@ -43,6 +43,7 @@ export default function VerifiedResidentsPage() {
   const [reviewError, setReviewError] = useState<string | null>(null)
 
   const [barangay, setBarangay] = useState('All Barangays')
+  const [searchQuery, setSearchQuery] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const [quickFilter, setQuickFilter] = useState<'all' | 'high_match' | 'recent' | 'pending_updates'>('all')
 
@@ -60,13 +61,15 @@ export default function VerifiedResidentsPage() {
     }
   }, [loading, user, router])
 
-  const fetchResidents = useCallback(async () => {
+  const fetchResidents = useCallback(async (activeSearch?: string) => {
     setFetching(true)
     setError(null)
     try {
+      const querySearch = typeof activeSearch === 'string' ? activeSearch : undefined
       const response = await api.getResidents({
         status: 'Approved',
         barangay,
+        search: querySearch?.trim() || undefined,
         page: 1,
         limit: 100,
       })
@@ -140,6 +143,27 @@ export default function VerifiedResidentsPage() {
   }, [rows])
   const displayRows = useMemo(() => {
     let result = rows
+    const q = searchQuery.toLowerCase().trim()
+    if (q) {
+      result = result.filter((r) => {
+        const fullName = `${r.firstName || ''} ${r.lastName || ''} ${r.fullName || ''}`.toLowerCase()
+        const code = (r.residentCode || '').toLowerCase()
+        const brgy = (r.barangay || '').toLowerCase()
+        const street = (r.streetAddress || '').toLowerCase()
+        const mobile = (r.mobileNumber || '').toLowerCase()
+        const members = (r.householdMembers || []).some((m) =>
+          `${m.firstName || ''} ${m.lastName || ''}`.toLowerCase().includes(q)
+        )
+        return (
+          fullName.includes(q) ||
+          code.includes(q) ||
+          brgy.includes(q) ||
+          street.includes(q) ||
+          mobile.includes(q) ||
+          members
+        )
+      })
+    }
     if (quickFilter === 'high_match') {
       result = result.filter((r) => isHighMatchResident(r))
     } else if (quickFilter === 'pending_updates') {
@@ -155,7 +179,7 @@ export default function VerifiedResidentsPage() {
       })
     }
     return result
-  }, [rows, quickFilter])
+  }, [rows, searchQuery, quickFilter])
 
   const totalPages = useMemo(
     () => Math.max(1, Math.ceil(displayRows.length / PAGE_SIZE)),
@@ -268,16 +292,54 @@ export default function VerifiedResidentsPage() {
         </div>
 
         <div className="border-b border-gray-100 bg-gray-50/60 p-4 dark:border-slate-700 dark:bg-slate-800/70 sm:p-5">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="w-full sm:w-[260px]">
-              <FilterDropdown
-                value={barangay}
-                onChange={(v) => setBarangay(v)}
-                options={barangayOptions.map((item) => ({ value: item, label: item }))}
-              />
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative flex-1 min-w-[240px]">
+                <SearchIcon className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-slate-500" />
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value)
+                    setCurrentPage(1)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault()
+                      fetchResidents(searchQuery)
+                    }
+                  }}
+                  placeholder="Search by name, resident code, or address..."
+                  className="w-full rounded-xl border border-gray-200 bg-white py-2.5 pl-9 pr-8 text-sm text-gray-700 placeholder:text-gray-400 outline-none transition-colors focus:border-slate-400 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:placeholder:text-slate-500 dark:focus:border-slate-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery('')
+                      setCurrentPage(1)
+                      fetchResidents('')
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 flex h-5 w-5 items-center justify-center rounded-full text-xs text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                    aria-label="Clear search"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+              <div className="w-full sm:w-[220px]">
+                <FilterDropdown
+                  value={barangay}
+                  onChange={(v) => {
+                    setBarangay(v)
+                    setCurrentPage(1)
+                  }}
+                  options={barangayOptions.map((item) => ({ value: item, label: item }))}
+                />
+              </div>
             </div>
             <button
-              onClick={fetchResidents}
+              onClick={() => fetchResidents(searchQuery)}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-gray-900 px-4 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-gray-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white"
             >
               <RefreshIcon className="w-4 h-4" />
@@ -310,10 +372,12 @@ export default function VerifiedResidentsPage() {
                       </div>
                     </td>
                   </tr>
-                ) : rows.length === 0 ? (
+                ) : displayRows.length === 0 ? (
                   <tr>
                     <td className="px-6 py-16 text-center text-gray-500 dark:text-slate-400 font-medium" colSpan={3}>
-                      No verified residents found filtering by {barangay}.
+                      {searchQuery.trim()
+                        ? `No verified residents match "${searchQuery.trim()}".`
+                        : `No verified residents found filtering by ${barangay}.`}
                     </td>
                   </tr>
                 ) : (
@@ -461,4 +525,13 @@ function ClockIcon({ className = "w-4 h-4" }: { className?: string }) {
     </svg>
   )
 }
+
+function SearchIcon({ className = "w-4 h-4" }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  )
+}
+
 

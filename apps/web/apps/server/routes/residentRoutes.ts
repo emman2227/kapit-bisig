@@ -391,15 +391,19 @@ router.get('/', requireAuth, requireStaffOrSuperadmin, validateRequest({ query: 
       const escaped = escapeRegex(search as string);
       query.$or = [
         { fullName: { $regex: escaped, $options: 'i' } },
+        { firstName: { $regex: escaped, $options: 'i' } },
+        { lastName: { $regex: escaped, $options: 'i' } },
+        { residentCode: { $regex: escaped, $options: 'i' } },
         { mobileNumber: { $regex: escaped, $options: 'i' } },
         { idNumber: { $regex: escaped, $options: 'i' } },
+        { streetAddress: { $regex: escaped, $options: 'i' } },
       ];
     }
     
     // ── Pagination ──────────────────────────────────────────────
     const page = Math.max(1, parseInt(req.query.page as string, 10) || 1);
     const rawLimit = parseInt(req.query.limit as string, 10) || 50;
-    const limit = Math.min(rawLimit, 50);   // hard cap
+    const limit = Math.min(rawLimit, 200);   // hard cap
     const skip = (page - 1) * limit;
 
     const residents = await Resident.aggregate([

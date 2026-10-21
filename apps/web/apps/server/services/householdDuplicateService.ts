@@ -131,8 +131,8 @@ export async function checkHouseholdDuplicates(params: {
         matchedHouseholdHead: `${match.firstName} ${match.lastName}`,
         matchedRole: 'HEAD',
         message: tier === 1
-          ? `You are already registered as the head of an active household in Barangay ${match.barangay} (${match.residentCode || 'Pending'}).`
-          : `A registered household head named "${registrantFullName}" exists in Barangay ${match.barangay} with a different birth year. Flagged for verification.`,
+          ? `Registrant "${registrantFullName}" is already registered as the head of an active household in Barangay ${match.barangay} (${match.residentCode || 'Pending'}).`
+          : `A registered household head named "${registrantFullName}" exists in Barangay ${match.barangay} (${match.residentCode || 'Household'}) with a different birth year. Flagged for verification.`,
       };
       conflicts.push(detail);
       if (tier === 2) {
@@ -171,8 +171,8 @@ export async function checkHouseholdDuplicates(params: {
           matchedHouseholdHead: `${match.firstName} ${match.lastName}`,
           matchedRole: 'MEMBER',
           message: tier === 1
-            ? `You are already listed as a household member under ${match.firstName} ${match.lastName} in Barangay ${match.barangay} (${match.residentCode || 'Household'}). Under relief guidelines, each individual may only belong to one household.`
-            : `You share the same name as a household member under ${match.firstName} ${match.lastName} in Barangay ${match.barangay}. Flagged for staff review.`,
+            ? `Registrant "${registrantFullName}" is already listed as a household member under ${match.firstName} ${match.lastName} in Barangay ${match.barangay} (${match.residentCode || 'Household'}). Under relief guidelines, each individual may only belong to one household.`
+            : `Registrant "${registrantFullName}" shares the same name as a household member under ${match.firstName} ${match.lastName} in Barangay ${match.barangay} (${match.residentCode || 'Household'}). Flagged for staff review.`,
         };
         conflicts.push(detail);
         if (tier === 2) {
@@ -218,7 +218,7 @@ export async function checkHouseholdDuplicates(params: {
         matchedRole: 'HEAD',
         message: tier === 1
           ? `Member "${memberFullName}" is already registered as an independent Household Head in Barangay ${match.barangay} (${match.residentCode || 'Household'}).`
-          : `Member "${memberFullName}" matches the name of a Household Head in Barangay ${match.barangay}. Flagged for verification.`,
+          : `Member "${memberFullName}" matches the name of a Household Head in Barangay ${match.barangay} (${match.residentCode || 'Household'}). Flagged for verification.`,
       };
       conflicts.push(detail);
       if (tier === 2) {
@@ -258,7 +258,7 @@ export async function checkHouseholdDuplicates(params: {
           matchedRole: 'MEMBER',
           message: tier === 1
             ? `Member "${memberFullName}" is already listed in another household under ${match.firstName} ${match.lastName} in Barangay ${match.barangay} (${match.residentCode || 'Household'}).`
-            : `Member "${memberFullName}" matches a listed member under ${match.firstName} ${match.lastName} in Barangay ${match.barangay}. Flagged for staff review.`,
+            : `Member "${memberFullName}" matches a listed member under ${match.firstName} ${match.lastName} in Barangay ${match.barangay} (${match.residentCode || 'Household'}). Flagged for staff review.`,
         };
         conflicts.push(detail);
         if (tier === 2) {

@@ -98,7 +98,11 @@ function getProofCount(record: ResidentRecord): number {
 }
 
 function ScreeningLog({ resident }: { resident: ResidentRecord }) {
-  const warnings = resident.verification?.idCheckWarnings || []
+  const combinedWarnings = [
+    ...(resident.verification?.warnings || []),
+    ...(resident.verification?.idCheckWarnings || []),
+  ]
+  const warnings = Array.from(new Set(combinedWarnings))
   const reasons = resident.verification?.idCheckReasons || []
   const flags = resident.verification?.reviewFlags || []
 
