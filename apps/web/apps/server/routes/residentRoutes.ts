@@ -1336,6 +1336,7 @@ router.post(
           success: true,
           message: 'Household member revision approved successfully',
           data: {
+            resident: resident.toObject(),
             householdMembers: resident.householdMembers,
             householdSize: resident.householdSize,
             pendingHouseholdRevision: resident.pendingHouseholdRevision,
@@ -1372,6 +1373,7 @@ router.post(
           success: true,
           message: 'Household member revision rejected',
           data: {
+            resident: resident.toObject(),
             pendingHouseholdRevision: resident.pendingHouseholdRevision,
           },
         });

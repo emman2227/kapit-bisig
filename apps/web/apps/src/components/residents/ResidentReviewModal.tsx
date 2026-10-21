@@ -3,6 +3,7 @@
 import React from 'react'
 import api, { type ResidentRecord } from '@/lib/api'
 import { ResidentStatusBadge } from './ResidentTableBadges'
+import { showToast } from '@/lib/toast'
 
 interface ResidentReviewModalProps {
   isOpen: boolean
@@ -294,14 +295,31 @@ export default function ResidentReviewModal({
         action,
         rejectionReason: action === 'REJECT' ? rejectionReasonInput.trim() : undefined,
       })
-      if (!res.success || !res.data?.resident) {
+      if (!res.success) {
         throw new Error(res.message || 'Failed to review household revision.')
       }
       setShowRejectInput(false)
       setRejectionReasonInput('')
-      onHouseholdRevisionReviewed?.(res.data.resident)
+      showToast.success(
+        action === 'APPROVE'
+          ? 'Household member revision approved successfully.'
+          : 'Household member revision rejected.'
+      )
+
+      const updatedResident: ResidentRecord = (res.data?.resident || {
+        ...resident,
+        householdMembers: (res.data as any)?.householdMembers || resident?.pendingHouseholdRevision?.members || resident?.householdMembers || [],
+        householdSize: (res.data as any)?.householdSize || ((resident?.pendingHouseholdRevision?.members?.length || 0) + 1),
+        pendingHouseholdRevision: (res.data as any)?.pendingHouseholdRevision || {
+          ...resident?.pendingHouseholdRevision,
+          status: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
+        },
+      }) as ResidentRecord
+
+      onHouseholdRevisionReviewed?.(updatedResident)
     } catch (err: any) {
       setRevisionError(err.message || 'Failed to process request.')
+      showToast.error(err.message || 'Failed to process request.')
     } finally {
       setRevisionActionLoading(false)
     }
