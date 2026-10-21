@@ -45,6 +45,13 @@ const GENDER_OPTIONS = [
   { value: 'Female', label: 'Female' },
 ];
 
+const MEMBER_GENDER_OPTIONS = [
+  { value: '', label: 'Unspecified' },
+  { value: 'Male', label: 'Male' },
+  { value: 'Female', label: 'Female' },
+  { value: 'Other', label: 'Other' },
+];
+
 const BARANGAY_DROPDOWN_OPTIONS = BARANGAY_OPTIONS.map((b) => ({
   value: b,
   label: b,
@@ -1303,17 +1310,14 @@ export default function AssistedRegistrationModal({
                               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                                 Relationship
                               </label>
-                              <select
+                              <SelectDropdown
                                 value={member.relationship}
-                                onChange={(e) => handleUpdateMember(idx, { relationship: e.target.value })}
-                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                              >
-                                {RELATIONSHIP_OPTIONS.map((opt) => (
-                                  <option key={opt.value} value={opt.value}>
-                                    {opt.label}
-                                  </option>
-                                ))}
-                              </select>
+                                options={RELATIONSHIP_OPTIONS}
+                                onChange={(val) => handleUpdateMember(idx, { relationship: val })}
+                                placeholder="Select Relationship"
+                                usePortal
+                                buttonClassName="!h-9 !px-3 !py-1.5 !text-xs !rounded-lg !border-slate-200 dark:!border-slate-700 !bg-slate-50 dark:!bg-slate-900 text-slate-800 dark:text-slate-100 !shadow-none font-normal"
+                              />
                             </div>
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
@@ -1332,27 +1336,25 @@ export default function AssistedRegistrationModal({
                                     birthYear: parsedYear,
                                   });
                                 }}
-                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
+                                className="w-full h-9 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
                               />
                             </div>
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
                                 Gender
                               </label>
-                              <select
+                              <SelectDropdown
                                 value={member.gender || ''}
-                                onChange={(e) =>
+                                options={MEMBER_GENDER_OPTIONS}
+                                onChange={(val) =>
                                   handleUpdateMember(idx, {
-                                    gender: (e.target.value as 'Male' | 'Female' | 'Other') || null,
+                                    gender: (val as 'Male' | 'Female' | 'Other') || null,
                                   })
                                 }
-                                className="w-full px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
-                              >
-                                <option value="">Unspecified</option>
-                                <option value="Male">Male</option>
-                                <option value="Female">Female</option>
-                                <option value="Other">Other</option>
-                              </select>
+                                placeholder="Unspecified"
+                                usePortal
+                                buttonClassName="!h-9 !px-3 !py-1.5 !text-xs !rounded-lg !border-slate-200 dark:!border-slate-700 !bg-slate-50 dark:!bg-slate-900 text-slate-800 dark:text-slate-100 !shadow-none font-normal"
+                              />
                             </div>
                           </div>
 

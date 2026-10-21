@@ -12,6 +12,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -167,6 +168,29 @@ export default function AssistedRegistrationScreen({
 
   const isAlternativeDocument = ALTERNATIVE_ID_TYPES.includes(idType);
   const idFormatInfo = getIdFormatInfo(idType);
+
+  // Keyboard listener to avoid obscuring inputs and bottom bar
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setKeyboardVisible(true);
+      setKeyboardHeight(e.endCoordinates?.height || 0);
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Scroll to top on step transition
   useEffect(() => {
@@ -969,8 +993,12 @@ export default function AssistedRegistrationScreen({
           <ScrollView
             ref={scrollViewRef}
             style={styles.scrollView}
-            contentContainerStyle={styles.scrollContent}
+            contentContainerStyle={[
+              styles.scrollContent,
+              keyboardVisible && { paddingBottom: Math.max(keyboardHeight + 40, 320) },
+            ]}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
             {/* STEP 1: Personal Info */}
@@ -1227,6 +1255,11 @@ export default function AssistedRegistrationScreen({
                         autoCapitalize="none"
                         value={email}
                         onChangeText={setEmail}
+                        onFocus={() => {
+                          setTimeout(() => {
+                            scrollViewRef.current?.scrollToEnd({ animated: true });
+                          }, 150);
+                        }}
                       />
                       <Ionicons name="mail" size={20} color="#2E7D32" style={styles.inputIconRight} />
                     </View>
@@ -1249,6 +1282,11 @@ export default function AssistedRegistrationScreen({
                             if (!res.valid) setFieldError('password', res.error!);
                             else clearFieldError('password');
                           }
+                        }}
+                        onFocus={() => {
+                          setTimeout(() => {
+                            scrollViewRef.current?.scrollToEnd({ animated: true });
+                          }, 150);
                         }}
                         onBlur={() => {
                           if (password.trim()) {
@@ -1835,43 +1873,45 @@ export default function AssistedRegistrationScreen({
           </ScrollView>
 
           {/* Bottom Dual Pill Action Buttons (Identical to Self-Registration) */}
-          <View style={styles.bottomActions}>
-            <View style={styles.bottomButtonsRow}>
-              <TouchableOpacity
-                style={[
-                  styles.bottomButtonCancel,
-                  currentStep > 1 && styles.bottomButtonBack,
-                ]}
-                onPress={currentStep === 1 ? handlePressClose : handleBack}
-                disabled={submitting}
-              >
-                <Text style={styles.bottomButtonCancelText}>
-                  {currentStep === 1 ? 'Cancel' : 'Back'}
-                </Text>
-              </TouchableOpacity>
+          {!keyboardVisible && (
+            <View style={styles.bottomActions}>
+              <View style={styles.bottomButtonsRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.bottomButtonCancel,
+                    currentStep > 1 && styles.bottomButtonBack,
+                  ]}
+                  onPress={currentStep === 1 ? handlePressClose : handleBack}
+                  disabled={submitting}
+                >
+                  <Text style={styles.bottomButtonCancelText}>
+                    {currentStep === 1 ? 'Cancel' : 'Back'}
+                  </Text>
+                </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.bottomButtonNext, submitting && styles.bottomButtonNextDisabled]}
-                onPress={currentStep === 5 ? handleSubmit : handleNext}
-                disabled={submitting}
-              >
-                {submitting ? (
-                  <ActivityIndicator size="small" color="#FFF" />
-                ) : (
-                  <>
-                    <Text style={styles.bottomButtonNextText}>
-                      {currentStep === 5 ? 'Submit Registration' : 'Next Step'}
-                    </Text>
-                    <Ionicons
-                      name={currentStep === 5 ? 'checkmark-circle' : 'arrow-forward'}
-                      size={20}
-                      color="#FFF"
-                    />
-                  </>
-                )}
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bottomButtonNext, submitting && styles.bottomButtonNextDisabled]}
+                  onPress={currentStep === 5 ? handleSubmit : handleNext}
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <ActivityIndicator size="small" color="#FFF" />
+                  ) : (
+                    <>
+                      <Text style={styles.bottomButtonNextText}>
+                        {currentStep === 5 ? 'Submit Registration' : 'Next Step'}
+                      </Text>
+                      <Ionicons
+                        name={currentStep === 5 ? 'checkmark-circle' : 'arrow-forward'}
+                        size={20}
+                        color="#FFF"
+                      />
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          )}
         </KeyboardAvoidingView>
 
         {/* Full-Screen Face Scanner Modal (Identical to Self-Registration) */}
