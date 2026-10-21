@@ -24,7 +24,7 @@ export const householdMemberInputSchema = z.object({
   lastName: trimmedString(1, 100),
   relationship: z.string().max(50).default('Other'),
   birthYear: z.number().int().min(1900).max(2100).optional().nullable(),
-  dateOfBirth: z.string().max(30).optional().nullable(),
+  dateOfBirth: z.string().trim().regex(/^(\d{2}-\d{2}-\d{4}|\d{4}-\d{2}-\d{2}|\d{2}\/\d{2}\/\d{4})$/, 'Invalid Date of Birth format (expected MM-DD-YYYY or YYYY-MM-DD)').optional().nullable(),
   gender: z.enum(['Male', 'Female', 'Other']).optional().nullable(),
   vulnerabilities: z.array(z.string().max(50)).optional(),
 });

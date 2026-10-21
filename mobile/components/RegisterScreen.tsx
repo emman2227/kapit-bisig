@@ -1884,12 +1884,13 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
         city,
         barangay,
         streetAddress,
-        householdSize,
+        householdSize: 1 + householdMembers.length,
         householdMembers: householdMembers.map((m) => ({
           firstName: m.firstName,
           lastName: m.lastName,
           relationship: m.relationship,
-          birthYear: m.birthYear ? parseInt(m.birthYear, 10) : undefined,
+          dateOfBirth: m.dateOfBirth,
+          birthYear: m.birthYear ? parseInt(m.birthYear, 10) : (m.dateOfBirth ? parseInt((m.dateOfBirth.includes('-') ? m.dateOfBirth.split('-') : m.dateOfBirth.split('/'))[2], 10) : undefined),
           gender: m.gender,
           vulnerabilities: m.vulnerabilities,
         })),
@@ -2810,26 +2811,19 @@ export default function RegisterScreen({ onBack, onComplete, onCancel }: Registe
         {/* Divider */}
         <View style={styles.divider} />
 
-        {/* Household Size */}
+        {/* Household Size (Auto-Calculated) */}
         <View style={styles.householdSizeContainer}>
           <View style={styles.householdSizeLabel}>
-            <Text style={styles.householdSizeTitle}>Household Size</Text>
-            <Text style={styles.householdSizeSubtitle}>Including yourself</Text>
+            <Text style={styles.householdSizeTitle}>Total Household Size</Text>
+            <Text style={styles.householdSizeSubtitle}>
+              1 Head + {householdMembers.length} {householdMembers.length === 1 ? 'member' : 'members'}
+            </Text>
           </View>
-          <View style={styles.householdSizeControls}>
-            <TouchableOpacity
-              style={styles.sizeButton}
-              onPress={() => setHouseholdSize(prev => Math.max(1, prev - 1))}
-            >
-              <Ionicons name="remove" size={24} color="#333" />
-            </TouchableOpacity>
-            <Text style={styles.sizeValue}>{householdSize}</Text>
-            <TouchableOpacity
-              style={[styles.sizeButton, styles.sizeButtonPlus]}
-              onPress={() => setHouseholdSize(prev => prev + 1)}
-            >
-              <Ionicons name="add" size={24} color="#FFF" />
-            </TouchableOpacity>
+          <View style={styles.householdSizeBadge}>
+            <Text style={styles.householdSizeBadgeValue}>{1 + householdMembers.length}</Text>
+            <Text style={styles.householdSizeBadgeLabel}>
+              {1 + householdMembers.length === 1 ? 'Person' : 'Persons'}
+            </Text>
           </View>
         </View>
       </View>
@@ -4677,28 +4671,27 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#2E7D32',
   },
-  householdSizeControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 15,
-  },
-  sizeButton: {
-    width: 44,
-    height: 44,
+  householdSizeBadge: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#C8E6C9',
+    borderWidth: 1,
     borderRadius: 12,
-    backgroundColor: '#F0F0F0',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
+    minWidth: 74,
   },
-  sizeButtonPlus: {
-    backgroundColor: '#2ECC71',
+  householdSizeBadgeValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#2E7D32',
   },
-  sizeValue: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#333',
-    minWidth: 30,
-    textAlign: 'center',
+  householdSizeBadgeLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#388E3C',
+    textTransform: 'uppercase',
   },
   vulnerableSection: {
     marginTop: 10,

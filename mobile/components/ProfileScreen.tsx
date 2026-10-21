@@ -352,6 +352,7 @@ export default function ProfileScreen({
       firstName: m.firstName || '',
       lastName: m.lastName || '',
       relationship: m.relationship || 'Other',
+      dateOfBirth: m.dateOfBirth || (m.birthYear ? `01-01-${m.birthYear}` : undefined),
       birthYear: m.birthYear !== undefined && m.birthYear !== null ? String(m.birthYear) : undefined,
       gender: m.gender || undefined,
       vulnerabilities: m.vulnerabilities || [],
@@ -383,11 +384,17 @@ export default function ProfileScreen({
       }
 
       const membersPayload: HouseholdMember[] = membersDraft.map((m) => {
-        const parsedYear = m.birthYear ? parseInt(m.birthYear, 10) : undefined;
+        let parsedYear = m.birthYear ? parseInt(m.birthYear, 10) : undefined;
+        if (!parsedYear && m.dateOfBirth) {
+          const parts = m.dateOfBirth.includes('-') ? m.dateOfBirth.split('-') : m.dateOfBirth.split('/');
+          const y = parts[0].length === 4 ? parseInt(parts[0], 10) : parseInt(parts[2], 10);
+          if (!isNaN(y)) parsedYear = y;
+        }
         return {
           firstName: m.firstName.trim(),
           lastName: m.lastName.trim(),
           relationship: m.relationship,
+          dateOfBirth: m.dateOfBirth,
           birthYear: parsedYear && !isNaN(parsedYear) ? parsedYear : undefined,
           gender: m.gender,
           vulnerabilities: m.vulnerabilities || [],

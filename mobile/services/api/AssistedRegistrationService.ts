@@ -31,6 +31,7 @@ export interface AssistedRegistrationPayload {
     firstName: string;
     lastName: string;
     relationship?: string;
+    dateOfBirth?: string;
     birthYear?: number;
     gender?: string;
     vulnerabilities?: string[];

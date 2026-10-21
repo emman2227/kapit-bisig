@@ -863,12 +863,13 @@ export default function AssistedRegistrationScreen({
       householdToken: householdToken.trim(),
       streetAddress: streetAddress.trim(),
       city: 'Labrador',
-      householdSize: parseInt(householdSize, 10) || 1,
+      householdSize: 1 + (householdMembers?.length || 0),
       householdMembers: householdMembers.map((m) => ({
         firstName: m.firstName,
         lastName: m.lastName,
         relationship: m.relationship,
-        birthYear: m.birthYear ? parseInt(m.birthYear, 10) : undefined,
+        dateOfBirth: m.dateOfBirth,
+        birthYear: m.birthYear ? parseInt(m.birthYear, 10) : (m.dateOfBirth ? parseInt((m.dateOfBirth.includes('-') ? m.dateOfBirth.split('-') : m.dateOfBirth.split('/'))[2], 10) : undefined),
         gender: m.gender,
         vulnerabilities: m.vulnerabilities,
       })),
@@ -1450,19 +1451,19 @@ export default function AssistedRegistrationScreen({
                     accentColor="#2E7D32"
                   />
 
-                  {/* Household Size */}
-                  <View style={styles.fieldContainer}>
-                    <Text style={styles.fieldLabel}>Household Size</Text>
-                    <View style={styles.inputContainer}>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="1"
-                        placeholderTextColor="#999"
-                        keyboardType="number-pad"
-                        value={householdSize}
-                        onChangeText={setHouseholdSize}
-                      />
-                      <Ionicons name="people" size={20} color="#2E7D32" style={styles.inputIconRight} />
+                  {/* Household Size (Auto-Calculated) */}
+                  <View style={styles.householdSizeAutoCard}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.householdSizeAutoTitle}>Total Household Size</Text>
+                      <Text style={styles.householdSizeAutoSubtitle}>
+                        1 Head + {householdMembers.length} {householdMembers.length === 1 ? 'member' : 'members'}
+                      </Text>
+                    </View>
+                    <View style={styles.householdSizeAutoBadge}>
+                      <Text style={styles.householdSizeAutoValue}>{1 + householdMembers.length}</Text>
+                      <Text style={styles.householdSizeAutoUnit}>
+                        {1 + householdMembers.length === 1 ? 'Person' : 'Persons'}
+                      </Text>
                     </View>
                   </View>
                 </View>
@@ -1787,7 +1788,7 @@ export default function AssistedRegistrationScreen({
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Household Size</Text>
-                    <Text style={styles.reviewValue}>{householdSize} Member(s)</Text>
+                    <Text style={styles.reviewValue}>{1 + (householdMembers?.length || 0)} Member(s)</Text>
                   </View>
                   <View style={styles.reviewRow}>
                     <Text style={styles.reviewLabel}>Priority Assessment</Text>
@@ -2477,6 +2478,50 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  householdSizeAutoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#FAFAFA',
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 12,
+  },
+  householdSizeAutoTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#212121',
+  },
+  householdSizeAutoSubtitle: {
+    fontSize: 12,
+    color: '#2E7D32',
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  householdSizeAutoBadge: {
+    backgroundColor: '#E8F5E9',
+    borderColor: '#C8E6C9',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 70,
+  },
+  householdSizeAutoValue: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#2E7D32',
+  },
+  householdSizeAutoUnit: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#388E3C',
+    textTransform: 'uppercase',
   },
   stepperBtnText: {
     fontSize: 15,

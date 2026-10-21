@@ -133,6 +133,43 @@ export default function AssistedRegistrationModal({
     };
   }, [householdMembers]);
 
+  const getMemberAge = (dob?: string | null): number | null => {
+    if (!dob) return null;
+    const birthDate = new Date(dob);
+    if (isNaN(birthDate.getTime())) return null;
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age >= 0 ? age : null;
+  };
+
+  const isVulnEligible = (
+    vuln: string,
+    age: number | null,
+    gender: string | null | undefined
+  ): { eligible: boolean; hint?: string } => {
+    if (vuln === 'PWD') return { eligible: true };
+    if (vuln === 'Senior Citizen') {
+      if (age !== null && age < 60) return { eligible: false, hint: 'Age < 60' };
+      return { eligible: true };
+    }
+    if (vuln === 'Child (0-5)') {
+      if (age !== null && age > 5) return { eligible: false, hint: 'Age > 5' };
+      return { eligible: true };
+    }
+    if (vuln === 'Pregnant') {
+      if (gender === 'Male') return { eligible: false, hint: 'Female only' };
+      if (age !== null && (age < 12 || age >= 60)) return { eligible: false, hint: 'Age 12–59 only' };
+      return { eligible: true };
+    }
+    if (vuln === 'Solo Parent') {
+      if (age !== null && age < 15) return { eligible: false, hint: 'Age ≥ 15' };
+      return { eligible: true };
+    }
+    return { eligible: true };
+  };
+
   const handleAddMember = () => {
     setHouseholdMembers((prev) => [
       ...prev,
@@ -140,6 +177,7 @@ export default function AssistedRegistrationModal({
         firstName: '',
         lastName: '',
         relationship: 'Spouse',
+        dateOfBirth: '',
         birthYear: null,
         gender: null,
         vulnerabilities: [],
@@ -150,7 +188,14 @@ export default function AssistedRegistrationModal({
   const handleUpdateMember = (index: number, updates: Partial<HouseholdMember>) => {
     setHouseholdMembers((prev) => {
       const copy = [...prev];
-      copy[index] = { ...copy[index], ...updates };
+      const updated = { ...copy[index], ...updates };
+      const age = getMemberAge(updated.dateOfBirth);
+      if (updated.vulnerabilities && updated.vulnerabilities.length > 0) {
+        updated.vulnerabilities = updated.vulnerabilities.filter(
+          (v) => isVulnEligible(v, age, updated.gender).eligible
+        );
+      }
+      copy[index] = updated;
       return copy;
     });
   };
@@ -561,6 +606,10 @@ export default function AssistedRegistrationModal({
           setErrorMsg(`Please provide both first and last name for Family Member #${i + 1}.`);
           return false;
         }
+        if (!m.dateOfBirth) {
+          setErrorMsg(`Date of Birth is required for Family Member #${i + 1}.`);
+          return false;
+        }
       }
       return true;
     }
@@ -635,14 +684,23 @@ export default function AssistedRegistrationModal({
       streetAddress: streetAddress.trim(),
       city: 'Labrador',
       householdSize: 1 + householdMembers.length,
-      householdMembers: householdMembers.map((m) => ({
-        firstName: m.firstName.trim(),
-        lastName: m.lastName.trim(),
-        relationship: m.relationship,
-        birthYear: m.birthYear ? Number(m.birthYear) : undefined,
-        gender: m.gender || undefined,
-        vulnerabilities: m.vulnerabilities || [],
-      })),
+      householdMembers: householdMembers.map((m) => {
+        let birthYear = m.birthYear ? Number(m.birthYear) : undefined;
+        if (!birthYear && m.dateOfBirth) {
+          const parts = m.dateOfBirth.includes('-') ? m.dateOfBirth.split('-') : m.dateOfBirth.split('/');
+          const y = parts[0].length === 4 ? parseInt(parts[0], 10) : parseInt(parts[2], 10);
+          if (!isNaN(y)) birthYear = y;
+        }
+        return {
+          firstName: m.firstName.trim(),
+          lastName: m.lastName.trim(),
+          relationship: m.relationship,
+          dateOfBirth: m.dateOfBirth,
+          birthYear,
+          gender: m.gender || undefined,
+          vulnerabilities: m.vulnerabilities || [],
+        };
+      }),
       vulnerableMembers,
       vulnerableCounts,
       idType,
@@ -1259,20 +1317,22 @@ export default function AssistedRegistrationModal({
                             </div>
                             <div>
                               <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-400 mb-1">
-                                Birth Year / Approx Age
+                                Date of Birth <span className="text-red-500">*</span>
                               </label>
                               <input
-                                type="number"
-                                placeholder="e.g. 1995"
-                                min={1900}
-                                max={2026}
-                                value={member.birthYear ?? ''}
-                                onChange={(e) =>
+                                type="date"
+                                required
+                                max={new Date().toISOString().split('T')[0]}
+                                value={member.dateOfBirth ?? ''}
+                                onChange={(e) => {
+                                  const dobVal = e.target.value;
+                                  const parsedYear = dobVal ? parseInt(dobVal.split('-')[0], 10) : null;
                                   handleUpdateMember(idx, {
-                                    birthYear: e.target.value ? parseInt(e.target.value, 10) : null,
-                                  })
-                                }
-                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-emerald-500"
+                                    dateOfBirth: dobVal,
+                                    birthYear: parsedYear,
+                                  });
+                                }}
+                                className="w-full px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xs text-slate-800 dark:text-slate-100 focus:outline-none focus:border-emerald-500"
                               />
                             </div>
                             <div>
@@ -1301,26 +1361,44 @@ export default function AssistedRegistrationModal({
                               Special Categories / Vulnerabilities
                             </span>
                             <div className="flex flex-wrap gap-1.5">
-                              {['Senior Citizen', 'PWD', 'Pregnant', 'Child (0-5)'].map((vuln) => {
+                              {['Senior Citizen', 'PWD', 'Pregnant', 'Child (0-5)', 'Solo Parent'].map((vuln) => {
                                 const active = member.vulnerabilities?.includes(vuln);
+                                const age = getMemberAge(member.dateOfBirth);
+                                const eligibility = isVulnEligible(vuln, age, member.gender);
+                                const disabled = !eligibility.eligible;
+
                                 return (
                                   <button
                                     key={vuln}
                                     type="button"
+                                    disabled={disabled}
+                                    title={disabled ? eligibility.hint : undefined}
                                     onClick={() => {
+                                      if (disabled) return;
                                       const current = member.vulnerabilities || [];
-                                      const next = active
+                                      let next = active
                                         ? current.filter((v) => v !== vuln)
                                         : [...current, vuln];
+
+                                      // Mutual exclusion enforcement
+                                      if (!active) {
+                                        if (vuln === 'Senior Citizen') next = next.filter((v) => v !== 'Child (0-5)');
+                                        if (vuln === 'Child (0-5)') next = next.filter((v) => v !== 'Senior Citizen' && v !== 'Pregnant' && v !== 'Solo Parent');
+                                        if (vuln === 'Pregnant') next = next.filter((v) => v !== 'Child (0-5)');
+                                        if (vuln === 'Solo Parent') next = next.filter((v) => v !== 'Child (0-5)');
+                                      }
                                       handleUpdateMember(idx, { vulnerabilities: next });
                                     }}
-                                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors cursor-pointer ${
-                                      active
-                                        ? 'bg-emerald-600 text-white font-bold'
-                                        : 'bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
+                                    className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                                      disabled
+                                        ? 'bg-slate-100 dark:bg-slate-800/40 text-slate-400 dark:text-slate-600 cursor-not-allowed opacity-60'
+                                        : active
+                                        ? 'bg-emerald-600 text-white font-bold cursor-pointer'
+                                        : 'bg-slate-100 dark:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:bg-slate-200 cursor-pointer'
                                     }`}
                                   >
                                     {vuln}
+                                    {disabled && eligibility.hint ? ` (${eligibility.hint})` : ''}
                                   </button>
                                 );
                               })}
