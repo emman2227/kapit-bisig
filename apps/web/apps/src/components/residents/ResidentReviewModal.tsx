@@ -685,7 +685,17 @@ export default function ResidentReviewModal({
                               ].filter(Boolean).join(' • ')})
                             </span>
                           </div>
-                          <span className="text-xs text-slate-400">Head of Household</span>
+                          {resident.vulnerableMembers && resident.vulnerableMembers.length > 0 ? (
+                            <div className="flex gap-1 flex-wrap">
+                              {resident.vulnerableMembers.map((v) => (
+                                <span key={v} className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                                  {v}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-400">-</span>
+                          )}
                         </div>
 
                         {resident.householdMembers && resident.householdMembers.length > 0 ? (
