@@ -71,6 +71,8 @@ const ACTION_OPTIONS = [
   { value: 'PROOF_SUBMISSION_CREATED', label: 'PROOF_SUBMISSION_CREATED' },
   { value: 'PROOF_SUBMISSION_REVIEWED', label: 'PROOF_SUBMISSION_REVIEWED (Document Proof)' },
   { value: 'HOUSEHOLD_UPDATED', label: 'HOUSEHOLD_UPDATED' },
+  { value: 'HOUSEHOLD_MEMBERS_REVISION_APPROVED', label: 'HOUSEHOLD_MEMBERS_REVISION_APPROVED' },
+  { value: 'HOUSEHOLD_MEMBERS_REVISION_REJECTED', label: 'HOUSEHOLD_MEMBERS_REVISION_REJECTED' },
 ]
 
 function getActionBadgeStyle(action: string): { bg: string; text: string; border: string } {
@@ -184,13 +186,38 @@ export default function AuditLogsPage() {
     return () => clearTimeout(handler)
   }, [targetFilter])
 
-  const hasActiveFilters = Boolean(dateFilter || actionFilter || actorFilter || targetFilter)
+  const [categoryFilter, setCategoryFilter] = useState<'security' | 'account' | 'record' | ''>('')
+  const [summaryCounts, setSummaryCounts] = useState<{
+    total: number
+    securityEvents: number
+    accountActivities: number
+    recordModifications: number
+  }>({
+    total: 0,
+    securityEvents: 0,
+    accountActivities: 0,
+    recordModifications: 0,
+  })
+
+  const hasActiveFilters = Boolean(
+    dateFilter || actionFilter || actorFilter || targetFilter || categoryFilter,
+  )
 
   const handleResetFilters = () => {
     setDateFilter('')
     setActionFilter('')
     setActorFilter('')
     setTargetFilter('')
+    setCategoryFilter('')
+    setPage(1)
+  }
+
+  const handleToggleCategory = (category: 'security' | 'account' | 'record') => {
+    if (categoryFilter === category) {
+      setCategoryFilter('')
+    } else {
+      setCategoryFilter(category)
+    }
     setPage(1)
   }
 
@@ -204,11 +231,15 @@ export default function AuditLogsPage() {
         actor: debouncedActor || undefined,
         target: debouncedTarget || undefined,
         date: dateFilter || undefined,
+        category: categoryFilter || undefined,
       })
       setLogs(res.data || [])
       if (res.pagination) {
         setTotalPages(res.pagination.totalPages)
         setTotal(res.pagination.totalDocs || 0)
+      }
+      if (res.summary) {
+        setSummaryCounts(res.summary)
       }
     } catch (err) {
       console.error(err)
@@ -216,27 +247,11 @@ export default function AuditLogsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, actionFilter, debouncedActor, debouncedTarget, dateFilter])
+  }, [page, actionFilter, debouncedActor, debouncedTarget, dateFilter, categoryFilter])
 
   useEffect(() => {
     fetchLogs()
   }, [fetchLogs])
-
-  const securityAlertCount = useMemo(
-    () => logs.filter((l) => l.action === 'ACCESS_DENIED' || l.action === 'LOGIN_FAILURE').length,
-    [logs],
-  )
-  const mutationCount = useMemo(
-    () =>
-      logs.filter(
-        (l) =>
-          l.action.includes('CREATED') ||
-          l.action.includes('UPDATED') ||
-          l.action.includes('REVIEWED') ||
-          l.action.includes('REVISED'),
-      ).length,
-    [logs],
-  )
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text)
@@ -260,7 +275,7 @@ export default function AuditLogsPage() {
             subtitle="Immutable audit trail of administrator actions, resident verifications, and distribution lifecycle events"
             rightAccessory={
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-white text-slate-700 dark:bg-slate-900 dark:text-slate-300 border border-slate-200/80 dark:border-slate-700/80 shadow-sm">
-                Total events {total.toLocaleString()}
+                Total events {(summaryCounts.total || total).toLocaleString()}
               </div>
             }
           />
@@ -268,54 +283,40 @@ export default function AuditLogsPage() {
 
         <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 sm:p-5 xl:grid-cols-4">
           <SummaryMetricCard
-            label="Total Logged"
-            value={total}
-            helper="All recorded audit events (click to clear filters)"
+            label="TOTAL AUDIT EVENTS"
+            value={summaryCounts.total || total}
+            helper="All recorded events"
             variant="blue"
             icon={<Shield className="h-5 w-5" />}
             onClick={handleResetFilters}
             isSelected={!hasActiveFilters}
           />
           <SummaryMetricCard
-            label="Visible Page"
-            value={logs.length}
-            helper={`Page ${page} of ${totalPages || 1} (click to jump to page 1)`}
-            variant="purple"
-            icon={<FileText className="h-5 w-5" />}
-            onClick={() => setPage(1)}
-            isSelected={page === 1}
-          />
-          <SummaryMetricCard
-            label="Data Changes"
-            value={mutationCount}
-            helper="Status changes on page (click to filter)"
-            variant="emerald"
-            icon={<Key className="h-5 w-5" />}
-            onClick={() => {
-              if (actionFilter === 'RESIDENT_STATUS_UPDATED') {
-                handleResetFilters()
-              } else {
-                setActionFilter('RESIDENT_STATUS_UPDATED')
-                setPage(1)
-              }
-            }}
-            isSelected={actionFilter === 'RESIDENT_STATUS_UPDATED'}
-          />
-          <SummaryMetricCard
-            label="Security Alerts"
-            value={securityAlertCount}
-            helper="Failed logins & alerts (click to filter)"
+            label="SECURITY EVENTS"
+            value={summaryCounts.securityEvents}
+            helper="Failed logins, access denials, and 2FA failures"
             variant="rose"
             icon={<AlertTriangle className="h-5 w-5" />}
-            onClick={() => {
-              if (actionFilter === 'LOGIN_FAILED') {
-                handleResetFilters()
-              } else {
-                setActionFilter('LOGIN_FAILED')
-                setPage(1)
-              }
-            }}
-            isSelected={actionFilter === 'LOGIN_FAILED'}
+            onClick={() => handleToggleCategory('security')}
+            isSelected={categoryFilter === 'security'}
+          />
+          <SummaryMetricCard
+            label="ACCOUNT ACTIVITIES"
+            value={summaryCounts.accountActivities}
+            helper="Staff account creation, updates, and status changes"
+            variant="purple"
+            icon={<User className="h-5 w-5" />}
+            onClick={() => handleToggleCategory('account')}
+            isSelected={categoryFilter === 'account'}
+          />
+          <SummaryMetricCard
+            label="RECORD MODIFICATIONS"
+            value={summaryCounts.recordModifications}
+            helper="Logged changes to resident, household, and eligibility records"
+            variant="emerald"
+            icon={<FileText className="h-5 w-5" />}
+            onClick={() => handleToggleCategory('record')}
+            isSelected={categoryFilter === 'record'}
           />
         </div>
       </section>

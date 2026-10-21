@@ -7,6 +7,33 @@ import Resident from '../models/Resident';
 import Claim from '../models/Claim';
 import { AuthRequest } from '../middleware/unifiedAuth';
 
+const SECURITY_ACTIONS = [
+  'LOGIN_FAILURE',
+  'ACCESS_DENIED',
+  'LOGIN_OTP_VERIFY_FAILED',
+  'FORGOT_PASSWORD_OTP_VERIFIED_FAILED',
+];
+
+const ACCOUNT_ACTIONS = [
+  'STAFF_CREATED',
+  'STAFF_UPDATED',
+  'STAFF_DISABLED',
+  'STAFF_DELETED',
+  'STAFF_PASSWORD_RESET',
+  'STAFF_PASSWORD_RESET_OTP_SENT',
+  'STAFF_ACTIVATION_OTP_RESENT',
+];
+
+const RECORD_ACTIONS = [
+  'RESIDENT_STATUS_UPDATED',
+  'RESIDENT_ASSISTED_REVISED',
+  'HOUSEHOLD_UPDATED',
+  'HOUSEHOLD_MEMBERS_REVISION_APPROVED',
+  'HOUSEHOLD_MEMBERS_REVISION_REJECTED',
+  'BENEFICIARY_ELIGIBILITY_UPDATED',
+  'PROOF_SUBMISSION_REVIEWED',
+];
+
 const router = Router();
 
 router.get('/', async (req: AuthRequest, res: Response) => {
@@ -30,11 +57,43 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     const target = req.query.target as string;
     const ip = req.query.ip as string;
     const date = req.query.date as string;
+    const category = req.query.category as string;
+    const entityType = req.query.entityType as string;
 
     const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const andConditions: Record<string, unknown>[] = [];
 
-    if (action) andConditions.push({ action });
+    if (action) {
+      if (action.includes(',')) {
+        andConditions.push({ action: { $in: action.split(',').map((a) => a.trim()) } });
+      } else {
+        andConditions.push({ action });
+      }
+    }
+    if (entityType) {
+      if (entityType.includes(',')) {
+        andConditions.push({ entityType: { $in: entityType.split(',').map((e) => e.trim()) } });
+      } else {
+        andConditions.push({ entityType });
+      }
+    }
+    if (category === 'security') {
+      andConditions.push({ action: { $in: SECURITY_ACTIONS } });
+    } else if (category === 'account') {
+      andConditions.push({
+        $or: [
+          { entityType: 'StaffUser' },
+          { action: { $in: ACCOUNT_ACTIONS } },
+        ],
+      });
+    } else if (category === 'record') {
+      andConditions.push({
+        $or: [
+          { action: { $in: RECORD_ACTIONS } },
+          { entityType: { $in: ['Resident', 'Household', 'HouseholdToken'] } },
+        ],
+      });
+    }
     if (actorRole) andConditions.push({ actorRole });
     if (actor) {
       const escaped = escapeRegex(actor.trim());
@@ -110,7 +169,7 @@ router.get('/', async (req: AuthRequest, res: Response) => {
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    const [rawLogs, total] = await Promise.all([
+    const [rawLogs, total, summaryTotal, summarySecurity, summaryAccount, summaryRecord] = await Promise.all([
       AuditLog.collection
         .find(query)
         .sort({ createdAt: -1 })
@@ -118,6 +177,20 @@ router.get('/', async (req: AuthRequest, res: Response) => {
         .limit(limit)
         .toArray(),
       AuditLog.collection.countDocuments(query),
+      AuditLog.collection.countDocuments({}),
+      AuditLog.collection.countDocuments({ action: { $in: SECURITY_ACTIONS } }),
+      AuditLog.collection.countDocuments({
+        $or: [
+          { entityType: 'StaffUser' },
+          { action: { $in: ACCOUNT_ACTIONS } },
+        ],
+      }),
+      AuditLog.collection.countDocuments({
+        $or: [
+          { action: { $in: RECORD_ACTIONS } },
+          { entityType: { $in: ['Resident', 'Household', 'HouseholdToken'] } },
+        ],
+      }),
     ]);
 
     const logs = rawLogs.map((doc: any) => ({
@@ -297,6 +370,12 @@ router.get('/', async (req: AuthRequest, res: Response) => {
     return res.json({
       success: true,
       data: resolvedLogs,
+      summary: {
+        total: summaryTotal,
+        securityEvents: summarySecurity,
+        accountActivities: summaryAccount,
+        recordModifications: summaryRecord,
+      },
       pagination: {
         page,
         limit,

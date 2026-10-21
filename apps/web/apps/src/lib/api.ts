@@ -1204,7 +1204,17 @@ export const api = {
     target?: string;
     ip?: string;
     date?: string;
-  }): Promise<PaginatedApiResponse<AuditLogRecord[]>> {
+    category?: 'security' | 'account' | 'record' | string;
+  }): Promise<
+    PaginatedApiResponse<AuditLogRecord[]> & {
+      summary?: {
+        total: number;
+        securityEvents: number;
+        accountActivities: number;
+        recordModifications: number;
+      };
+    }
+  > {
     const sp = new URLSearchParams();
     if (typeof params?.page === 'number') sp.append('page', String(params.page));
     if (typeof params?.limit === 'number') sp.append('limit', String(params.limit));
@@ -1215,6 +1225,7 @@ export const api = {
     if (params?.target) sp.append('target', params.target);
     if (params?.ip) sp.append('ip', params.ip);
     if (params?.date) sp.append('date', params.date);
+    if (params?.category) sp.append('category', params.category);
 
     const qs = sp.toString();
     const url = `${API_URL}/audit-logs${qs ? `?${qs}` : ''}`;
@@ -1222,7 +1233,16 @@ export const api = {
       headers: createHeaders(),
       credentials: 'include',
     });
-    return handleResponse<PaginatedApiResponse<AuditLogRecord[]>>(response);
+    return handleResponse<
+      PaginatedApiResponse<AuditLogRecord[]> & {
+        summary?: {
+          total: number;
+          securityEvents: number;
+          accountActivities: number;
+          recordModifications: number;
+        };
+      }
+    >(response);
   },
 
   /** POST /api/household/validate-token */
