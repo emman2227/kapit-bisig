@@ -47,6 +47,69 @@ function formatDateOnly(value?: string): string {
   })
 }
 
+function parseDateOfBirth(dob?: string | null): Date | null {
+  if (!dob) return null
+  const trimmed = dob.trim()
+  if (!trimmed) return null
+
+  const parts = trimmed.includes('-') ? trimmed.split('-') : trimmed.split('/')
+  if (parts.length === 3) {
+    let y: number, m: number, d: number
+    if (parts[0].length === 4) {
+      y = parseInt(parts[0], 10)
+      m = parseInt(parts[1], 10) - 1
+      d = parseInt(parts[2], 10)
+    } else {
+      m = parseInt(parts[0], 10) - 1
+      d = parseInt(parts[1], 10)
+      y = parseInt(parts[2], 10)
+    }
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const dt = new Date(y, m, d)
+      if (!isNaN(dt.getTime())) return dt
+    }
+  }
+
+  const standard = new Date(trimmed)
+  return !isNaN(standard.getTime()) ? standard : null
+}
+
+function calculateAge(dob?: string | null, birthYear?: number | string | null): number | null {
+  const dt = parseDateOfBirth(dob)
+  if (dt) {
+    const today = new Date()
+    let age = today.getFullYear() - dt.getFullYear()
+    const m = today.getMonth() - dt.getMonth()
+    if (m < 0 || (m === 0 && today.getDate() < dt.getDate())) {
+      age--
+    }
+    return age >= 0 ? age : null
+  }
+  if (birthYear) {
+    const y = typeof birthYear === 'number' ? birthYear : parseInt(birthYear, 10)
+    if (!isNaN(y) && y > 1900) {
+      const age = new Date().getFullYear() - y
+      return age >= 0 ? age : null
+    }
+  }
+  return null
+}
+
+function formatMemberBirthSummary(member: { dateOfBirth?: string | null; birthYear?: number | string | null }): string {
+  const age = calculateAge(member.dateOfBirth, member.birthYear)
+  const ageLabel = age !== null ? `Age ${age}` : null
+  const dt = parseDateOfBirth(member.dateOfBirth)
+  if (dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const formatted = `${months[dt.getMonth()]} ${dt.getDate()}, ${dt.getFullYear()}`
+    return ageLabel ? `${formatted} (${ageLabel})` : formatted
+  }
+  if (member.birthYear) {
+    return ageLabel ? `Born ${member.birthYear} (${ageLabel})` : `Born ${member.birthYear}`
+  }
+  return ''
+}
+
 function resolveAssetUrl(input?: string): string | null {
   const value = String(input || '').trim()
   if (!value) return null
@@ -528,7 +591,11 @@ export default function ResidentReviewModal({
                                         {m.firstName} {m.lastName}
                                       </span>
                                       <span className="text-slate-500 dark:text-slate-400 ml-2">
-                                        ({m.relationship}{m.birthYear ? ` • Born ${m.birthYear}` : ''}{m.gender ? ` • ${m.gender}` : ''})
+                                        ({[
+                                          m.relationship,
+                                          formatMemberBirthSummary(m),
+                                          m.gender,
+                                        ].filter(Boolean).join(' • ')})
                                       </span>
                                     </div>
                                     {m.vulnerabilities && m.vulnerabilities.length > 0 && (
@@ -610,8 +677,15 @@ export default function ResidentReviewModal({
                             <span className="ml-2 text-xs text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
                               Household Head
                             </span>
+                            <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">
+                              ({[
+                                'Primary Registrant',
+                                formatMemberBirthSummary({ dateOfBirth: resident.dateOfBirth }),
+                                resident.gender,
+                              ].filter(Boolean).join(' • ')})
+                            </span>
                           </div>
-                          <span className="text-xs text-slate-400">Primary Registrant</span>
+                          <span className="text-xs text-slate-400">Head of Household</span>
                         </div>
 
                         {resident.householdMembers && resident.householdMembers.length > 0 ? (
@@ -622,7 +696,11 @@ export default function ResidentReviewModal({
                                   {m.firstName} {m.lastName}
                                 </span>
                                 <span className="text-xs text-slate-500 dark:text-slate-400 ml-2">
-                                  ({m.relationship}{m.birthYear ? ` • Born ${m.birthYear}` : ''}{m.gender ? ` • ${m.gender}` : ''})
+                                  ({[
+                                    m.relationship,
+                                    formatMemberBirthSummary(m),
+                                    m.gender,
+                                  ].filter(Boolean).join(' • ')})
                                 </span>
                               </div>
                               {m.vulnerabilities && m.vulnerabilities.length > 0 ? (

@@ -114,6 +114,69 @@ function joinUniqueParts(parts: Array<string | null | undefined>): string {
     .join(', ');
 }
 
+function parseDateOfBirth(dob?: string | null): Date | null {
+  if (!dob) return null;
+  const trimmed = dob.trim();
+  if (!trimmed) return null;
+
+  const parts = trimmed.includes('-') ? trimmed.split('-') : trimmed.split('/');
+  if (parts.length === 3) {
+    let y: number, m: number, d: number;
+    if (parts[0].length === 4) {
+      y = parseInt(parts[0], 10);
+      m = parseInt(parts[1], 10) - 1;
+      d = parseInt(parts[2], 10);
+    } else {
+      m = parseInt(parts[0], 10) - 1;
+      d = parseInt(parts[1], 10);
+      y = parseInt(parts[2], 10);
+    }
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+      const dt = new Date(y, m, d);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+  }
+
+  const standard = new Date(trimmed);
+  return !isNaN(standard.getTime()) ? standard : null;
+}
+
+function calculateAge(dob?: string | null, birthYear?: number | string | null): number | null {
+  const dt = parseDateOfBirth(dob);
+  if (dt) {
+    const today = new Date();
+    let age = today.getFullYear() - dt.getFullYear();
+    const m = today.getMonth() - dt.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < dt.getDate())) {
+      age--;
+    }
+    return age >= 0 ? age : null;
+  }
+  if (birthYear) {
+    const y = typeof birthYear === 'number' ? birthYear : parseInt(birthYear, 10);
+    if (!isNaN(y) && y > 1900) {
+      const age = new Date().getFullYear() - y;
+      return age >= 0 ? age : null;
+    }
+  }
+  return null;
+}
+
+function formatMemberBirthSummary(member: { dateOfBirth?: string | null; birthYear?: number | string | null }): string {
+  const age = calculateAge(member.dateOfBirth, member.birthYear);
+  const ageLabel = age !== null ? `Age ${age}` : null;
+  const dt = parseDateOfBirth(member.dateOfBirth);
+  if (dt) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const formatted = `${months[dt.getMonth()]} ${dt.getDate()}, ${dt.getFullYear()}`;
+    return ageLabel ? `${formatted} (${ageLabel})` : formatted;
+  }
+  if (member.birthYear) {
+    return ageLabel ? `Born ${member.birthYear} (${ageLabel})` : `Born ${member.birthYear}`;
+  }
+  return '';
+}
+
 function resolveStatusPresentation(
   isVolunteer: boolean,
   residentStatus?: string,
@@ -1152,7 +1215,11 @@ export default function ProfileScreen({
                     </View>
                   </View>
                   <Typography variant="caption" color={theme.colors.textSecondary}>
-                    Primary Household Head • {residentProfile?.barangay || 'Registered'}
+                    {[
+                      `Primary Household Head • ${residentProfile?.barangay || 'Registered'}`,
+                      formatMemberBirthSummary({ dateOfBirth: residentProfile?.dateOfBirth }),
+                      residentProfile?.gender,
+                    ].filter(Boolean).join(' • ')}
                   </Typography>
                 </View>
               </View>
@@ -1171,9 +1238,11 @@ export default function ProfileScreen({
                           {m.firstName} {m.lastName}
                         </Typography>
                         <Typography variant="caption" color={theme.colors.textSecondary}>
-                          {m.relationship}
-                          {m.birthYear ? ` • Born ${m.birthYear}` : ''}
-                          {m.gender ? ` • ${m.gender}` : ''}
+                          {[
+                            m.relationship,
+                            formatMemberBirthSummary(m),
+                            m.gender,
+                          ].filter(Boolean).join(' • ')}
                         </Typography>
                         {m.vulnerabilities && m.vulnerabilities.length > 0 ? (
                           <View style={styles.vulnTagsRow}>

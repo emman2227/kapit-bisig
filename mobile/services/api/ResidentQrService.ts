@@ -83,6 +83,8 @@ export interface ResidentProfile {
   fullName: string;
   mobileNumber: string;
   email?: string;
+  dateOfBirth?: string;
+  gender?: string;
   barangay: string;
   city: string;
   streetAddress: string;

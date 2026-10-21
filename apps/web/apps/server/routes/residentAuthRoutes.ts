@@ -229,7 +229,7 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
     }
 
     const resident = await Resident.findById(userId).select(
-      'residentCode avatarUrl firstName lastName fullName mobileNumber email barangay city streetAddress householdSize householdMembers pendingHouseholdRevision vulnerableMembers vulnerableCounts status rejectionReason lastProfileUpdateAt createdAt'
+      'residentCode avatarUrl firstName lastName fullName mobileNumber email dateOfBirth gender barangay city streetAddress householdSize householdMembers pendingHouseholdRevision vulnerableMembers vulnerableCounts status rejectionReason lastProfileUpdateAt createdAt'
     );
 
     if (!resident) {
@@ -256,6 +256,8 @@ router.get('/auth/me', authMiddleware, authenticatedResidentReadRateLimiter, asy
         fullName: normalizedName.fullName || resident.fullName,
         mobileNumber: resident.mobileNumber,
         email: resident.email || '',
+        dateOfBirth: resident.dateOfBirth || '',
+        gender: resident.gender || '',
         barangay: resident.barangay,
         city: resident.city || '',
         streetAddress: resident.streetAddress,
