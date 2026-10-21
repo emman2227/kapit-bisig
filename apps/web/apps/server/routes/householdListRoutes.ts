@@ -42,9 +42,11 @@ router.get('/', validateRequest({ query: listHouseholdsQuery }), async (req: Aut
       distributionId?: string;
     };
 
-    // Build MongoDB filter
+    // Build MongoDB filter - Only approved resident households appear in the Relief Registry
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const filter: Record<string, any> = {};
+    const filter: Record<string, any> = {
+      status: 'Approved',
+    };
 
     // RBAC: LGU_STAFF can only see their assigned barangays
     if (req.authUser?.role === 'LGU_STAFF') {
